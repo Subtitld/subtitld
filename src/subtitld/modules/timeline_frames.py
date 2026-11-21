@@ -14,7 +14,15 @@ out on its own:
       data-y: top, bottom, center, stretch, scale, the same up and down
       <g data-hit="start">…</g>    where the mouse grabs the start (or
                                    "end", or "body": moves the cue)
+      <g data-slice="8">…</g>      grows without stretching its 8 units at
+                                   each side: corners stay round
     </svg>
+
+A part that stretches is stretched whole, the curves of its corners with
+it. `data-slice` keeps them: the part is drawn at its own size and laid
+out in nine pieces (corners as they are, edges stretched along, the
+middle both ways), its insets one number for all four sides, two (top
+and bottom, left and right) or four (top, right, bottom, left).
 
 A part says nothing: stretch both ways, the box it is drawn as. A click
 region is the part's rectangle (its stroke too), wherever the part is
@@ -51,10 +59,10 @@ ElementTree.register_namespace('xlink', 'http://www.w3.org/1999/xlink')
 
 
 class Part:
-    __slots__ = ('id', 'x', 'y', 'hit', 'bounds')
+    __slots__ = ('id', 'x', 'y', 'hit', 'bounds', 'slice')
 
-    def __init__(self, part_id, x, y, hit, bounds):
-        self.id, self.x, self.y, self.hit, self.bounds = part_id, x, y, hit, bounds
+    def __init__(self, part_id, x, y, hit, bounds, slice_=None):
+        self.id, self.x, self.y, self.hit, self.bounds, self.slice = part_id, x, y, hit, bounds, slice_
 
     @property
     def fixed(self):
@@ -90,6 +98,22 @@ def _local(tag):
     return tag.rsplit('}', 1)[-1].lower()
 
 
+def _insets(value):
+    """data-slice as (top, right, bottom, left), as CSS writes them; None
+    for none or one that is not numbers."""
+    if not value:
+        return None
+    try:
+        numbers = [max(0.0, float(n)) for n in value.replace(',', ' ').split()]
+    except ValueError:
+        return None
+    if len(numbers) == 1:
+        numbers *= 4
+    elif len(numbers) == 2:
+        numbers *= 2
+    return tuple(numbers) if len(numbers) == 4 else None
+
+
 def _parse(data):
     """The frame in a kept shape's SVG: its parts given ids to be drawn by,
     their anchors, and where each is in the frame. None if it has none."""
@@ -103,7 +127,8 @@ def _parse(data):
         x = element.get('data-x', 'stretch')
         y = VERTICAL_ANCHORS.get(element.get('data-y', 'stretch'), 'stretch')
         hit = element.get('data-hit')
-        found.append((part_id, x if x in ANCHORS else 'stretch', y, hit if hit in HITS else None))
+        found.append((part_id, x if x in ANCHORS else 'stretch', y, hit if hit in HITS else None,
+                      _insets(element.get('data-slice'))))
     if not found:
         return None
     data = ElementTree.tostring(root)
@@ -114,11 +139,11 @@ def _parse(data):
     if view.width() <= 0 or view.height() <= 0:
         return None
     parts = []
-    for part_id, x, y, hit in found:
+    for part_id, x, y, hit, insets in found:
         # Where it is, its own transform and stroke in; from the frame's top left.
         bounds = renderer.boundsOnElement(part_id).translated(-view.x(), -view.y())
         if bounds.width() > 0 and bounds.height() > 0:
-            parts.append(Part(part_id, x, y, hit, bounds))
+            parts.append(Part(part_id, x, y, hit, bounds, insets))
     return Frame(data, view.width(), view.height(), parts) if parts else None
 
 
@@ -198,11 +223,40 @@ def paint(painter, frame, rect, color=None, scale=1.0, name='', speaker=None):
     renderer = frame.renderer(color, speaker)
     colors = (color, speaker if frame.uses_speaker else None)
     for part, target in layout(frame, rect):
-        if part.fixed:
+        if part.slice and not part.fixed:
+            image = _image(frame, renderer, part, part.bounds.width(), part.bounds.height(), colors, scale, name)
+            _nine(painter, image, part.bounds.width(), part.bounds.height(), part.slice, target)
+        elif part.fixed:
             image = _image(frame, renderer, part, target.width(), target.height(), colors, scale, name)
             painter.drawPixmap(target.topLeft(), image)
         else:
             renderer.render(painter, part.id, target)
+
+
+def _nine(painter, image, width, height, insets, target):
+    """`image` (a part drawn `width` × `height`) laid into `target` in nine
+    pieces: its insets kept, the rest stretched. Insets wider than the
+    target are shrunk to fit it."""
+    top, right, bottom, left = insets
+    left, right = min(left, width / 2.0), min(right, width / 2.0)
+    top, bottom = min(top, height / 2.0), min(bottom, height / 2.0)
+    fit_x = min(1.0, target.width() / (left + right)) if left + right else 1.0
+    fit_y = min(1.0, target.height() / (top + bottom)) if top + bottom else 1.0
+    t_left, t_right, t_top, t_bottom = left * fit_x, right * fit_x, top * fit_y, bottom * fit_y
+    ratio = image.devicePixelRatio()
+    source_x = (0.0, left, width - right, width)
+    source_y = (0.0, top, height - bottom, height)
+    target_x = (target.left(), target.left() + t_left, target.right() - t_right, target.right())
+    target_y = (target.top(), target.top() + t_top, target.bottom() - t_bottom, target.bottom())
+    for row in range(3):
+        for column in range(3):
+            into = QRectF(target_x[column], target_y[row], target_x[column + 1] - target_x[column],
+                          target_y[row + 1] - target_y[row])
+            source = QRectF(source_x[column] * ratio, source_y[row] * ratio,
+                            (source_x[column + 1] - source_x[column]) * ratio,
+                            (source_y[row + 1] - source_y[row]) * ratio)
+            if into.width() > 0 and into.height() > 0 and source.width() > 0 and source.height() > 0:
+                painter.drawPixmap(into, image, source)
 
 
 def _image(frame, renderer, part, width, height, color, scale, name):

@@ -607,6 +607,15 @@ look(frame_svg=FRAME, fill_color='#ff123456')
 check('frames without it in any state: the stripe', pixel(6.0, left + 1), speaker_rgb)
 host.timeline_widget.show_speaker_color = False
 
+ROUND = svg_file('round.svg', '<g><rect width="100" height="40" rx="10" fill="#00ff00"/></g>', '0 0 100 40')
+SLICED = svg_file('sliced.svg', '<g data-slice="10"><rect width="100" height="40" rx="10" fill="#00ff00"/></g>', '0 0 100 40')
+block_top = 5.0 + 2 / 40
+look(frame_svg=ROUND)
+check('turned and stretched whole, a corner runs far across the block', pixel(block_top, left + 20) == (0, 255, 0), False)
+look(frame_svg=SLICED)
+check('sliced, it stays round and small', (pixel(block_top, left + 20), pixel(block_top, left) == (0, 255, 0)),
+      ((0, 255, 0), False))
+
 session.CONFIG['timeline'].update({'show_grid': True, 'grid_type': 'seconds'})
 look({'grid_line_svg': NARROW, 'grid_color': '#ff00ffff'})
 check('grid lines of a shape, across, centred on their second', (pixel(10.0, middle), pixel(10.0 + 4 / 40, middle) == (0, 255, 255)),

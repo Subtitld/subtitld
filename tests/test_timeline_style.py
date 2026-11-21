@@ -507,6 +507,25 @@ check('outside the regions: nothing grabbed, nothing selected', press(200, 120),
 apply(look(frame_svg=good_name))
 check('a frame with no regions: the grab zone', (press(105), press(200, 120)), (('start', first), ('body', first)))
 
+print('sliced parts keep their corners')
+ROUND = '<g{}><rect width="100" height="40" rx="10" fill="#00ff00"/></g>'
+(shapes / 'round.svg').write_text(f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 40">{ROUND.format("")}</svg>')
+(shapes / 'round_sliced.svg').write_text(
+    f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 40">{ROUND.format(" data-slice=\"10\"")}</svg>')
+round_name = timeline_svg.import_file(shapes / 'round.svg')
+sliced_name = timeline_svg.import_file(shapes / 'round_sliced.svg')
+check('data-slice read as four insets', timeline_frames.get(sliced_name).parts[0].slice, (10.0, 10.0, 10.0, 10.0))
+check('one, two or four numbers, as CSS', [timeline_frames._insets(v) for v in ('4', '4 8', '1 2 3 4', 'x', '')],
+      [(4.0,) * 4, (4.0, 8.0, 4.0, 8.0), (1.0, 2.0, 3.0, 4.0), None, None])
+session.SUBTITLE = Subtitle({'segments': [{'start': 1.0, 'end': 3.0, 'text': '', 'speaker': 'A'}],
+                             'selected': None, 'position': 15.0})
+apply(look(frame_svg=round_name))
+check('stretched whole: a corner three times as tall as it was drawn', pixel(102, 70) == GREEN, False)
+apply(look(frame_svg=sliced_name))
+check('sliced: the corner as drawn, the edge straight past it', (pixel(102, 70), pixel(101, 56) == GREEN), (GREEN, False))
+check('the middle filled', pixel(200, 115), GREEN)
+timeline_style.reset()
+
 print('frames, timed')
 import time
 session.SUBTITLE = Subtitle({'segments': [{'start': i * 0.08, 'end': i * 0.08 + 0.06, 'text': '', 'speaker': 'A'}
