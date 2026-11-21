@@ -1,0 +1,155 @@
+"""The timeline's look, a box of settings a group (modules.timeline_style).
+
+Each field gets the control subtitle styles' fields get. A group whose
+first field is a bool the rest are `visible_if` is a group that can be
+switched off; any other field with `visible_if` or `hidden_if` shows or
+hides as its bool is set.
+
+Labels come from the locale files: `timeline_style.<key>`,
+`timeline_style.<key>.<value>` for an option and
+`timeline_style.group.<group>` for a group.
+"""
+
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtWidgets import QGridLayout, QGroupBox, QHBoxLayout, QPushButton, QVBoxLayout, QWidget
+
+from subtitld.interface.subtitle_style_panel import _text, field_control
+from subtitld.interface.translation import _
+from subtitld.modules import timeline_style
+
+COLUMNS = 2
+FONT_LIST_WIDTH = 180
+
+
+def _humane(key):
+    return key.replace('_', ' ').capitalize()
+
+
+def field_label(field):
+    return _text(f'timeline_style.{field["key"]}', _humane(field['key']))
+
+
+def option_label(field, option):
+    return _text(f'timeline_style.{field["key"]}.{option["value"]}', option.get('label') or str(option['value']))
+
+
+def group_label(group):
+    return _text(f'timeline_style.group.{group}', _humane(group))
+
+
+class TimelineStylePanel(QWidget):
+    """The timeline's settings; `changed` after each."""
+
+    changed = Signal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setLayout(QVBoxLayout())
+        self.layout().setContentsMargins(0, 0, 0, 0)
+        self.layout().setSpacing(20)
+        self.controls = {}          # key -> (field, control)
+        self.cells = {}             # key -> the widget holding its column
+        self.grids = []             # (grid, its fields' keys in order)
+        self.fields_widget = None
+
+        actions = QHBoxLayout()
+        actions.setContentsMargins(0, 0, 0, 0)
+        self.reset_button = QPushButton()
+        self.reset_button.setObjectName('timeline_style_reset_button')
+        self.reset_button.clicked.connect(self.reset)
+        actions.addWidget(self.reset_button, 0, Qt.AlignLeft)
+        actions.addStretch()
+        self.layout().addLayout(actions)
+        self.build()
+
+    # --- building ----------------------------------------------------------
+    def build(self):
+        """(Re)build the groups on the settings as they are, in the
+        interface's language."""
+        self.reset_button.setText(_('timeline_style.reset'))
+        if self.fields_widget is not None:
+            self.layout().removeWidget(self.fields_widget)
+            self.fields_widget.setParent(None)
+            self.fields_widget.deleteLater()
+        self.fields_widget = QWidget()
+        self.fields_widget.setLayout(QVBoxLayout())
+        self.fields_widget.layout().setContentsMargins(0, 0, 0, 0)
+        self.fields_widget.layout().setSpacing(20)
+        self.layout().addWidget(self.fields_widget)
+        self.controls.clear()
+        self.cells.clear()
+        self.grids.clear()
+
+        values = timeline_style.values()
+        for group in timeline_style.GROUPS:
+            fields = [f for f in timeline_style.FIELDS if f['group'] == group]
+            if fields:
+                self.fields_widget.layout().addWidget(self._group(group, fields, values))
+        self._show_dependents()
+
+    def _group(self, group, fields, values):
+        box = QGroupBox(group_label(group))
+        box.setObjectName(f'timeline_style_group_{group}')
+        grid = QGridLayout(box)
+        grid.setContentsMargins(10, 10, 10, 10)
+        grid.setHorizontalSpacing(20)
+        grid.setVerticalSpacing(10)
+        first = fields[0]
+        if first['type'] == 'bool' and len(fields) > 1 and all(f.get('visible_if') == first['key'] for f in fields[1:]):
+            box.setTitle(field_label(first))
+            box.setCheckable(True)
+            box.setChecked(values[first['key']])
+            box.toggled.connect(lambda on, key=first['key']: self._set(key, on))
+            self.controls[first['key']] = (first, box)
+            fields = fields[1:]
+        for field in fields:
+            column, control = field_control(field, values[field['key']], field_label(field),
+                                            lambda option, field=field: option_label(field, option), self._set, self)
+            self.controls[field['key']] = (field, control)
+            if field['type'] == 'font':
+                control.setMaximumWidth(FONT_LIST_WIDTH)
+            cell = QWidget()
+            cell.setLayout(column)
+            self.cells[field['key']] = cell
+        grid.setColumnStretch(COLUMNS, 1)
+        self.grids.append((grid, [f['key'] for f in fields]))
+        return box
+
+    def _shown(self, field, values):
+        """Whether a field shows: while its `visible_if` is on (unless that
+        is its group's switch, which turns the group off instead) and its
+        `hidden_if` off."""
+        if field.get('visible_if') in self.cells and not values[field['visible_if']]:
+            return False
+        return not (field.get('hidden_if') and values[field['hidden_if']])
+
+    def _show_dependents(self):
+        """Each group's fields that show, in its grid in order: no holes
+        where one is hidden."""
+        values = timeline_style.values()
+        for grid, keys in self.grids:
+            for key in keys:
+                grid.removeWidget(self.cells[key])
+            index = 0
+            for key in keys:
+                cell = self.cells[key]
+                shown = self._shown(timeline_style.FIELDS_BY_KEY[key], values)
+                cell.setVisible(shown)
+                if shown:
+                    grid.addWidget(cell, index // COLUMNS, index % COLUMNS, Qt.AlignLeft | Qt.AlignTop)
+                    index += 1
+
+    # --- changes -----------------------------------------------------------
+    def _set(self, key, value):
+        try:
+            value = timeline_style.set_value(key, value)
+        except (KeyError, ValueError):
+            return None
+        self._show_dependents()
+        self.changed.emit()
+        return value
+
+    def reset(self):
+        timeline_style.reset()
+        self.build()
+        self.changed.emit()

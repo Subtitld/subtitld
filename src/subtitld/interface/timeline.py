@@ -16,6 +16,7 @@ from subtitld.modules import utils
 from subtitld.modules import waveform_cache
 from subtitld.modules import subtitles
 from subtitld.modules import quality_check
+from subtitld.modules import timeline_style
 from subtitld.modules.segment import text_of, timed_pieces
 
 from subtitld.interface import left_panel
@@ -643,6 +644,7 @@ class Timeline(QWidget):
         widget.waveform_manager = WaveformManager(filepath=session.VIDEO.get("filepath"))
         widget.waveform_height = widget.height() - widget.subtitle_y - 10
         widget.waveform_y = 45
+        widget._apply_geometry()
 
         widget.dub_peaks = {}     # path -> (mins, maxs, duration)
         # In-progress record take, owned by RecordController and painted as an
@@ -846,8 +848,17 @@ class Timeline(QWidget):
 
         painter.setRenderHint(QPainter.Antialiasing)
 
-        grid_pen = QPen(QColor(session.CONFIG.get('timeline', {}).get('grid_color', '#336a7483')), 1, Qt.SolidLine)
-        painter.setFont(QFont('Ubuntu Mono', 8))
+        look = timeline_style.current()
+        background = look.color('background_color')
+        if background.alpha():
+            painter.fillRect(event.rect(), background)
+        ruler_background = look.color('ruler_background_color')
+        if ruler_background.alpha() and look['show_ruler']:
+            band = QFontMetrics(look.ruler_font).height() + look['ruler_top'] + 4
+            painter.fillRect(QRectF(event.rect().left(), 0, event.rect().width(), band), ruler_background)
+
+        grid_pen = QPen(look.color('grid_color'), look['grid_width'], Qt.SolidLine)
+        painter.setFont(look.ruler_font)
 
         # Iterate only the visible range. Earlier we walked every second of
         # the video and skipped via an inline `if xpos >= scroll_position …`,
@@ -883,12 +894,14 @@ class Timeline(QWidget):
         timeline_cfg = session.CONFIG.get('timeline', {})
         show_grid = timeline_cfg.get('show_grid', False)
         grid_type = timeline_cfg.get('grid_type', False)
-        text_color = QColor(timeline_cfg.get('time_text_color', '#b8b8cee0'))
+        text_color = look.color('time_text_color')
+        show_ruler = look['show_ruler']
+        ruler_top = look['ruler_top']
 
         for sec in range(sec_start, sec_end):
             xpos = sec * wpp
-            if (zoom > 75) or (zoom > 50 and zoom <= 75 and not int((sec % 2))) or (zoom > 25 and zoom <= 50 and not int((sec % 4))) or (zoom <= 25 and not int((sec % 8))):
-                lim_rect = QRectF(xpos + 3, 27, 50, 20)
+            if show_ruler and (zoom > 75) or (zoom > 50 and zoom <= 75 and not int((sec % 2))) or (zoom > 25 and zoom <= 50 and not int((sec % 4))) or (zoom <= 25 and not int((sec % 8))):
+                lim_rect = QRectF(xpos + 3, ruler_top, 80, 20)
                 painter.setPen(text_color)
                 painter.drawText(lim_rect, Qt.AlignLeft, utils.get_timeline_time_str(sec))
 
@@ -931,16 +944,16 @@ class Timeline(QWidget):
             )
 
             grad = QLinearGradient(0, 0, 0, 100)
-            c1 = QColor(session.CONFIG.get('timeline', {}).get('cursor_color', '#ccff0000'))
+            c1 = look.color('cursor_color')
             c1.setAlpha(80)
             grad.setColorAt(0, c1)
-            c2 = QColor(session.CONFIG.get('timeline', {}).get('cursor_color', '#ccff0000'))
+            c2 = look.color('cursor_color')
             c2.setAlpha(0)
             grad.setColorAt(1, c2)
 
             painter.fillRect(rep_rect, grad)
 
-        if widget.waveform_manager.samples is not None:
+        if widget.waveform_manager.samples is not None and look['show_waveform']:
             # iter_left/iter_right narrows the waveform bucket range to the
             # dirty strip; outside the strip Qt keeps the previously-painted
             # waveform from the backing store.
@@ -953,7 +966,7 @@ class Timeline(QWidget):
             mins, maxs, spb, chosen = widget.waveform_manager.get_level(samples_per_pixel, start_sample, end_sample)
             if len(mins) > 0:
                 center = widget.waveform_y + (widget.waveform_height * 0.5)
-                scale = widget.waveform_height * 0.9 / 2.0  # scale factor to map normalized -1..1 to pixels
+                scale = widget.waveform_height * (look['waveform_scale'] / 100.0) / 2.0  # scale factor to map normalized -1..1 to pixels
                 buckets_count = len(mins)
                 if buckets_count > 0:
                     pixel_per_bucket = (spb / sr) * widget.width_proportion
@@ -979,8 +992,11 @@ class Timeline(QWidget):
                         for (xx, yy) in lower:
                             path.lineTo(xx, yy)
                         path.closeSubpath()
-                        painter.setPen(QPen(QColor(session.CONFIG.get('timeline', {}).get('waveform_border_color', '#ff153450')), 1))
-                        painter.setBrush(QColor(session.CONFIG.get('timeline', {}).get('waveform_fill_color', '#cc153450')))
+                        if look['waveform_border_width'] > 0:
+                            painter.setPen(QPen(look.color('waveform_border_color'), look['waveform_border_width']))
+                        else:
+                            painter.setPen(Qt.NoPen)
+                        painter.setBrush(look.color('waveform_fill_color'))
                         painter.drawPath(path)
 
         # Onset markers (consonant-onset visual aid — see
@@ -1075,8 +1091,7 @@ class Timeline(QWidget):
 
         if session.SUBTITLE.segments:
             painter.setOpacity(1)
-            painter.setFont(QFont('Montserrat', 10))
-            painter.setPen(QColor(session.CONFIG.get('timeline', {}).get('time_text_color', '#304251')))
+            painter.setFont(look.subtitle_font)
 
             ordered_segments = list(session.SUBTITLE.segments)
             selected_subtitle = session.SUBTITLE.selected
@@ -1102,9 +1117,18 @@ class Timeline(QWidget):
             speakers_keys = list(session.SPEAKERS.keys()) if widget.show_speaker_tracks and session.SPEAKERS else []
             speakers_index = {name: i for i, name in enumerate(speakers_keys)}
             speakers_count = len(speakers_keys)
-            selected_fill = QColor(timeline_cfg.get('selected_subtitle_fill_color', '#cc3e5363'))
-            unselected_fill = QColor(timeline_cfg.get('subtitle_fill_color', '#c8dbe9'))
-            unselected_fill.setAlphaF(0.9)
+            selected_fill = look.color('selected_subtitle_fill_color')
+            unselected_fill = look.color('subtitle_fill_color')
+            fill_gradient = look['subtitle_fill_gradient']
+            selected_fill_end = look.color('selected_subtitle_fill_gradient_color')
+            unselected_fill_end = look.color('subtitle_fill_gradient_color')
+            box_radius = look['subtitle_corner_radius']
+            box_inset = look['subtitle_gap'] / 2.0
+            box_border_width = look['subtitle_border_width']
+            box_pen = QPen(look.color('subtitle_border_color'), box_border_width) if box_border_width else Qt.NoPen
+            selected_box_pen = QPen(look.color('selected_subtitle_border_color'), box_border_width) if box_border_width else Qt.NoPen
+            padding_x, padding_y = look['subtitle_padding_x'], look['subtitle_padding_y']
+            speaker_strip_height = look['speaker_strip_height']
             current_selected = session.SUBTITLE.selected
 
             # ---- Per-paint invariants ----
@@ -1119,19 +1143,20 @@ class Timeline(QWidget):
             translation_opts = translation_cfg.get('engine_options', {}) if isinstance(translation_cfg, dict) else {}
             show_translations = translation_opts.get('show_translations', False)
             translation_target_lang = translation_opts.get('target_language', 'en-us')
-            dub_waveform_color = QColor(timeline_cfg.get('dub_waveform_color', '#ffffffff'))
-            subtitle_border_color = QColor(timeline_cfg.get('subtitle_border_color', '#ff6a7483'))
+            dub_waveform_color = look.color('dub_waveform_color')
+            subtitle_border_color = look.color('subtitle_border_color')
             # Two text-color states (selected / unselected) for both the
             # normal and quality-check-failed cases.
-            text_color_unselected = QColor(timeline_cfg.get('subtitle_text_color', '#304251'))
-            text_color_selected = QColor(timeline_cfg.get('selected_subtitle_text_color', '#b8cee0'))
-            qc_text_color_unselected = QColor(timeline_cfg.get('subtitle_text_color', '#ff304251'))
-            qc_text_color_selected = QColor(timeline_cfg.get('selected_subtitle_text_color', '#ffffffff'))
-            qc_failed_color = QColor('#9e1a1a')
-            translation_separator_color = QPen(QColor(timeline_cfg.get('subtitle_text_color', '#40304251')), 1)
-            smart_splice_line_color = QColor(timeline_cfg.get('subtitle_fill_color', '#ccb8cee0'))
+            text_color_unselected = look.color('subtitle_text_color')
+            text_color_selected = look.color('selected_subtitle_text_color')
+            qc_text_color_unselected = text_color_unselected
+            qc_text_color_selected = text_color_selected
+            qc_failed_color = look.color('failed_check_text_color')
+            translation_separator_color = QPen(look.color('subtitle_text_color'), 1)
+            smart_splice_line_color = look.color('subtitle_fill_color')
             smart_splice_divider_color = QColor("#1a000000")
-            subtitle_font = QFont('Montserrat', 10)
+            subtitle_font = look.subtitle_font
+            text_flags = widget.subtitle_alignment | widget.subtitle_valign | Qt.TextWordWrap
             _rec_pending = getattr(widget, 'record_pending', None) or ()
             if _rec_pending:
                 # Not `_, _, pen, body = ...`: assigning `_` anywhere in this
@@ -1154,12 +1179,6 @@ class Timeline(QWidget):
                     continue
                 speaker_color_str = speaker_data.get('color')
 
-                painter.setPen(Qt.NoPen)
-                if current_selected == subtitle:
-                    painter.setBrush(selected_fill)
-                else:
-                    painter.setBrush(unselected_fill)
-
                 subtitle_track = [0, 1]
                 if speakers_count:
                     subtitle_track = [speakers_index.get(speaker_name, 0), speakers_count]
@@ -1173,6 +1192,23 @@ class Timeline(QWidget):
 
                 subtitle_locked = subtitle.get('locked', False)
                 full_subtitle_rect = QRectF(subtitle_rect)
+
+                # The box as the look draws it: the gap off its sides (never
+                # past half its width), its border inside it.
+                inset = min(box_inset, subtitle_rect.width() / 4.0)
+                box_rect = subtitle_rect.adjusted(inset, 0, -inset, 0)
+                if box_border_width:
+                    half = box_border_width / 2.0
+                    box_rect.adjust(half, half, -half, -half)
+                is_current = current_selected == subtitle
+                painter.setPen(selected_box_pen if is_current else box_pen)
+                if fill_gradient:
+                    box_fill = QLinearGradient(0, box_rect.top(), 0, box_rect.bottom())
+                    box_fill.setColorAt(0, selected_fill if is_current else unselected_fill)
+                    box_fill.setColorAt(1, selected_fill_end if is_current else unselected_fill_end)
+                    painter.setBrush(QBrush(box_fill))
+                else:
+                    painter.setBrush(selected_fill if is_current else unselected_fill)
                 if subtitle_locked:
                     painter.save()
                     painter.setOpacity(0.18)
@@ -1186,10 +1222,10 @@ class Timeline(QWidget):
                     painter.setPen(_rec_pen)
                     if current_selected != subtitle:
                         painter.setBrush(_rec_body)
-                    painter.drawRoundedRect(subtitle_rect, 3.0, 3.0, Qt.AbsoluteSize)
+                    painter.drawRoundedRect(box_rect, box_radius, box_radius, Qt.AbsoluteSize)
                     painter.restore()
                 else:
-                    painter.drawRoundedRect(subtitle_rect, 3.0, 3.0, Qt.AbsoluteSize)
+                    painter.drawRoundedRect(box_rect, box_radius, box_radius, Qt.AbsoluteSize)
 
                 if subtitle.get('dubbing') and dubbing_enabled:
                     dub = subtitle['dubbing'][0]
@@ -1773,23 +1809,15 @@ class Timeline(QWidget):
                                 painter.restore()
 
                 if widget.show_speaker_color and speaker_color_str:
-                    sr = 3.0
-                    strip_h = 3.0
-                    sx = subtitle_rect.left()
-                    sw = subtitle_rect.width()
-                    sy = subtitle_rect.top()
+                    # The box's top edge in the speaker's colour, inside the
+                    # box's own shape whatever its corners.
+                    box_shape = QPainterPath()
+                    box_shape.addRoundedRect(box_rect, box_radius, box_radius, Qt.AbsoluteSize)
                     strip = QPainterPath()
-                    strip.moveTo(sx + sr, sy)
-                    strip.lineTo(sx + sw - sr, sy)
-                    strip.arcTo(sx + sw - 2 * sr, sy, 2 * sr, 2 * sr, 90, -90)
-                    strip.lineTo(sx + sw, sy + strip_h)
-                    strip.lineTo(sx, sy + strip_h)
-                    strip.lineTo(sx, sy + sr)
-                    strip.arcTo(sx, sy, 2 * sr, 2 * sr, 180, -90)
-                    strip.closeSubpath()
+                    strip.addRect(QRectF(box_rect.left(), box_rect.top(), box_rect.width(), speaker_strip_height))
                     painter.setPen(Qt.NoPen)
                     painter.setBrush(QColor(speaker_color_str))
-                    painter.drawPath(strip)
+                    painter.drawPath(box_shape.intersected(strip))
 
                 subtitle_is_selected = current_selected == subtitle
                 if quality_check_enabled:
@@ -1818,13 +1846,13 @@ class Timeline(QWidget):
                         timeline_pieces.paint(widget, painter, subtitle,
                                               QRectF(pieces_box.left(), rect.top(), pieces_box.width(), rect.height()))
                     else:
-                        painter.drawText(rect, widget.subtitle_alignment | Qt.TextWordWrap, text)
+                        painter.drawText(rect, text_flags, text)
 
                 if _live_sub is not None and subtitle is _live_sub:
                     # Reuse the rect the loop already computed (speaker tracks,
                     # locking, etc.) rather than duplicating that geometry.
                     _live_target_rect = QRectF(subtitle_rect)
-                subtitle_rect -= QMarginsF(26, 6, 26, 6)
+                subtitle_rect -= QMarginsF(padding_x, padding_y, padding_x, padding_y)
 
                 painter.setFont(subtitle_font)
 
@@ -1853,7 +1881,7 @@ class Timeline(QWidget):
                     else:
                         painter.setPen(text_color_unselected)
 
-                    painter.drawText(translated_subtitle_rect - QMarginsF(0, 5, 0, 5), widget.subtitle_alignment | Qt.TextWordWrap, markup.plain(subtitle.get('translations', {}).get(translation_target_lang, '')))
+                    painter.drawText(translated_subtitle_rect - QMarginsF(0, 5, 0, 5), text_flags, markup.plain(subtitle.get('translations', {}).get(translation_target_lang, '')))
 
                     painter.setPen(translation_separator_color)
                     painter.setBrush(Qt.NoBrush)
@@ -1961,7 +1989,7 @@ class Timeline(QWidget):
                 traceback.print_exc(file=_sys.stderr)
 
         if bool(widget.show_tug_of_war):
-            tug_of_war_pen = QPen(QColor(session.CONFIG.get('timeline', {}).get('selected_subtitle_arrow_color', '#ff969696')), 4, Qt.SolidLine, Qt.RoundCap)
+            tug_of_war_pen = QPen(look.color('selected_subtitle_arrow_color'), 4, Qt.SolidLine, Qt.RoundCap)
             painter.setPen(tug_of_war_pen)
             xpos = int(widget.show_tug_of_war * widget.width_proportion) - 4
             y_tug_pos = 0
@@ -1974,7 +2002,7 @@ class Timeline(QWidget):
         widget._paint_collaborators(painter)
 
         if (session.SUBTITLE.position or 0) is not None:
-            painter.setPen(QPen(QColor(session.CONFIG.get('timeline', {}).get('cursor_color', '#ccff0000')), 2, Qt.SolidLine))
+            painter.setPen(QPen(look.color('cursor_color'), look['cursor_width'], Qt.SolidLine))
             # Sub-pixel cursor position. Truncating to int (the old code
             # did `int(position * width_proportion)`) snaps the cursor
             # to the nearest pixel column every frame, which at 60 Hz
@@ -2000,7 +2028,7 @@ class Timeline(QWidget):
 
                 cfont_metr = QFontMetrics(cfont).horizontalAdvance(text)
 
-                c_ind_color = QColor(session.CONFIG.get('timeline', {}).get('cursor_color', '#ccff0000'))
+                c_ind_color = look.color('cursor_color')
                 c_ind_color.setAlpha(150)
                 painter.setBrush(c_ind_color)
                 painter.setPen(Qt.NoPen)
@@ -2014,14 +2042,14 @@ class Timeline(QWidget):
                 painter.drawPath(path)
 
                 painter.setFont(cfont)
-                painter.setPen(QPen(QColor(session.CONFIG.get('timeline', {}).get('cursor_text_indicator', '#ffffffff'))))
+                painter.setPen(QPen(look.color('cursor_text_indicator')))
                 text_rect = path.boundingRect() + QMarginsF(5, 0, 5, 0)
                 painter.drawText(text_rect, Qt.AlignCenter | Qt.TextWordWrap, text)
 
         # Off-screen cursor indicators (only when auto-scroll is disabled).
         if session.CONFIG.get('timeline', {}).get('scrolling', 'page') == 'none' and (session.SUBTITLE.position or 0) is not None:
             cursor_pos = (session.SUBTITLE.position or 0) * widget.width_proportion
-            arrow_color = QColor(session.CONFIG.get('timeline', {}).get('cursor_color', '#ccff0000'))
+            arrow_color = look.color('cursor_color')
             arrow_color.setAlpha(220)
             arrow_size = 6.0
             arrow_margin = 4.0
@@ -2055,15 +2083,16 @@ class Timeline(QWidget):
             phantom_y = widget.subtitle_y
             phantom_h = widget.subtitle_height
             phantom_rect = QRectF(phantom_x, phantom_y, phantom_w, phantom_h)
-            phantom_border = QColor(session.CONFIG.get('timeline', {}).get('subtitle_border_color', '#ff6a7483'))
+            phantom_border = look.color('subtitle_border_color')
             phantom_border.setAlphaF(0.35)
             painter.setPen(QPen(phantom_border, 1))
             painter.setBrush(Qt.NoBrush)
-            painter.drawRoundedRect(phantom_rect, 3.0, 3.0, Qt.AbsoluteSize)
-            phantom_text_color = QColor(session.CONFIG.get('timeline', {}).get('subtitle_text_color', '#304251'))
+            phantom_radius = look['subtitle_corner_radius']
+            painter.drawRoundedRect(phantom_rect, phantom_radius, phantom_radius, Qt.AbsoluteSize)
+            phantom_text_color = look.color('subtitle_text_color')
             phantom_text_color.setAlphaF(0.85)
             painter.setPen(phantom_text_color)
-            painter.setFont(QFont('Montserrat', 10))
+            painter.setFont(look.subtitle_font)
             painter.drawText(phantom_rect - QMarginsF(8, 4, 8, 4), Qt.AlignCenter | Qt.TextWordWrap, _('timeline.empty_state_label'))
 
     def mousePressEvent(widget, event):
@@ -2981,9 +3010,29 @@ class Timeline(QWidget):
     def resizeEvent(widget, event):
         """Function to call when timeline is resized"""
         widget.width_proportion = widget.width() / session.VIDEO.get('duration', 0.01)
-        widget.subtitle_height = widget.height() - 80
-        widget.waveform_height = widget.height() - widget.subtitle_y - 10
+        widget._apply_geometry()
         event.accept()
+
+    def _apply_geometry(widget):
+        """Where the subtitles and the waveform are, as the look says."""
+        look = timeline_style.current()
+        height = widget.height()
+        if look['subtitle_full_height']:
+            top, bottom = 0, 0
+        else:
+            top, bottom = look['subtitle_top'], look['subtitle_bottom']
+        widget.subtitle_y = top
+        widget.subtitle_height = max(10, height - top - bottom)
+        widget.waveform_y = look['waveform_top']
+        widget.waveform_height = max(0, height - look['waveform_top'] - look['waveform_bottom'])
+        valign = look['subtitle_text_vertical_alignment']
+        widget.subtitle_valign = {'top': Qt.AlignTop, 'center': Qt.AlignVCenter, 'bottom': Qt.AlignBottom}[valign]
+
+    def apply_style(widget):
+        """Paint again with the look as it is now."""
+        widget._onset_marker_pm_cache = None
+        widget._apply_geometry()
+        widget.update()
 
     def update_size(widget):
         # A resize, not a move to 0: the scroll area places the timeline where its scroll bar is.
@@ -3749,8 +3798,7 @@ class Timeline(QWidget):
         cache = getattr(widget, '_onset_marker_pm_cache', None)
         if cache is not None and cache[1] == h:
             return cache[0]
-        base_str = session.CONFIG.get('timeline', {}).get('onset_marker_color', '#ffd9a0')
-        base = QColor(base_str)
+        base = timeline_style.current().color('onset_marker_color')
         line_color = QColor(base); line_color.setAlpha(85)
         # Both the line and the halo are kept subtle so they read as a
         # background guide rather than competing with the waveform /
@@ -3837,9 +3885,9 @@ def _live_colors():
     different kind of object — the earlier yellow said "warning", which is the
     wrong idea for something working exactly as intended.
     """
-    cfg = session.CONFIG.get('timeline', {}) if isinstance(session.CONFIG, dict) else {}
-    border = QColor(cfg.get('subtitle_border_color', '#ff6a7483'))
-    fill = QColor(cfg.get('subtitle_fill_color', '#c8dbe9'))
+    look = timeline_style.current()
+    border = look.color('subtitle_border_color')
+    fill = look.color('subtitle_fill_color')
     # Alphas chosen so the dashes stay legible over the track while the body
     # stays clearly lighter than a committed cue.
     accent = QColor(border)
@@ -3941,7 +3989,8 @@ def _paint_live_take(widget, painter, live, target_rect):
             pen = QPen(accent, 1.5, Qt.DashLine)
             painter.setPen(pen)
             painter.setBrush(body)
-            painter.drawRoundedRect(cue_rect, 3.0, 3.0, Qt.AbsoluteSize)
+            radius = timeline_style.current()['subtitle_corner_radius']
+            painter.drawRoundedRect(cue_rect, radius, radius, Qt.AbsoluteSize)
         finally:
             painter.restore()
 

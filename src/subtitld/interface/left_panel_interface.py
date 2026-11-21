@@ -4,6 +4,7 @@ from PySide6.QtGui import QColor
 
 from subtitld.interface import left_panel
 from subtitld.interface.subtitle_style_panel import SubtitleStylePanel
+from subtitld.interface.timeline_style_panel import TimelineStylePanel
 from subtitld.interface.translation import _
 from subtitld.modules import session
 
@@ -210,6 +211,16 @@ def load(self):
 
     self.global_panel_interface_tabwidget.addTab(self.global_panel_interface_tabwidget_videoplayer, '')
 
+    # The timeline's look: its colours, fonts and the shape of its subtitles.
+    self.global_panel_interface_tabwidget_timeline = QWidget()
+    self.global_panel_interface_tabwidget_timeline.setLayout(QVBoxLayout())
+    self.global_panel_interface_tabwidget_timeline.layout().setContentsMargins(10, 10, 10, 10)
+    self.global_panel_interface_timeline_style_panel = TimelineStylePanel()
+    self.global_panel_interface_timeline_style_panel.changed.connect(lambda: refresh_timeline(self))
+    self.global_panel_interface_tabwidget_timeline.layout().addWidget(self.global_panel_interface_timeline_style_panel)
+    self.global_panel_interface_tabwidget_timeline.layout().addStretch()
+    self.global_panel_interface_tabwidget.addTab(self.global_panel_interface_tabwidget_timeline, '')
+
     self.left_panel_interface_panel_widget.layout().addWidget(self.global_panel_interface_tabwidget)
 
 
@@ -236,6 +247,15 @@ def refresh_preview(self):
     """Repaint the subtitle drawn over the video with the new settings."""
     if hasattr(self, 'preview_panel_player'):
         self.preview_panel_player._graphics_video_item.update()
+
+
+def refresh_timeline(self):
+    """Paint the timelines again with the new look."""
+    if hasattr(self, 'timeline_widget'):
+        self.timeline_widget.apply_style()
+    vtimeline_panel = getattr(self, 'vtimeline_panel', None)
+    if vtimeline_panel is not None:
+        vtimeline_panel.scroll.canvas.update()
 
 
 def global_panel_interface_videoplayer_safe_margin_action_group_toggled(self):
@@ -290,6 +310,7 @@ def hide(self):
     
 def translate(self):    
     self.global_panel_interface_style_panel.build()
+    self.global_panel_interface_timeline_style_panel.build()
     self.global_panel_interface_videoplayer_safe_margin_action_group.setTitle(_('interface_panel.action_safe_margin'))
     self.global_panel_interface_videoplayer_safe_margin_action_x_margin_label.setText(_('interface_panel.horizontal_margin'))
     self.global_panel_interface_videoplayer_safe_margin_action_y_margin_label.setText(_('interface_panel.vertical_margin'))
@@ -306,6 +327,7 @@ def translate(self):
     self.global_panel_interface_videoplayer_safe_margin_title_color_button.setAccessibleName(
         f"{_('interface_panel.title_safe_margin')}: {_('units.color')}")
     self.global_panel_interface_tabwidget.setTabText(0, _('interface_panel.video_player'))
+    self.global_panel_interface_tabwidget.setTabText(1, _('interface_panel.timeline'))
     self.global_panel_interface_videoplayer_safe_margin_title_x_margin_pixels_label.setText(_('units.pixels'))
 
 

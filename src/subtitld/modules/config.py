@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from subtitld.modules import subtitle_styles
+from subtitld.modules import subtitle_styles, timeline_style
 from subtitld.modules.session import PATH_SUBTITLD_USER_CONFIG_FILE
 
 # The timeline's zoom, in pixels a second: the wheel, the buttons and the
@@ -42,6 +42,9 @@ class Config(dict):
         timeline = self.get('timeline')
         if isinstance(timeline, dict) and timeline.get('grid_type') == 'scenes':
             timeline['grid_type'] = 'shot_changes'
+
+        # The timeline's colours used to be loose in it; they are its style now.
+        timeline_style.migrate(self)
 
     def __getitem__(self, key):
         return super().get(key, False)  # returns False if not found

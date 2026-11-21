@@ -65,6 +65,69 @@ def _column(label, control, unit=None):
     return column
 
 
+def paint_color(button, value):
+    button.setStyleSheet('QPushButton { background-color: ' + value + ' }')
+
+
+def field_control(field, value, label, option_text, on_set, parent=None):
+    """The control a field's type asks for, on `value`, and its column (label
+    over control and unit). `on_set(key, value)` saves a change and gives the
+    value as saved, or None when it was not; `option_text(option)` names a
+    select's option."""
+    key, kind = field['key'], field['type']
+    if kind in ('int', 'number'):
+        control = QSpinBox() if kind == 'int' else QDoubleSpinBox()
+        if kind == 'number':
+            control.setDecimals(2)
+        low, high = field.get('min', -999999), field.get('max', 999999)
+        control.setRange(*((int(low), int(high)) if kind == 'int' else (low, high)))
+        if field.get('step') is not None:
+            control.setSingleStep(field['step'])
+        control.setValue(value)
+        control.valueChanged.connect(lambda number: on_set(key, number))
+        return _column(label, control, field.get('unit')), control
+    if kind == 'bool':
+        control = QCheckBox(label)
+        control.setChecked(value)
+        control.toggled.connect(lambda on: on_set(key, on))
+        return _column(None, control), control
+    if kind == 'select':
+        control = QComboBox()
+        for option in field['options']:
+            control.addItem(option_text(option), option['value'])
+        control.setCurrentIndex(max(0, control.findData(value)))
+        control.activated.connect(lambda index: on_set(key, control.itemData(index)))
+    elif kind == 'font':
+        control = QComboBox()
+        control.addItems(QFontDatabase.families())
+        if control.findText(value) < 0:
+            control.addItem(value)          # a font this system has not: still the setting
+        control.setCurrentText(value)
+        control.activated.connect(lambda index: on_set(key, control.itemText(index)))
+    elif kind == 'color':
+        control = QPushButton()
+        control.setProperty('class', 'color_pick_button')
+        control.setProperty('color_value', value)
+        control.setFixedWidth(80)
+        if label:
+            control.setAccessibleName(label)
+        paint_color(control, value)
+
+        def pick():
+            color = QColorDialog.getColor(QColor(control.property('color_value')), parent,
+                                          options=QColorDialog.ShowAlphaChannel)
+            if color.isValid():
+                saved = on_set(key, color.name(QColor.HexArgb))
+                if saved is not None:
+                    control.setProperty('color_value', saved)
+                    paint_color(control, saved)
+        control.clicked.connect(pick)
+    else:
+        control = QLineEdit(value)
+        control.editingFinished.connect(lambda: on_set(key, control.text()))
+    return _column(label, control, field.get('unit')), control
+
+
 class SubtitleStylePanel(QWidget):
     """Pick the style; set its settings. `changed` after either."""
 
@@ -139,72 +202,19 @@ class SubtitleStylePanel(QWidget):
         return group
 
     def _field(self, style, field, value):
-        key, kind = field['key'], field['type']
-        label = field_label(style, field)
-        if kind in ('int', 'number'):
-            control = QSpinBox() if kind == 'int' else QDoubleSpinBox()
-            if kind == 'number':
-                control.setDecimals(2)
-            low, high = field.get('min', -999999), field.get('max', 999999)
-            control.setRange(*((int(low), int(high)) if kind == 'int' else (low, high)))
-            if field.get('step') is not None:
-                control.setSingleStep(field['step'])
-            control.setValue(value)
-            control.valueChanged.connect(lambda number, key=key: self._set(key, number))
-            self.controls[key] = (field, control)
-            return _column(label, control, field.get('unit'))
-        if kind == 'bool':
-            control = QCheckBox(label)
-            control.setChecked(value)
-            control.toggled.connect(lambda on, key=key: self._set(key, on))
-            self.controls[key] = (field, control)
-            return _column(None, control)
-        if kind == 'select':
-            control = QComboBox()
-            for option in field['options']:
-                control.addItem(option_label(style, field, option), option['value'])
-            control.setCurrentIndex(max(0, control.findData(value)))
-            control.activated.connect(lambda index, key=key, control=control: self._set(key, control.itemData(index)))
-        elif kind == 'font':
-            control = QComboBox()
-            control.addItems(QFontDatabase.families())
-            if control.findText(value) < 0:
-                control.addItem(value)          # a font this system has not: still the setting
-            control.setCurrentText(value)
-            control.activated.connect(lambda index, key=key, control=control: self._set(key, control.itemText(index)))
-        elif kind == 'color':
-            control = QPushButton()
-            control.setProperty('class', 'color_pick_button')
-            control.setFixedWidth(80)
-            if label:
-                control.setAccessibleName(label)
-            self._paint_color(control, value)
-            control.clicked.connect(lambda checked=False, key=key, control=control: self._pick_color(key, control))
-        else:
-            control = QLineEdit(value)
-            control.editingFinished.connect(lambda key=key, control=control: self._set(key, control.text()))
-        self.controls[key] = (field, control)
-        return _column(label, control, field.get('unit'))
-
-    @staticmethod
-    def _paint_color(button, value):
-        button.setStyleSheet('QPushButton { background-color: ' + value + ' }')
+        column, control = field_control(field, value, field_label(style, field),
+                                        lambda option: option_label(style, field, option), self._set, self)
+        self.controls[field['key']] = (field, control)
+        return column
 
     # --- changes -----------------------------------------------------------
     def _set(self, key, value):
         try:
-            subtitle_styles.set_value(key, value)
+            value = subtitle_styles.set_value(key, value)
         except (KeyError, ValueError):
-            return
+            return None
         self.changed.emit()
-
-    def _pick_color(self, key, button):
-        current = QColor(subtitle_styles.values()[key])
-        color = QColorDialog.getColor(current, self, options=QColorDialog.ShowAlphaChannel)
-        if color.isValid():
-            value = subtitle_styles.set_value(key, color.name(QColor.HexArgb))
-            self._paint_color(button, value)
-            self.changed.emit()
+        return value
 
     def _picked(self, index):
         style_id = self.picker.itemData(index)

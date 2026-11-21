@@ -25,7 +25,7 @@ from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QScrollA
 
 from subtitld.interface import left_panel
 from subtitld.interface.translation import _
-from subtitld.modules import markup, quality_check, session, subtitles, utils
+from subtitld.modules import markup, quality_check, session, subtitles, timeline_style, utils
 from subtitld.modules.segment import text_of
 
 
@@ -64,7 +64,8 @@ def _config():
 
 
 def _timeline_config():
-    return session.CONFIG.get('timeline') or {}
+    """The timeline's settings, its look's among them."""
+    return {**(session.CONFIG.get('timeline') or {}), **timeline_style.values()}
 
 
 def _duration():
@@ -495,7 +496,7 @@ class VerticalTimeline(QWidget):
         minor = step / 5 if step >= 5 else (step / 2 if step >= 2 else (1.0 if self.pps >= 60 else None))
         if minor is not None and minor * self.pps < 5:
             minor = None
-        painter.setFont(QFont('Ubuntu Mono', 8))
+        painter.setFont(timeline_style.current().ruler_font)
         metrics = painter.fontMetrics()
         right = ruler[1] - 4
 
@@ -637,11 +638,10 @@ class VerticalTimeline(QWidget):
             alignment = {'left': Qt.AlignLeft, 'center': Qt.AlignHCenter, 'right': Qt.AlignRight}.get(
                 (session.CONFIG.get('default_values') or {}).get('subtitle_alignment', 'left'), Qt.AlignLeft)
         selected_fill = QColor(cfg.get('selected_subtitle_fill_color', '#cc3e5363'))
-        fill = QColor(cfg.get('subtitle_fill_color', '#c8dbe9'))
-        fill.setAlphaF(0.9)
+        fill = QColor(cfg.get('subtitle_fill_color', '#e6c8dbe9'))
         text_color = QColor(cfg.get('subtitle_text_color', '#304251'))
         selected_text_color = QColor(cfg.get('selected_subtitle_text_color', '#b8cee0'))
-        failed_color = QColor('#9e1a1a')
+        failed_color = QColor(cfg.get('failed_check_text_color', '#ff9e1a1a'))
         separator = QPen(QColor(cfg.get('subtitle_text_color', '#40304251')), 1)
         quality = (session.CONFIG.get('quality_check') or {}).get('enabled', False)
         dubbing = (session.CONFIG.get('dubbing') or {}).get('enabled', False)
@@ -649,7 +649,7 @@ class VerticalTimeline(QWidget):
         options = translation.get('engine_options', {}) if isinstance(translation, dict) else {}
         show_translations = options.get('show_translations', False)
         target_language = options.get('target_language', 'en-us')
-        font = QFont('Montserrat', 10)
+        font = timeline_style.current().subtitle_font
         columns = self.speaker_columns()
 
         for subtitle in segments:
