@@ -46,6 +46,10 @@ _TIMELINE_FIELDS = [
     # The timeline behind everything; transparent shows the window's own.
     {'key': 'background_color', 'type': 'color', 'default': '#00000000', 'group': 'background'},
     {'key': 'ruler_background_color', 'type': 'color', 'default': '#00000000', 'group': 'background'},
+    # SVG tiles repeated along the timeline, as tall as it (or as the
+    # ruler's band), each its own width; currentColor is the colour above.
+    {'key': 'background_svg', 'type': 'text', 'default': '', 'file': 'svg', 'group': 'background'},
+    {'key': 'ruler_background_svg', 'type': 'text', 'default': '', 'file': 'svg', 'group': 'background'},
 
     {'key': 'show_ruler', 'type': 'bool', 'default': True, 'group': 'ruler'},
     {'key': 'time_text_color', 'type': 'color', 'default': '#b8b8cee0', 'group': 'ruler', 'visible_if': 'show_ruler'},
@@ -71,10 +75,18 @@ _TIMELINE_FIELDS = [
      'group': 'ruler_ticks', 'visible_if': 'ruler_ticks'},
     {'key': 'ruler_subdivisions', 'type': 'int', 'default': 4, 'min': 0, 'max': 10, 'group': 'ruler_ticks',
      'visible_if': 'ruler_ticks'},
+    # SVG ticks, as long as a tick, as wide as their shape, centred on their
+    # time, pointing away from the ruler's edge (drawn for a ruler at the top).
+    {'key': 'ruler_tick_svg', 'type': 'text', 'default': '', 'file': 'svg', 'group': 'ruler_ticks',
+     'visible_if': 'ruler_ticks'},
+    {'key': 'ruler_subtick_svg', 'type': 'text', 'default': '', 'file': 'svg', 'group': 'ruler_ticks',
+     'visible_if': 'ruler_ticks'},
 
     {'key': 'grid_color', 'type': 'color', 'default': '#336a7483', 'group': 'grid'},
     {'key': 'grid_width', 'type': 'number', 'default': 1.0, 'min': 0.5, 'max': 6.0, 'step': 0.5, 'unit': 'px',
      'group': 'grid'},
+    # An SVG line: its own width, as tall as the timeline, centred on its time.
+    {'key': 'grid_line_svg', 'type': 'text', 'default': '', 'file': 'svg', 'group': 'grid'},
 
     {'key': 'show_waveform', 'type': 'bool', 'default': True, 'group': 'waveform'},
     {'key': 'waveform_fill_color', 'type': 'color', 'default': '#cc153450', 'group': 'waveform',
@@ -114,10 +126,16 @@ _TIMELINE_FIELDS = [
      'visible_if': 'cursor_show_time'},
     {'key': 'cursor_time_text_color', 'type': 'color', 'default': '#ffffffff', 'group': 'cursor',
      'visible_if': 'cursor_show_time'},
+    # An SVG frame (modules.timeline_frames) behind the time, in its background colour.
+    {'key': 'cursor_time_svg', 'type': 'text', 'default': '', 'file': 'svg', 'group': 'cursor',
+     'visible_if': 'cursor_show_time'},
 
     # The badge saying the playback repeats or is sped up.
     {'key': 'cursor_badge_shape', 'type': 'select', 'default': 'slanted',
-     'options': ['slanted', 'rectangle', 'rounded'], 'group': 'cursor_badge'},
+     'options': ['slanted', 'rectangle', 'rounded', 'custom'], 'group': 'cursor_badge'},
+    # An SVG frame as the badge, in its colour.
+    {'key': 'cursor_badge_svg', 'type': 'text', 'default': '', 'file': 'svg', 'group': 'cursor_badge',
+     'visible_when': ['cursor_badge_shape', 'custom']},
     {'key': 'cursor_badge_side', 'type': 'select', 'default': 'left', 'options': ['left', 'right'],
      'group': 'cursor_badge'},
     {'key': 'cursor_badge_top', 'type': 'int', 'default': 25, 'min': 0, 'max': 400, 'unit': 'px',
@@ -133,6 +151,13 @@ _TIMELINE_FIELDS = [
     {'key': 'repeat_area_gradient', 'type': 'bool', 'default': True, 'group': 'marks'},
     # Where the playhead is, when it is out of view.
     {'key': 'offscreen_arrow_color', 'type': 'color', 'default': '#dcff0000', 'group': 'marks'},
+    # SVG marks, each its own size but where it says: the arrow pointing
+    # right (mirrored for the left), the onset marker and the push handle as
+    # tall as the timeline and the subtitles' lane, their left at their time
+    # (the push handle centred on it). currentColor is the colour above.
+    {'key': 'offscreen_arrow_svg', 'type': 'text', 'default': '', 'file': 'svg', 'group': 'marks'},
+    {'key': 'onset_marker_svg', 'type': 'text', 'default': '', 'file': 'svg', 'group': 'marks'},
+    {'key': 'push_handle_svg', 'type': 'text', 'default': '', 'file': 'svg', 'group': 'marks'},
 ]
 
 
@@ -161,6 +186,8 @@ _BOX_FIELDS = [
     {'key': 'frame_hover_svg', 'type': 'text', 'default': '', 'file': 'svg', 'group': 'frame'},
     {'key': 'frame_locked_svg', 'type': 'text', 'default': '', 'file': 'svg', 'group': 'frame'},
     {'key': 'frame_failed_svg', 'type': 'text', 'default': '', 'file': 'svg', 'group': 'frame'},
+    # The padlock on a locked box: its own size, at the box's top right.
+    {'key': 'lock_svg', 'type': 'text', 'default': '', 'file': 'svg', 'group': 'frame'},
 
     {'key': 'fill_color', 'type': 'color', 'default': '#e6c8dbe9', 'group': 'fill'},
     {'key': 'selected_fill_color', 'type': 'color', 'default': '#cc3e5363', 'group': 'fill'},

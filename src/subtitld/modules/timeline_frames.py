@@ -21,7 +21,9 @@ region is the part's rectangle (its stroke too), wherever the part is
 laid out; a frame without one leaves the grab zone to the look's setting.
 
 `currentColor` is the colour the frame is drawn in (the box's fill for
-its state). A part pinned both ways keeps its size in every box: it is
+its state), `speakerColor` the colour of the cue's speaker (the fill when
+speaker colours are off): a frame with it draws the speaker's colour
+where it likes, in place of the timeline's strip along the top. A part pinned both ways keeps its size in every box: it is
 drawn into an image once (for each colour and screen scale) and copied
 after. A part that stretches or scales changes with every box, and is
 drawn from the SVG each time.
@@ -64,13 +66,18 @@ class Frame:
 
     def __init__(self, data, width, height, parts):
         self.data, self.width, self.height, self.parts = data, width, height, parts
+        self.uses_speaker = b'speakerColor' in data
         self._renderers = {}
 
-    def renderer(self, color):
-        if color not in self._renderers:
+    def renderer(self, color, speaker=None):
+        speaker = (speaker or color) if self.uses_speaker else None
+        key = (color, speaker)
+        if key not in self._renderers:
             data = self.data.replace(b'currentColor', color.encode('ascii')) if color else self.data
-            self._renderers[color] = QSvgRenderer(QByteArray(data))
-        return self._renderers[color]
+            if speaker:
+                data = data.replace(b'speakerColor', speaker.encode('ascii'))
+            self._renderers[key] = QSvgRenderer(QByteArray(data))
+        return self._renderers[key]
 
     @property
     def has_regions(self):
@@ -176,12 +183,14 @@ def hit(frame, rect, point):
     return None
 
 
-def paint(painter, frame, rect, color=None, scale=1.0, name=''):
-    """The frame drawn as a box in `rect`, its currentColor `color`."""
-    renderer = frame.renderer(color)
+def paint(painter, frame, rect, color=None, scale=1.0, name='', speaker=None):
+    """The frame drawn as a box in `rect`, its currentColor `color`, its
+    speakerColor `speaker` ("#rrggbb" both)."""
+    renderer = frame.renderer(color, speaker)
+    colors = (color, speaker if frame.uses_speaker else None)
     for part, target in layout(frame, rect):
         if part.fixed:
-            image = _image(frame, renderer, part, target.width(), target.height(), color, scale, name)
+            image = _image(frame, renderer, part, target.width(), target.height(), colors, scale, name)
             painter.drawPixmap(target.topLeft(), image)
         else:
             renderer.render(painter, part.id, target)

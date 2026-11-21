@@ -136,6 +136,19 @@ def takes_color(name):
     return _takes_color[name]
 
 
+def natural_size(name):
+    """Its width and height at 1 unit a pixel (its viewBox, or the size it
+    says); (0, 0) when it cannot be drawn."""
+    renderer = _renderer(name, None)
+    if renderer is None:
+        return 0.0, 0.0
+    box = renderer.viewBoxF()
+    if box.width() > 0 and box.height() > 0:
+        return box.width(), box.height()
+    size = renderer.defaultSize()
+    return float(size.width()), float(size.height())
+
+
 def aspect(name):
     """Its width over its height, 1 when it says neither."""
     renderer = _renderer(name, None)

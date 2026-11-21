@@ -528,5 +528,85 @@ print(f'  100 boxes in view, a full repaint: {plain_ms:.1f} ms plain, {framed_ms
 check('a frame keeps a full repaint of 100 boxes under 16 ms', framed_ms < 16, True)
 timeline_style.reset()
 
+print('every other part, as SVG')
+import numpy as np
+
+
+def svg_file(name, body, view='0 0 10 10'):
+    (shapes / name).write_bytes(f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{view}">{body}</svg>'.encode())
+    return timeline_svg.import_file(shapes / name)
+
+
+TILE = svg_file('tile.svg', '<rect width="10" height="10" fill="#ff0000"/><rect x="10" width="10" height="10" fill="currentColor"/>',
+                '0 0 20 10')
+SOLID = svg_file('solid.svg', '<rect width="10" height="10" fill="currentColor"/>')
+NARROW = svg_file('narrow.svg', '<rect width="4" height="10" fill="currentColor"/>', '0 0 4 10')
+LOCK = svg_file('lock.svg', '<rect width="10" height="10" fill="#ff8800"/>')
+SPEAKER = svg_file('speaker.svg', '<g data-x="stretch"><rect width="100" height="40" fill="currentColor"/></g>'
+                   '<g data-x="stretch" data-y="top"><rect width="100" height="6" fill="speakerColor"/></g>', '0 0 100 40')
+session.SUBTITLE = Subtitle({'segments': [{'start': 1.0, 'end': 3.0, 'text': '', 'speaker': 'A'},
+                                          {'start': 3.5, 'end': 6.0, 'text': '', 'speaker': 'A'}],
+                             'selected': None, 'position': 6.0})
+
+apply(look({'background_svg': TILE, 'background_color': '#ff0000ff'}))
+check('a background tile, repeated, its currentColor the background colour', (pixel(705, 5), pixel(715, 5), pixel(725, 5)),
+      ('#ffff0000', '#ff0000ff', '#ffff0000'))
+apply(look({'show_ruler': True, 'ruler_background_svg': TILE, 'ruler_background_color': '#ff00ff00'}))
+check('the ruler\'s band tiled', (pixel(705, 10), pixel(715, 10)), ('#ffff0000', '#ff00ff00'))
+
+session.CONFIG['timeline'].update({'show_grid': True, 'grid_type': 'seconds'})
+apply(look({'grid_line_svg': NARROW, 'grid_color': '#ff00ffff'}))
+check('grid lines of a shape, centred on their second', (pixel(699, 5), pixel(701, 5), pixel(704, 5) == '#ff00ffff'),
+      ('#ff00ffff', '#ff00ffff', False))
+session.CONFIG['timeline'].update({'show_grid': False})
+
+apply(look({'ruler_ticks': True, 'ruler_tick_svg': SOLID, 'ruler_tick_length': 10, 'ruler_tick_color': '#ffffff00',
+            'ruler_offset': 20, 'ruler_subdivisions': 0}))
+check('ticks of a shape, as long as a tick', (pixel(98, 25), pixel(98, 33) == '#ffffff00'), ('#ffffff00', False))
+
+session.CONFIG['playback_speed'] = 1.5
+apply(look({'cursor_badge_shape': 'custom', 'cursor_badge_svg': frame_name, 'cursor_show_time': True,
+            'cursor_time_svg': frame_name}))
+check('the badge a frame: its caps at its sides', (pixel(560, 36), pixel(597, 40)), ('#ffff0000', '#ff0000ff'))
+check('the playhead\'s time in a frame', pixel(604, 40), '#ffff0000')
+session.CONFIG['playback_speed'] = 1.0
+
+session.CONFIG['timeline']['scrolling'] = 'none'
+session.SUBTITLE.position = 15.0
+apply(look({'offscreen_arrow_svg': SOLID, 'offscreen_arrow_color': '#ff00ff00'}))
+check('the arrow to a playhead off the right, a shape', pixel(792, 33), '#ff00ff00')
+session.SUBTITLE.position = 6.0
+session.CONFIG['timeline']['scrolling'] = 'page'
+
+widget.background_onsets = np.array([2.0])
+session.CONFIG['timeline']['show_onset_markers'] = True
+apply(look({'onset_marker_svg': NARROW, 'onset_marker_color': '#ff00ff00'}))
+check('onset markers of a shape, from their time', (pixel(201, 190), pixel(206, 190) == '#ff00ff00'), ('#ff00ff00', False))
+session.CONFIG['timeline']['show_onset_markers'] = False
+widget.background_onsets = None
+
+widget.show_tug_of_war = 3.0
+apply(look({'push_handle_svg': NARROW, 'selected_subtitle_arrow_color': '#ff00ffff'}))
+check('the push handle a shape, on the meeting', pixel(299, 100), '#ff00ffff')
+widget.show_tug_of_war = False
+
+session.SUBTITLE.segments[0]['locked'] = True
+apply(look(lock_svg=LOCK))
+check('a padlock of a shape at a locked box\'s top right', pixel(290, 63), '#ffff8800')
+session.SUBTITLE.segments[0]['locked'] = False
+
+widget.show_speaker_color = True
+apply(look(frame_svg=SPEAKER, fill_color='#ff123456'))
+check('speakerColor: the speaker\'s colour where the frame puts it, no strip of the timeline\'s',
+      (pixel(200, 58), pixel(200, 100)), ('#ffff2e93', '#ff123456'))
+widget.show_speaker_color = False
+widget.update()
+check('speaker colours off: the fill there', pixel(200, 58), '#ff123456')
+widget.show_speaker_color = True
+apply(look(frame_svg=frame_name, fill_color='#ff123456'))
+check('a frame without it: the timeline\'s strip over it', pixel(200, 56), '#ffff2e93')
+widget.show_speaker_color = False
+timeline_style.reset()
+
 print('FAILED:' if fails else 'ALL PASS', fails if fails else '')
 sys.exit(1 if fails else 0)
