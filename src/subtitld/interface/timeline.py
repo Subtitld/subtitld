@@ -1,6 +1,5 @@
 import hashlib
 import math
-from collections import OrderedDict
 import os
 import time
 from bisect import bisect
@@ -8,7 +7,7 @@ import numpy as np
 import subprocess
 
 from PySide6.QtWidgets import QWidget, QScrollArea, QSizePolicy
-from PySide6.QtGui import QPainter, QPen, QColor, QFont, QPainterPath, QLinearGradient, QRadialGradient, QFontMetrics, QPixmap, QCursor, QBrush, QPolygonF
+from PySide6.QtGui import QPainter, QPen, QColor, QFont, QPainterPath, QLinearGradient, QRadialGradient, QFontMetrics, QPixmap, QCursor, QBrush
 from PySide6.QtCore import Qt, QRect, QRectF, QPointF, QLineF, QThread, Signal, QMarginsF, QTimer, QMargins
 
 from subtitld.modules import config
@@ -648,9 +647,8 @@ class Timeline(QWidget):
         widget.audio_thread.finished.connect(widget.on_waveform_loaded)
 
         widget.waveform_manager = WaveformManager(filepath=session.VIDEO.get("filepath"))
-        # The waveform drawn, a tile at a time (_waveform_tile): oldest first.
-        widget._waveform_tiles = OrderedDict()
-        widget._waveform_tiles_bytes = 0
+        # The waveform drawn, a tile at a time (_waveform_tile).
+        widget._waveform_tiles = timeline_shapes.TileCache(WAVEFORM_TILES_BYTES)
         widget.waveform_height = widget.height() - widget.subtitle_y - 10
         widget.waveform_y = 45
         widget._apply_geometry()
@@ -800,51 +798,20 @@ class Timeline(QWidget):
         last = min(len(all_mins), int((left + WAVEFORM_TILE) / wpp * sr) // spb + 3)
         if last - first < 2:
             return None
-        mins, maxs = all_mins[first:last], all_maxs[first:last]
         border = look['waveform_border_width']
         scale = widget.devicePixelRatioF()
-        key = (index, wpp, sr, chosen, id(manager.levels[chosen][0]), widget.waveform_y, widget.waveform_height,
+        key = (index, wpp, sr, chosen, id(all_mins), widget.waveform_y, widget.waveform_height,
                widget.height(), look['waveform_scale'], look['waveform_fill_color'], look['waveform_border_color'],
                border, scale)
-        tiles = widget._waveform_tiles
-        tile = tiles.get(key)
+        tile = widget._waveform_tiles.get(key)
         if tile is not None:
-            tiles.move_to_end(key)
             return tile
-
-        height = widget.height()
-        tile = QPixmap(int(math.ceil(WAVEFORM_TILE * scale)), int(math.ceil(height * scale)))
-        tile.setDevicePixelRatio(scale)
-        tile.fill(Qt.transparent)
         center = widget.waveform_y + widget.waveform_height * 0.5
         amplitude = widget.waveform_height * (look['waveform_scale'] / 100.0) / 2.0
-        pixel_per_bucket = spb / sr * wpp
-        # A bucket's min and max at its middle: the time they stand for; at
-        # the audio's very start and end, its first and last reach the edge.
-        xs = (first + 0.5 + np.arange(len(mins))) * pixel_per_bucket - left
-        mins, maxs = np.asarray(mins, dtype=np.float64), np.asarray(maxs, dtype=np.float64)
-        if first == 0:
-            xs, mins, maxs = np.r_[-left, xs], np.r_[mins[0], mins], np.r_[maxs[0], maxs]
-        if last == len(all_mins):
-            end = len(all_mins) * pixel_per_bucket - left
-            xs, mins, maxs = np.r_[xs, end], np.r_[mins, mins[-1]], np.r_[maxs, maxs[-1]]
-        upper = center - maxs * amplitude
-        lower = center - mins * amplitude
-        polygon = QPolygonF([QPointF(x, y) for x, y in zip(xs.tolist(), upper.tolist())]
-                            + [QPointF(x, y) for x, y in zip(xs[::-1].tolist(), lower[::-1].tolist())])
-        p = QPainter(tile)
-        p.setRenderHint(QPainter.Antialiasing)
-        p.setPen(QPen(look.color('waveform_border_color'), border) if border > 0 else Qt.NoPen)
-        p.setBrush(look.color('waveform_fill_color'))
-        p.drawPolygon(polygon)
-        p.end()
-
-        tiles[key] = tile
-        widget._waveform_tiles_bytes += tile.width() * tile.height() * 4
-        while widget._waveform_tiles_bytes > WAVEFORM_TILES_BYTES and len(tiles) > 1:
-            _old_key, old = tiles.popitem(last=False)
-            widget._waveform_tiles_bytes -= old.width() * old.height() * 4
-        return tile
+        polygon = timeline_shapes.waveform_polygon(manager.levels[chosen], first, last, spb / sr * wpp, left,
+                                                   center, amplitude)
+        return widget._waveform_tiles.put(
+            key, timeline_shapes.waveform_tile(WAVEFORM_TILE, widget.height(), scale, polygon, look))
 
     def _ruler_geometry(widget, look):
         """The labels' top and height: `ruler_offset` from the top or the

@@ -442,6 +442,10 @@ class _Settings:
     def __getitem__(self, key):
         return self._values[key]
 
+    def settings(self):
+        """Every setting, as made once for the look (not to be changed)."""
+        return self._values
+
     def color(self, key):
         return QColor(self._colors[key])
 

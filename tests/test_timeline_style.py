@@ -664,7 +664,6 @@ manager.samples = np.zeros(1, np.int16)
 quiet_then_loud = np.r_[np.full(1000, 0.05), np.full(19000, 0.9)].astype(np.float32)
 manager.levels[512] = (-quiet_then_loud[::512].copy(), quiet_then_loud[::512].copy(), 512)
 widget._waveform_tiles.clear()
-widget._waveform_tiles_bytes = 0
 apply(look({'waveform_fill_color': '#ff00ff00', 'waveform_border_width': 0}))
 widget.repaint()
 tiles_made = len(widget._waveform_tiles)
@@ -678,16 +677,15 @@ check('another colour: tiles made anew in it', (pixel(600, 70), len(widget._wave
 manager.levels[128] = (-quiet_then_loud[::128].copy(), quiet_then_loud[::128].copy(), 128)
 widget.repaint()
 check('a finer level ready: drawn with it', len(widget._waveform_tiles), 3 * tiles_made)
-held = timeline.WAVEFORM_TILES_BYTES
-timeline.WAVEFORM_TILES_BYTES = next(iter(widget._waveform_tiles.values())).width() * height * 4 * 2
+held = widget._waveform_tiles.limit
+widget._waveform_tiles.limit = next(iter(widget._waveform_tiles.tiles.values())).width() * height * 4 * 2
 apply(look({'waveform_fill_color': '#ff0000ff', 'waveform_border_width': 0}))
 widget.repaint()
 check('kept within its bytes, the oldest let go', len(widget._waveform_tiles), 2)
-timeline.WAVEFORM_TILES_BYTES = held
+widget._waveform_tiles.limit = held
 manager.levels = {}
 manager.samples = None
 widget._waveform_tiles.clear()
-widget._waveform_tiles_bytes = 0
 timeline_style.reset()
 
 print('themes: one JSON file, its SVGs in it')

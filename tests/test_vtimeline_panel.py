@@ -637,6 +637,46 @@ timeline_style.reset()
 canvas.update()
 check('without an error', canvas._last_paint_error, None)
 
+print('the waveform, a tile at a time down the lane')
+from subtitld.interface.timeline import WaveformManager
+manager = WaveformManager()
+signal = np.full(60000, 0.8, np.float32)
+manager.samples = np.zeros(1, np.int16)
+manager.levels[512] = (-signal[::512].copy(), signal[::512].copy(), 512)
+manager._start_worker_if_missing = lambda key: None
+session.VIDEO['samplerate'] = 1000
+host.timeline_widget.waveform_manager = manager
+canvas._waveform_tiles.clear()
+canvas.grab()
+made = len(canvas._waveform_tiles)
+check('tiles made for the canvas', made > 0, True)
+wave_x = (canvas.lanes()[1][0] + canvas.lanes()[1][1]) / 2
+check('drawn', whiteness(pixel(3.0, wave_x)) < 120, True)
+check('painted again: the same tiles, none made', len(canvas._waveform_tiles), made)
+host.timeline_widget.waveform_manager = None
+session.VIDEO['samplerate'] = 48000
+
+print('a playback strip: the blocks in it alone')
+from subtitld.interface import timeline_shapes
+from subtitld.modules import timeline_themes
+reset_document()
+timeline_themes.apply('subtitld.classic')
+scroll.verticalScrollBar().setValue(0)
+session.SUBTITLE.position = 6.0
+framed = []
+original_frame = timeline_shapes.frame
+timeline_shapes.frame = lambda widget, painter, name, rect, *rest, **named: (
+    framed.append(round(canvas.time_at(rect.top()), 2)), original_frame(widget, painter, name, rect, *rest, **named))[1]
+canvas.repaint()
+every = len(framed)
+framed.clear()
+canvas.repaint(canvas.playhead_strip(6.0))
+timeline_shapes.frame = original_frame
+check('a full repaint frames every block in view; the strip, the one it crosses', (every > 1, framed), (True, [5.0]))
+timeline_style.reset()
+timeline_themes.forget_current()
+canvas.update()
+
 print()
 print('FAILED:' if fails else 'ALL PASS', fails if fails else '')
 sys.exit(1 if fails else 0)

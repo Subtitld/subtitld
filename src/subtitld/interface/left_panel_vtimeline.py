@@ -33,6 +33,9 @@ TOP = 10                # px above 0 s, so its label is not cut
 BOTTOM = 30             # px below the end
 RULER_WIDTH = 46
 WAVEFORM_WIDTH = 52
+# The waveform is drawn in tiles this tall, kept up to this many bytes.
+WAVEFORM_TILE = 512
+WAVEFORM_TILES_BYTES = 8 * 1024 * 1024
 LANE_GAP = 6
 RIGHT_MARGIN = 8
 EDGE_SHOWN = 40         # px a block needs before its edges light up, as on the timeline
@@ -63,8 +66,10 @@ def _config():
 
 
 def _timeline_config():
-    """The timeline's settings, its look's among them."""
-    return {**(session.CONFIG.get('timeline') or {}), **timeline_style.values()}
+    """The timeline's settings, its look's among them (the look's as made
+    once, not read again from the config at each of the many calls a
+    paint makes)."""
+    return {**(session.CONFIG.get('timeline') or {}), **timeline_style.current().settings()}
 
 
 def _duration():
@@ -292,6 +297,9 @@ class VerticalTimeline(QWidget):
         self._ruler_label = None
         self._ruler_width = RULER_WIDTH
         self._onset_pixmap = None
+        # The waveform drawn, a tile at a time down the canvas (_waveform_tile).
+        self._waveform_tiles = timeline_shapes.TileCache(WAVEFORM_TILES_BYTES)
+        self._paint_rect = QRectF()
         self._clip_paths = {}
         self._up_cursor = _arrow_cursor('up')
         self._down_cursor = _arrow_cursor('down')
@@ -470,6 +478,7 @@ class VerticalTimeline(QWidget):
 
     def _paint(self, painter, rect):
         painter.setRenderHint(QPainter.Antialiasing)
+        self._paint_rect = QRectF(rect)
         cfg = _timeline_config()
         duration = _duration()
         ruler, waveform, subs = self.lanes()
@@ -615,34 +624,49 @@ class VerticalTimeline(QWidget):
                     grid_at(self.y_at(cut))
 
     def _paint_waveform(self, painter, cfg, top_time, bottom_time, lane):
+        """The waveform, as the timeline draws it, down the lane: a tile at a
+        time, copied (only those in the rows being painted)."""
         manager = getattr(self.timeline(), 'waveform_manager', None)
         if manager is None or getattr(manager, 'samples', None) is None:
             return
-        rate = session.VIDEO.get('samplerate', 48000) or 48000
-        start_sample = int(top_time * rate)
-        end_sample = int(bottom_time * rate)
-        mins, maxs, per_bucket, _chosen = manager.get_level(max(1, int(rate / self.pps)), start_sample, end_sample)
-        count = len(mins)
-        if not count:
+        look = timeline_style.current()
+        if not look['show_waveform']:
             return
-        center = (lane[0] + lane[1]) / 2
-        scale = (lane[1] - lane[0]) * 0.9 / 2
-        step = (per_bucket / rate) * self.pps
-        y = self.y_at((start_sample // per_bucket) * per_bucket / rate)
-        right_side = []
-        for i in range(count):
-            right_side.append(QPointF(center + float(maxs[i]) * scale, y))
-            y += step
-        left_side = []
-        for i in range(count - 1, -1, -1):
-            y -= step
-            left_side.append(QPointF(center + float(mins[i]) * scale, y))
-        path = QPainterPath()
-        path.addPolygon(QPolygonF(right_side + left_side))
-        path.closeSubpath()
-        painter.setPen(QPen(QColor(cfg.get('waveform_border_color', '#ff153450')), 1))
-        painter.setBrush(QColor(cfg.get('waveform_fill_color', '#cc153450')))
-        painter.drawPath(path)
+        first = int(self.y_at(top_time) // WAVEFORM_TILE)
+        last = int(self.y_at(bottom_time) // WAVEFORM_TILE)
+        for index in range(max(0, first), last + 1):
+            tile = self._waveform_tile(manager, look, index, lane)
+            if tile is not None:
+                painter.drawPixmap(QPointF(lane[0], index * WAVEFORM_TILE), tile)
+
+    def _waveform_tile(self, manager, look, index, lane):
+        """The waveform over canvas rows [index, index + 1) × WAVEFORM_TILE, as
+        wide as its lane, made once for what it is drawn from (as the
+        timeline's tiles are); None while there is no level to draw."""
+        rate = session.VIDEO.get('samplerate', 48000) or 48000
+        top = index * WAVEFORM_TILE
+        start, end = self.time_at(top), self.time_at(top + WAVEFORM_TILE)
+        _mins, _maxs, per_bucket, chosen = manager.get_level(max(1, int(rate / self.pps)), max(0, int(start * rate)),
+                                                             max(0, int(end * rate)))
+        if chosen is None:
+            return None
+        level = manager.levels[chosen]
+        per_bucket = level[2]
+        first = max(0, int(start * rate) // per_bucket - 2)
+        last = min(len(level[0]), int(end * rate) // per_bucket + 3)
+        if last - first < 2:
+            return None
+        width = lane[1] - lane[0]
+        scale = self.devicePixelRatioF()
+        key = (index, self.pps, rate, chosen, id(level[0]), width, look['waveform_scale'], look['waveform_fill_color'],
+               look['waveform_border_color'], look['waveform_border_width'], scale)
+        tile = self._waveform_tiles.get(key)
+        if tile is not None:
+            return tile
+        polygon = timeline_shapes.waveform_polygon(level, first, last, per_bucket / rate * self.pps, top - TOP,
+                                                   width / 2.0, width * look['waveform_scale'] / 100.0 / 2.0,
+                                                   vertical=True)
+        return self._waveform_tiles.put(key, timeline_shapes.waveform_tile(width, WAVEFORM_TILE, scale, polygon, look))
 
     def _onset_marker(self, cfg):
         """The timeline's onset glyph, turned: a thin line across the
@@ -730,6 +754,12 @@ class VerticalTimeline(QWidget):
         columns = self.speaker_columns()
 
         for subtitle in segments:
+            # Wholly outside what is being painted (while the video plays, a
+            # strip around the playhead): none of it shows, but for a dub
+            # clip, which can reach past its block.
+            if not self.block_rect(subtitle, columns).adjusted(-2, -2, 2, 2).intersects(self._paint_rect) \
+                    and not (dubbing and subtitle.get('dubbing')):
+                continue
             kind = timeline_style.kind_of(subtitle)
             if kind not in kinds:
                 box = look.box(kind)
