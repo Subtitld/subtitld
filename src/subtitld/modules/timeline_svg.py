@@ -94,7 +94,7 @@ def import_file(path):
     return name
 
 
-def _data(name):
+def read(name):
     """A kept shape's SVG, checked again (it is a file anyone could change),
     or None."""
     if not isinstance(name, str) or not _NAME.fullmatch(name):
@@ -115,7 +115,7 @@ _takes_color = {}       # name -> whether it has currentColor
 def _renderer(name, color):
     key = (name, color)
     if key not in _renderers:
-        data = _data(name)
+        data = read(name)
         if data is not None and color and b'currentColor' in data:
             data = data.replace(b'currentColor', color.encode('ascii'))
         renderer = QSvgRenderer(QByteArray(data)) if data is not None else None
@@ -131,7 +131,7 @@ def available(name):
 def takes_color(name):
     """Whether the shape is drawn in the colour it is given (currentColor)."""
     if name not in _takes_color:
-        data = _data(name)
+        data = read(name)
         _takes_color[name] = data is not None and b'currentColor' in data
     return _takes_color[name]
 

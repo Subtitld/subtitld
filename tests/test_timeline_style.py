@@ -18,10 +18,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 import json
 from PySide6.QtWidgets import QApplication, QGroupBox, QWidget, QVBoxLayout
 from PySide6.QtGui import QColor
-from PySide6.QtCore import QPoint
+from PySide6.QtCore import QPoint, Qt
 from PySide6.QtTest import QTest
 app = QApplication([])
-from subtitld.modules import config, history, session, timeline_style, timeline_svg
+from subtitld.modules import config, history, session, timeline_frames, timeline_style, timeline_svg
 from subtitld.modules.segment import Subtitle
 from subtitld.interface import timeline
 from subtitld.interface.timeline_style_panel import BOX, TIMELINE, TimelineStylePanel
@@ -191,7 +191,7 @@ groups = panel.fields_widget.findChildren(QGroupBox)
 check('a box a group, the boxes\' after the waveform; the ruler, its ticks and the waveform switched on and off',
       [(g.title(), g.isCheckable()) for g in groups],
       [('Background', False), ('Time ruler', True), ('Ruler ticks', True), ('Grid', False), ('Waveform', True),
-       ('Boxes', False), ('Box fill', False), ('Box text', False), ('Start and end edges', False), ('Playhead', False),
+       ('Boxes', False), ('Frames (SVG)', False), ('Box fill', False), ('Box text', False), ('Start and end edges', False), ('Playhead', False),
        ('Repeat and speed badge', False), ('Marks', False)])
 check('one kind: no picking it', panel.kind_holder.isHidden(), True)
 check('labels from the locale files', (control('full_height').text(), panel.reset_button.text()),
@@ -451,6 +451,81 @@ apply(look())
 hover(500, 190)
 check('not as far by default', hover(135), None)
 hover(500, 190)
+timeline_style.reset()
+
+print('box frames')
+FRAME = b'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 40">
+  <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#00ff00"/><stop offset="1" stop-color="#00ff00"/></linearGradient></defs>
+  <g data-x="stretch"><rect x="0" y="0" width="100" height="40" fill="url(#g)"/></g>
+  <g data-x="left" data-hit="start"><rect x="0" y="0" width="12" height="40" fill="#ff0000"/></g>
+  <g data-x="right" data-hit="end"><rect x="88" y="0" width="12" height="40" fill="#0000ff"/></g>
+  <g data-x="center" data-y="top" data-hit="body"><rect x="40" y="0" width="20" height="10" fill="currentColor"/></g>
+</svg>'''
+(shapes / 'frame.svg').write_bytes(FRAME)
+(shapes / 'selected.svg').write_bytes(FRAME.replace(b'#00ff00', b'#ffffff'))
+frame_name = timeline_svg.import_file(shapes / 'frame.svg')
+selected_name = timeline_svg.import_file(shapes / 'selected.svg')
+frame = timeline_frames.get(frame_name)
+check('its parts and their anchors', [(p.x, p.y, p.hit) for p in frame.parts],
+      [('stretch', 'stretch', None), ('left', 'stretch', 'start'), ('right', 'stretch', 'end'), ('center', 'left', 'body')])
+placed = [r.getRect() for _, r in timeline_frames.layout(frame, timeline.QRectF(200, 50, 300, 80))]
+check('laid out in a box 300 × 80: stretched, pinned left, right, centred at the top',
+      placed, [(200.0, 50.0, 300.0, 80.0), (200.0, 50.0, 12.0, 80.0), (488.0, 50.0, 12.0, 80.0), (340.0, 50.0, 20.0, 10.0)])
+box = timeline.QRectF(200, 50, 300, 80)
+check('its click regions', [timeline_frames.hit(frame, box, timeline.QPointF(x, y)) for x, y in
+                            ((205, 90), (495, 90), (350, 55), (350, 100))], ['start', 'end', 'body', None])
+(shapes / 'empty.svg').write_bytes(b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><defs/></svg>')
+check('a shape with nothing to draw is no frame', timeline_frames.get(timeline_svg.import_file(shapes / 'empty.svg')), None)
+
+session.SUBTITLE = Subtitle({'segments': [{'start': 1.0, 'end': 3.0, 'text': '', 'speaker': 'A'},
+                                          {'start': 3.5, 'end': 6.0, 'text': '', 'speaker': 'A'}],
+                             'selected': None, 'position': 15.0})
+apply(look(frame_svg=frame_name, frame_selected_svg=selected_name, fill_color='#ff123456'))
+check('the frame drawn as the box: its caps at its sides, the middle stretched',
+      (pixel(105, 100), pixel(200, 100), pixel(295, 100)), ('#ffff0000', '#ff00ff00', '#ff0000ff'))
+check('currentColor: the box\'s fill', pixel(200, 58), '#ff123456')
+session.SUBTITLE.selected = session.SUBTITLE.segments[1]
+widget.update()
+check('the selected state\'s own frame', (pixel(450, 100), pixel(200, 100)), ('#ffffffff', '#ff00ff00'))
+session.SUBTITLE.selected = None
+
+
+def press(x, y=100):
+    QTest.mousePress(widget, Qt.LeftButton, Qt.NoModifier, QPoint(x, y))
+    grabbed = ('start' if widget.subtitle_start_is_clicked else 'end' if widget.subtitle_end_is_clicked
+               else 'body' if widget.subtitle_is_clicked else None, session.SUBTITLE.selected)
+    QTest.mouseRelease(widget, Qt.LeftButton, Qt.NoModifier, QPoint(x, y))
+    session.SUBTITLE.selected = None
+    return grabbed
+
+
+first = session.SUBTITLE.segments[0]
+check('a press in the start region grabs the start', press(105), ('start', first))
+check('in the end region, the end', press(295), ('end', first))
+check('in the body region, the cue', press(200, 60), ('body', first))
+check('outside the regions: nothing grabbed, nothing selected', press(200, 120), (None, None))
+apply(look(frame_svg=good_name))
+check('a frame with no regions: the grab zone', (press(105), press(200, 120)), (('start', first), ('body', first)))
+
+print('frames, timed')
+import time
+session.SUBTITLE = Subtitle({'segments': [{'start': i * 0.08, 'end': i * 0.08 + 0.06, 'text': '', 'speaker': 'A'}
+                                          for i in range(100)], 'selected': None, 'position': 15.0})
+
+
+def full_repaint_ms(new_look, rounds=20):
+    apply(new_look)
+    widget.repaint()
+    started = time.perf_counter()
+    for _ in range(rounds):
+        widget.repaint()
+    return (time.perf_counter() - started) / rounds * 1000
+
+
+plain_ms = full_repaint_ms(look())
+framed_ms = full_repaint_ms(look(frame_svg=frame_name))
+print(f'  100 boxes in view, a full repaint: {plain_ms:.1f} ms plain, {framed_ms:.1f} ms with a frame')
+check('a frame keeps a full repaint of 100 boxes under 16 ms', framed_ms < 16, True)
 timeline_style.reset()
 
 print('FAILED:' if fails else 'ALL PASS', fails if fails else '')

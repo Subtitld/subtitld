@@ -17,6 +17,7 @@ from subtitld.modules import utils
 from subtitld.modules import waveform_cache
 from subtitld.modules import subtitles
 from subtitld.modules import quality_check
+from subtitld.modules import timeline_frames
 from subtitld.modules import timeline_style
 from subtitld.modules import timeline_svg
 from subtitld.modules.segment import text_of, timed_pieces
@@ -1329,7 +1330,7 @@ class Timeline(QWidget):
                      unselected_fill_end, box_radius, box_inset, box_border_width, box_pen, selected_box_pen,
                      padding_x, padding_y, speaker_strip_height, subtitle_border_color, text_color_unselected,
                      text_color_selected, qc_failed_color, translation_separator_color, smart_splice_line_color,
-                     subtitle_font, text_flags) = (*widget.lane(kind), *box_paints[kind])
+                     subtitle_font, text_flags, box_look) = (*widget.lane(kind), *box_paints[kind])
                     qc_text_color_unselected, qc_text_color_selected = text_color_unselected, text_color_selected
                     painter.setFont(subtitle_font)
 
@@ -1355,6 +1356,19 @@ class Timeline(QWidget):
                     half = box_border_width / 2.0
                     box_rect.adjust(half, half, -half, -half)
                 is_current = current_selected == subtitle
+                qc_approved = quality_check.check_subtitle(subtitle)[0] if quality_check_enabled else True
+                # The state's SVG frame, if the kind's look has one: drawn in
+                # place of the fill and the border.
+                if is_current:
+                    frame_state = 'selected'
+                elif not qc_approved:
+                    frame_state = 'failed'
+                elif subtitle is widget.subtitle_under_the_cursor:
+                    frame_state = 'hover'
+                else:
+                    frame_state = 'locked' if subtitle_locked else 'normal'
+                frame_name = box_look.frame_name(frame_state)
+                frame = timeline_frames.get(frame_name)
                 painter.setPen(selected_box_pen if is_current else box_pen)
                 if fill_gradient:
                     box_fill = QLinearGradient(0, box_rect.top(), 0, box_rect.bottom())
@@ -1378,6 +1392,10 @@ class Timeline(QWidget):
                         painter.setBrush(_rec_body)
                     painter.drawRoundedRect(box_rect, box_radius, box_radius, Qt.AbsoluteSize)
                     painter.restore()
+                elif frame is not None:
+                    timeline_frames.paint(painter, frame, box_rect,
+                                          (selected_fill if is_current else unselected_fill).name(QColor.HexRgb),
+                                          widget.devicePixelRatioF(), frame_name)
                 else:
                     painter.drawRoundedRect(box_rect, box_radius, box_radius, Qt.AbsoluteSize)
 
@@ -1975,8 +1993,7 @@ class Timeline(QWidget):
 
                 subtitle_is_selected = current_selected == subtitle
                 if quality_check_enabled:
-                    approved, _qc_reasons, _qc_issues = quality_check.check_subtitle(subtitle)
-                    if not approved:
+                    if not qc_approved:
                         painter.setPen(qc_failed_color)
                     elif subtitle_is_selected:
                         painter.setPen(qc_text_color_selected)
@@ -2485,18 +2502,21 @@ class Timeline(QWidget):
                 if widget.show_limiters and subtitle == widget.subtitle_under_the_cursor:
 
                 # if event.pos().y() > widget.subtitle_y and event.pos().y() < (widget.subtitle_height + widget.subtitle_y) and (((event.pos().x()) / widget.width_proportion) > subtitle['start'] and ((event.pos().x()) / widget.width_proportion) < (subtitle['end'])):
+                    edge = widget.edge_under(subtitle, event.pos(), prefer='end')
+                    if edge is None:
+                        # Outside its frame's click regions: the timeline under it.
+                        break
                     session.SUBTITLE.selected = subtitle
                     if subtitle.get('locked'):
                         # Locked subtitles can be selected but not dragged / resized.
                         break
-                    grab = timeline_style.current().box(timeline_style.kind_of(subtitle))['edge_grab_width'] / widget.width_proportion
-                    if event.pos().x() / widget.width_proportion > (subtitle['end']) - grab:
+                    if edge == 'end':
                         widget.subtitle_end_is_clicked = True
                         widget.offset = ((session.SUBTITLE.selected['end']) * widget.width_proportion) - event.pos().x()
                         widget.tug_of_war_pressed = widget.show_tug_of_war
                     else:
                         widget.offset = event.pos().x() - session.SUBTITLE.selected['start'] * widget.width_proportion
-                        if event.pos().x() / widget.width_proportion < subtitle['start'] + grab:
+                        if edge == 'start':
                             widget.subtitle_start_is_clicked = True
                             widget.tug_of_war_pressed = widget.show_tug_of_war
                         else:
@@ -2900,7 +2920,11 @@ class Timeline(QWidget):
         cursor_time_position = event.pos().x() / widget.width_proportion #(event.pos().x() / widget.width()) * session.VIDEO.get('duration', 60)
         cursor_tug_of_war_range = 10 / widget.width_proportion
 
-        widget.subtitle_under_the_cursor = subtitles.subtitle_under_current_position(position=cursor_time_position)
+        under = subtitles.subtitle_under_current_position(position=cursor_time_position)
+        if under is not widget.subtitle_under_the_cursor and any(
+                timeline_style.current().box(kind)['frame_hover_svg'] for kind in timeline_style.KINDS):
+            widget.update()     # a box's hover frame on, another's off
+        widget.subtitle_under_the_cursor = under
         last, next = subtitles.get_adjacent_subtitles(position=cursor_time_position)
         
         if not widget.tug_of_war_pressed:
@@ -2921,18 +2945,18 @@ class Timeline(QWidget):
 
             new_edge_hover = None
             if not widget.is_cursor_pressing and widget.show_limiters and not widget.subtitle_under_the_cursor.get('locked'):
-                grab = timeline_style.current().box(timeline_style.kind_of(widget.subtitle_under_the_cursor))['edge_grab_width']
-                edge_range = grab / widget.width_proportion if widget.width_proportion > 0 else 0
-                near_start = cursor_time_position < widget.subtitle_under_the_cursor['start'] + edge_range
-                near_end = cursor_time_position > widget.subtitle_under_the_cursor['end'] - edge_range
-                if near_start:
+                edge = widget.edge_under(widget.subtitle_under_the_cursor, event.pos())
+                if edge == 'start':
                     widget.setCursor(widget._left_arrow_cursor)
                     new_edge_hover = (id(widget.subtitle_under_the_cursor), 'start')
-                elif near_end:
+                elif edge == 'end':
                     widget.setCursor(widget._right_arrow_cursor)
                     new_edge_hover = (id(widget.subtitle_under_the_cursor), 'end')
-                else:
+                elif edge == 'body':
                     widget.setCursor(Qt.SizeHorCursor)
+                else:
+                    # Outside its frame's click regions: nothing to grab.
+                    widget.unsetCursor()
             if new_edge_hover != widget.subtitle_edge_hovered:
                 widget.subtitle_edge_hovered = new_edge_hover
                 widget.update()
@@ -3134,10 +3158,57 @@ class Timeline(QWidget):
         """The top and height of the band a kind of cue's boxes are in."""
         return widget.lanes.get(kind) or widget.lanes[timeline_style.SUBTITLE]
 
+    def box_rect(widget, subtitle):
+        """Where a cue's box is drawn: its kind's lane, its speaker's row,
+        the look's gap off its sides."""
+        kind = timeline_style.kind_of(subtitle)
+        lane_y, lane_height = widget.lane(kind)
+        row, rows = 0, 1
+        if widget.show_speaker_tracks and session.SPEAKERS:
+            speakers = list(session.SPEAKERS.keys())
+            rows = len(speakers)
+            row = speakers.index(subtitle.get('speaker', 'A')) if subtitle.get('speaker', 'A') in speakers else 0
+        rect = QRectF(subtitle['start'] * widget.width_proportion, lane_y + lane_height / rows * row,
+                      (subtitle['end'] - subtitle['start']) * widget.width_proportion, lane_height / rows)
+        inset = min(timeline_style.current().box(kind)['gap'] / 2.0, rect.width() / 4.0)
+        return rect.adjusted(inset, 0, -inset, 0)
+
+    def frame_state(widget, subtitle):
+        """Which of its look's frames a cue's box is drawn with now."""
+        if subtitle is session.SUBTITLE.selected:
+            return 'selected'
+        box = timeline_style.current().box(timeline_style.kind_of(subtitle))
+        if box['frame_failed_svg'] and session.CONFIG.get('quality_check', {}).get('enabled', False) \
+                and not quality_check.check_subtitle(subtitle)[0]:
+            return 'failed'
+        if subtitle is widget.subtitle_under_the_cursor:
+            return 'hover'
+        return 'locked' if subtitle.get('locked') else 'normal'
+
+    def edge_under(widget, subtitle, pos, prefer='start'):
+        """What of a cue `pos` grabs: 'start' or 'end' (that edge), 'body'
+        (the cue, to move it) or None (nothing: outside its frame's click
+        regions). By the frame's regions when it has them, by the look's grab
+        zone otherwise. A box too short for both edges gives `prefer`."""
+        box = timeline_style.current().box(timeline_style.kind_of(subtitle))
+        frame = timeline_frames.get(box.frame_name(widget.frame_state(subtitle)))
+        if frame is not None and frame.has_regions:
+            found = timeline_frames.regions(frame, widget.box_rect(subtitle))
+            point = QPointF(pos)
+            order = ('end', 'start', 'body') if prefer == 'end' else ('start', 'end', 'body')
+            return next((what for what in order if any(r.contains(point) for r in found.get(what, ()))), None)
+        grab = box['edge_grab_width']
+        x = pos.x()
+        near = {'start': x < subtitle['start'] * widget.width_proportion + grab,
+                'end': x > subtitle['end'] * widget.width_proportion - grab}
+        order = ('end', 'start') if prefer == 'end' else ('start', 'end')
+        return next((edge for edge in order if near[edge]), 'body')
+
     def apply_style(widget):
         """Paint again with the look as it is now."""
         widget._onset_marker_pm_cache = None
         timeline_svg.forget()
+        timeline_frames.forget()
         widget._apply_geometry()
         widget.update()
 
@@ -4021,7 +4092,7 @@ def _box_paint(widget, box):
             box['padding_x'], box['padding_y'], box['speaker_strip_height'], box.color('border_color'),
             box.color('text_color'), box.color('selected_text_color'), box.color('failed_check_text_color'),
             QPen(box.color('text_color'), 1), box.color('fill_color'), box.font,
-            widget.subtitle_alignment | _VERTICAL_ALIGNMENT[box['text_vertical_alignment']] | Qt.TextWordWrap)
+            widget.subtitle_alignment | _VERTICAL_ALIGNMENT[box['text_vertical_alignment']] | Qt.TextWordWrap, box)
 
 
 def _live_colors():

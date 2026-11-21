@@ -259,9 +259,17 @@ class TimelineStylePanel(QWidget):
             index = 0
             for key in keys:
                 cell = self.cells[(scope, key)]
-                shown = self._shown(scope, fields[scope][key], values[scope])
+                field = fields[scope][key]
+                shown = self._shown(scope, field, values[scope])
                 cell.setVisible(shown)
-                if shown:
+                if not shown:
+                    continue
+                if field.get('file'):
+                    # A file's buttons and name: a row of its own.
+                    index += -index % COLUMNS
+                    grid.addWidget(cell, index // COLUMNS, 0, 1, COLUMNS, Qt.AlignLeft | Qt.AlignTop)
+                    index += COLUMNS
+                else:
                     grid.addWidget(cell, index // COLUMNS, index % COLUMNS, Qt.AlignLeft | Qt.AlignTop)
                     index += 1
 

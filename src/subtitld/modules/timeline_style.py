@@ -34,7 +34,9 @@ from subtitld.modules import session
 from subtitld.modules.subtitle_styles import _check_field, coerce
 
 TIMELINE_GROUPS = ('background', 'ruler', 'ruler_ticks', 'grid', 'waveform', 'cursor', 'cursor_badge', 'marks')
-BOX_GROUPS = ('box', 'fill', 'text', 'edges')
+BOX_GROUPS = ('box', 'frame', 'fill', 'text', 'edges')
+# A box's states, each with a frame of its own; the normal one stands in for the others.
+FRAME_STATES = ('normal', 'selected', 'hover', 'locked', 'failed')
 SUBTITLE = 'subtitle'
 TIME_FORMATS = ('clock', 'seconds', 'timecode', 'frames')
 # Seconds between two of the ruler's labels: the first of these far enough apart.
@@ -151,6 +153,14 @@ _BOX_FIELDS = [
     {'key': 'border_color', 'type': 'color', 'default': '#ff6a7483', 'group': 'box'},
     {'key': 'selected_border_color', 'type': 'color', 'default': '#ffb8cee0', 'group': 'box'},
     {'key': 'speaker_strip_height', 'type': 'int', 'default': 3, 'min': 1, 'max': 20, 'unit': 'px', 'group': 'box'},
+
+    # SVG frames (modules.timeline_frames) drawn as the box in place of its
+    # fill and border: one for each state; the normal one for any not set.
+    {'key': 'frame_svg', 'type': 'text', 'default': '', 'file': 'svg', 'group': 'frame'},
+    {'key': 'frame_selected_svg', 'type': 'text', 'default': '', 'file': 'svg', 'group': 'frame'},
+    {'key': 'frame_hover_svg', 'type': 'text', 'default': '', 'file': 'svg', 'group': 'frame'},
+    {'key': 'frame_locked_svg', 'type': 'text', 'default': '', 'file': 'svg', 'group': 'frame'},
+    {'key': 'frame_failed_svg', 'type': 'text', 'default': '', 'file': 'svg', 'group': 'frame'},
 
     {'key': 'fill_color', 'type': 'color', 'default': '#e6c8dbe9', 'group': 'fill'},
     {'key': 'selected_fill_color', 'type': 'color', 'default': '#cc3e5363', 'group': 'fill'},
@@ -410,12 +420,19 @@ class _Settings:
 
 
 class BoxLook(_Settings):
-    """A kind's boxes: their settings, and the font of their text."""
+    """A kind's boxes: their settings, the font of their text, and frame()
+    for a state's SVG frame."""
 
     def __init__(self, settings):
         super().__init__(settings, BOX_FIELDS_BY_KEY)
         self.font = QFont(settings['font'], settings['font_size'])
         self.font.setBold(settings['font_bold'])
+
+    def frame_name(self, state):
+        """The kept SVG a state's box is drawn with: its own, or the normal
+        state's; '' for none."""
+        key = 'frame_svg' if state == 'normal' else f'frame_{state}_svg'
+        return self[key] or self['frame_svg']
 
 
 class Look(_Settings):
