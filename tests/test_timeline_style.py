@@ -2,8 +2,8 @@
 of cue, kept in CONFIG['timeline']['style'] with defaults and inherited
 values left out; the loose colours of before moved in; a kind other than
 subtitles inheriting their look and having its own lane; the ruler's
-formats and ticks; the playhead's line, head, time and badge; the panel
-in the Interface panel's Timeline tab.
+formats and ticks; the playhead's line, head, time and badge; SVG parts
+and frames; themes, and their picker in the Interface panel's Timeline tab.
 
 Standalone script, like the other suites here; puts this checkout's src/
 on the path itself.
@@ -24,7 +24,7 @@ app = QApplication([])
 from subtitld.modules import config, history, session, timeline_frames, timeline_style, timeline_svg, timeline_themes
 from subtitld.modules.segment import Subtitle
 from subtitld.interface import timeline
-from subtitld.interface.timeline_style_panel import BOX, TIMELINE, TimelineStylePanel
+from subtitld.interface.timeline_theme_panel import TimelineThemePanel
 
 fails = []
 
@@ -164,89 +164,6 @@ timeline_svg.forget()
 check('a kept one changed into one refused: not drawn', timeline_svg.available(own_name), False)
 check('a name not of a kept shape: nothing', (timeline_svg.available('../../etc/passwd'), timeline_svg.image('x.svg', 4, 4)),
       (False, None))
-
-
-print('the panel')
-changes = []
-panel = TimelineStylePanel()
-panel.changed.connect(lambda: changes.append(1))
-
-
-def control(key, scope=BOX):
-    return panel.controls[(scope, key)][1]
-
-
-def cell(key, scope=BOX):
-    return panel.cells[(scope, key)]
-
-
-check('a control for each field', sorted(panel.controls),
-      sorted([(TIMELINE, f['key']) for f in timeline_style.TIMELINE_FIELDS] + [(BOX, f['key']) for f in timeline_style.BOX_FIELDS]))
-check('the kinds of control',
-      [type(control(k, s)).__name__ for k, s in (('grid_color', TIMELINE), ('font', BOX), ('font_size', BOX),
-                                                 ('grid_width', TIMELINE), ('fill_gradient', BOX),
-                                                 ('text_vertical_alignment', BOX))],
-      ['QPushButton', 'QComboBox', 'QSpinBox', 'QDoubleSpinBox', 'QCheckBox', 'QComboBox'])
-groups = panel.fields_widget.findChildren(QGroupBox)
-check('a box a group, the boxes\' after the waveform; the ruler, its ticks and the waveform switched on and off',
-      [(g.title(), g.isCheckable()) for g in groups],
-      [('Background', False), ('Time ruler', True), ('Ruler ticks', True), ('Grid', False), ('Waveform', True),
-       ('Boxes', False), ('Frames (SVG)', False), ('Box fill', False), ('Box text', False), ('Start and end edges', False), ('Playhead', False),
-       ('Repeat and speed badge', False), ('Marks', False)])
-check('one kind: no picking it', panel.kind_holder.isHidden(), True)
-check('labels from the locale files', (control('full_height').text(), panel.reset_button.text()),
-      ('As tall as the timeline', 'Reset to defaults'))
-check('the gradient\'s colours hidden without it', cell('fill_gradient_color').isHidden(), True)
-control('fill_gradient').setChecked(True)
-check('shown with it', (cell('fill_gradient_color').isHidden(), timeline_style.values('subtitle')['fill_gradient']),
-      (False, True))
-check('the band\'s distances shown', cell('top').isHidden(), False)
-control('full_height').setChecked(True)
-check('hidden when the boxes are as tall as the timeline', cell('top').isHidden(), True)
-check('a head\'s size hidden without a head', cell('cursor_head_size', TIMELINE).isHidden(), True)
-head = control('cursor_head', TIMELINE)
-head.activated.emit(head.findData('flag'))
-check('shown with one', (cell('cursor_head_size', TIMELINE).isHidden(), timeline_style.values()['cursor_head']),
-      (False, 'flag'))
-check('a head\'s SVG hidden but for a custom head', cell('cursor_head_svg', TIMELINE).isHidden(), True)
-head.activated.emit(head.findData('custom'))
-check('shown for one', cell('cursor_head_svg', TIMELINE).isHidden(), False)
-check('refused, and why', (panel.import_shape(TIMELINE, 'cursor_head_svg', shapes / 'bad.svg'),
-                           control('cursor_head_svg', TIMELINE).shape_problem.isHidden()), (None, False))
-check('taken, and kept in the look', (panel.import_shape(TIMELINE, 'cursor_head_svg', shapes / 'good.svg'),
-                                      timeline_style.values()['cursor_head_svg']), (good_name, good_name))
-check('its name shown, the problem gone', (control('cursor_head_svg', TIMELINE).shape_name.text(),
-                                            control('cursor_head_svg', TIMELINE).shape_problem.isHidden()), (good_name, True))
-head.activated.emit(head.findData('flag'))
-grid = cell('gap').parentWidget().layout()
-check('the next field takes its place', grid.getItemPosition(grid.indexOf(cell('gap')))[:2], (0, 1))
-control('corner_radius').setValue(12)
-check('a number saved, for the subtitles', timeline_style.values('subtitle')['corner_radius'], 12)
-groups[4].setChecked(False)
-check('a group\'s switch saved', timeline_style.values()['show_waveform'], False)
-check('each change said', len(changes), 8)
-panel.reset()
-check('reset: the default theme, and the controls on it',
-      (timeline_themes.current().id, timeline_themes.changed(), control('corner_radius').value(),
-       control('full_height').isChecked()), ('subtitld.classic', False, 3, False))
-timeline_style.reset()
-timeline_themes.forget_current()
-
-timeline_style.register_kind('title', {'fill_color': '#ff884400'})
-panel.build()
-check('more kinds: picked above the boxes', (panel.kind_holder.isHidden(),
-                                              [panel.kind_picker.itemData(i) for i in range(panel.kind_picker.count())]),
-      (False, ['subtitle', 'title']))
-panel.kind_picker.activated.emit(panel.kind_picker.findData('title'))
-check('the boxes\' settings: the kind\'s', (panel.kind, control('corner_radius').value()), ('title', 3))
-control('corner_radius').setValue(15)
-check('saved for that kind alone', (timeline_style.values('title')['corner_radius'],
-                                    timeline_style.values('subtitle')['corner_radius']), (15, 3))
-timeline_style.reset()
-timeline_themes.forget_current()
-del timeline_style.KINDS['title']
-panel.build()
-check('a kind gone: back to subtitles', (panel.kind, panel.kind_holder.isHidden()), ('subtitle', True))
 
 
 print('the timeline')
@@ -751,22 +668,24 @@ try:
 except timeline_themes.ThemeError:
     check('a theme taking Subtitld\'s own id refused', True, True)
 
-print('the panel\'s theme')
+print('the theme picker')
 timeline_style.reset()
 timeline_themes.forget_current()
-panel = TimelineStylePanel()
-check('no theme: Custom, then the themes', [panel.theme_picker.itemText(i) for i in range(panel.theme_picker.count())],
+picked = []
+picker = TimelineThemePanel()
+picker.changed.connect(lambda: picked.append(1))
+check('no theme: Custom, then the themes', [picker.picker.itemText(i) for i in range(picker.picker.count())],
       ['Custom', 'Classic', 'My Theme'])
-panel.theme_picker.activated.emit(panel.theme_picker.findData('subtitld.classic'))
-check('picked: set, shown, not changed', (timeline_themes.current().id, panel.theme_picker.currentText(),
-      panel.theme_changed_label.text(), panel.theme_picker.findData(None)), ('subtitld.classic', 'Classic', '', -1))
-control('corner_radius').setValue(9)
-check('a setting changed: said', panel.theme_changed_label.text(), '(changed)')
-check('a file that is no theme: refused, and why', (panel.import_theme(shapes / 'good.svg'), panel.theme_problem.isHidden()),
-      (None, False))
-panel.reset()
-check('reset: the default theme', (timeline_themes.current().id, panel.theme_picker.currentText(),
-                                   panel.theme_changed_label.text()), ('subtitld.classic', 'Classic', ''))
+picker.picker.activated.emit(picker.picker.findData('subtitld.classic'))
+check('picked: the look set from it, shown, said', (timeline_themes.current().id, timeline_themes.changed(),
+      picker.picker.currentText(), picker.picker.findData(None), len(picked)), ('subtitld.classic', False, 'Classic', -1, 1))
+picker.picker.activated.emit(picker.picker.findData('subtitld.classic'))
+check('the same one again: nothing to do', len(picked), 1)
+picker.picker.activated.emit(picker.picker.findData('user.my-theme'))
+check('another', (timeline_themes.current().id, picker.picker.currentText(), len(picked)), ('user.my-theme', 'My Theme', 2))
+check('labelled', picker.label.text(), 'Theme')
+timeline_style.reset()
+timeline_themes.forget_current()
 
 print('the default theme, as Subtitld starts')
 timeline_style.reset()

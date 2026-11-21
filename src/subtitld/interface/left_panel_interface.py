@@ -4,7 +4,7 @@ from PySide6.QtGui import QColor
 
 from subtitld.interface import left_panel
 from subtitld.interface.subtitle_style_panel import SubtitleStylePanel
-from subtitld.interface.timeline_style_panel import TimelineStylePanel
+from subtitld.interface.timeline_theme_panel import TimelineThemePanel
 from subtitld.interface.translation import _
 from subtitld.modules import session
 
@@ -211,13 +211,13 @@ def load(self):
 
     self.global_panel_interface_tabwidget.addTab(self.global_panel_interface_tabwidget_videoplayer, '')
 
-    # The timeline's look: its colours, fonts and the shape of its subtitles.
+    # The timeline's look: its theme.
     self.global_panel_interface_tabwidget_timeline = QWidget()
     self.global_panel_interface_tabwidget_timeline.setLayout(QVBoxLayout())
     self.global_panel_interface_tabwidget_timeline.layout().setContentsMargins(10, 10, 10, 10)
-    self.global_panel_interface_timeline_style_panel = TimelineStylePanel()
-    self.global_panel_interface_timeline_style_panel.changed.connect(lambda: refresh_timeline(self))
-    self.global_panel_interface_tabwidget_timeline.layout().addWidget(self.global_panel_interface_timeline_style_panel)
+    self.global_panel_interface_timeline_theme_panel = TimelineThemePanel()
+    self.global_panel_interface_timeline_theme_panel.changed.connect(lambda: refresh_timeline(self))
+    self.global_panel_interface_tabwidget_timeline.layout().addWidget(self.global_panel_interface_timeline_theme_panel)
     self.global_panel_interface_tabwidget_timeline.layout().addStretch()
     self.global_panel_interface_tabwidget.addTab(self.global_panel_interface_tabwidget_timeline, '')
 
@@ -310,7 +310,7 @@ def hide(self):
     
 def translate(self):    
     self.global_panel_interface_style_panel.build()
-    self.global_panel_interface_timeline_style_panel.build()
+    self.global_panel_interface_timeline_theme_panel.build()
     self.global_panel_interface_videoplayer_safe_margin_action_group.setTitle(_('interface_panel.action_safe_margin'))
     self.global_panel_interface_videoplayer_safe_margin_action_x_margin_label.setText(_('interface_panel.horizontal_margin'))
     self.global_panel_interface_videoplayer_safe_margin_action_y_margin_label.setText(_('interface_panel.vertical_margin'))
