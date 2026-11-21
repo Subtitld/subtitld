@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (QComboBox, QHBoxLayout, QLabel, QLineEdit, QProgr
 from PySide6.QtCore import Qt, QEasingCurve, QPointF, QPropertyAnimation, QRectF, QSize, Signal
 from PySide6.QtGui import QColor, QFont, QLinearGradient, QPainter, QPainterPath, QPolygonF
 
+from subtitld.interface import theme
 from subtitld.interface import shapes
 from subtitld.interface.translation import _
 from subtitld.modules import session
@@ -629,18 +630,18 @@ class SlantProgressBar(QProgressBar):
                                    QPointF(edge - run / 2, height), QPointF(-run, height)]))
         painter.setOpacity(0.5)
         flipped = QLinearGradient(0, 0, 0, height)
-        flipped.setColorAt(0, shapes.shade(self.FILL, -shapes.DEPTH))
-        flipped.setColorAt(1, shapes.shade(self.FILL, shapes.DEPTH))
+        flipped.setColorAt(0, theme.color(shapes.shade(self.FILL, -shapes.DEPTH)))
+        flipped.setColorAt(1, theme.color(shapes.shade(self.FILL, shapes.DEPTH)))
         painter.fillPath(fill.intersected(shapes.rect_path(rect)), flipped)
         painter.setOpacity(1.0)
-        painter.fillRect(QRectF(0, 0, rect.width(), 1), shapes.CONTACT)
+        painter.fillRect(QRectF(0, 0, rect.width(), 1), theme.color(shapes.CONTACT))
 
         if self.isTextVisible() and self.text():
             font = QFont(self.font())
             font.setPixelSize(10)
             font.setBold(True)
             painter.setFont(font)
-            painter.setPen(QColor('#e1ebf2'))
+            painter.setPen(theme.ink(QColor('#e1ebf2')))
             painter.drawText(rect, Qt.AlignCenter, self.text())
 
 

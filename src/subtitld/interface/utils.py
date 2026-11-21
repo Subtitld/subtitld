@@ -6,6 +6,7 @@ from PySide6.QtGui import QImage, QPixmap, QPainter, QBrush, QPen, QPainterPath,
 from PySide6.QtCore import QThread, Signal, Qt, QRect, QRectF, QPoint, QPointF, QSize, QObject, QEvent, QPropertyAnimation, QTimer
 
 
+from subtitld.interface import theme
 from subtitld.interface import shapes
 from subtitld.interface.translation import _
 
@@ -635,7 +636,7 @@ class SlantLabeledField(QWidget):
         rect = QRectF(widget.rect())
         field = widget._field(rect)
         if not widget.isEnabled():
-            painter.fillPath(field, QColor('#25323d'))
+            painter.fillPath(field, theme.color(QColor('#25323d')))
             return
         active = widget._active()
         if widget.RAISED:
@@ -650,7 +651,7 @@ class SlantLabeledField(QWidget):
             segment.lineTo(0, rect.height())
             segment.closeSubpath()
             shapes.fill_raised(painter, segment.intersected(field), rect, shapes.NEST, contact=False)
-        painter.fillPath(field.subtracted(field.translated(0, -1)), shapes.CONTACT)
+        painter.fillPath(field.subtracted(field.translated(0, -1)), theme.color(shapes.CONTACT))
 
 
 class LabeledComboBox(SlantLabeledField):

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- for the light look (interface/theme.py takes graphics/light/ first): in the primary buttons' gradient hovered (#7892a8 → #59738a), a softer shadow -->
+<svg width="36" height="36" version="1.1" viewBox="0 0 36 36" xmlns="http://www.w3.org/2000/svg">
+ <defs><linearGradient id="g" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#7892a8"/><stop offset="1" stop-color="#59738a"/></linearGradient><filter id="s" x="-.2" y="-.2" width="1.4" height="1.4" color-interpolation-filters="sRGB"><feGaussianBlur stdDeviation="1.6"/></filter><clipPath id="c"><rect width="36" height="36"/></clipPath></defs>
+ <g clip-path="url(#c)"><path d="M0 35L20.618 35.000C23.333 35.000 25.711 33.176 26.413 30.553L34.6 0H0Z" fill="#07090b" fill-opacity=".22" filter="url(#s)"/></g>
+ <path d="M0 35L19.018 35.000C21.733 35.000 24.111 33.176 24.813 30.553L33.0 0H0Z" fill="url(#g)"/>
+</svg>

@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QRect, QRectF, QSize, QPoint, QTimer
 from PySide6.QtGui import QPainter, QColor, QPen, QFont, QFontMetrics
 
+from subtitld.interface import theme
 from subtitld.interface import left_panel
 from subtitld.interface import utils
 from subtitld.interface.translation import _
@@ -180,15 +181,15 @@ class _ResolutionFrame(QWidget):
         p.setRenderHint(QPainter.Antialiasing)
         box = self.frame_rect().adjusted(0.5, 0.5, -0.5, -0.5)
 
-        p.setPen(QPen(QColor(184, 206, 224, 64), 1))
-        p.setBrush(QColor(10, 14, 18, 70))
+        p.setPen(QPen(theme.ink(QColor(184, 206, 224, 64)), 1))
+        p.setBrush(theme.surface(QColor(10, 14, 18, 70)))
         p.drawRoundedRect(box, 3, 3)
 
         width_text, height_text = self._labels()
         if not width_text:
             return
         p.setFont(self._label_font)
-        p.setPen(QColor('#c8dbe9'))
+        p.setPen(theme.ink(QColor('#c8dbe9')))
         inset = _FRAME_LABEL_INSET
         inner = box.adjusted(inset, 5, -inset, -5)
         fm = QFontMetrics(self._label_font)

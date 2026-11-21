@@ -1,7 +1,7 @@
 from PySide6.QtWidgets import QVBoxLayout, QWidget, QHBoxLayout, QScrollArea, QStackedWidget, QPushButton, QSizePolicy, QGraphicsOpacityEffect
 from PySide6.QtCore import QPropertyAnimation, QEasingCurve, QTimer, Qt
-from PySide6.QtGui import QIcon
 
+from subtitld.interface import theme
 from subtitld.modules import session
 
 from subtitld.interface import left_panel_subtitleslist
@@ -48,7 +48,7 @@ class navigation_button(QPushButton):
         self.setProperty('class', 'navigation_button')
         self.setCheckable(True)
         self.setSizePolicy(QSizePolicy(QSizePolicy.Minimum, QSizePolicy.Maximum))
-        self.setIcon(QIcon(str(session.PATH_SUBTITLD_GRAPHICS / f'left_panel_{tab_name}.svg')))
+        self.setIcon(theme.icon(f'left_panel_{tab_name}.svg'))
         self.setToolTip(_(f'left_panel.tab_{tab_name}'))
     
     def mousePressEvent(self, e):

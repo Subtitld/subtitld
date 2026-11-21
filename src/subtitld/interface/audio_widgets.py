@@ -21,6 +21,7 @@ from PySide6.QtWidgets import QWidget, QAbstractButton, QSizePolicy
 from PySide6.QtCore import Qt, Signal, QRectF, QPointF, QSize
 from PySide6.QtGui import QPainter, QColor, QPen, QPainterPath, QFont, QLinearGradient, QFontMetrics
 
+from subtitld.interface import shapes, theme
 from subtitld.modules import audio_effects
 
 TEXT = QColor('#b8cee0')
@@ -37,6 +38,14 @@ RED = QColor('#ff6b6b')
 EFFECT_COLORS = {'eq': '#8fd0ea', 'compressor': '#e7b85a', 'gate': '#c9b3f0'}
 # EQ band handles, low to high.
 BAND_COLORS = ('#e7b85a', '#8fd0ea', '#c9b3f0')
+
+
+def _ramp(y0, y1, top, bottom):
+    """A vertical gradient from `top` to `bottom`, in the current look."""
+    g = QLinearGradient(0, y0, 0, y1)
+    g.setColorAt(0, theme.surface(top))
+    g.setColorAt(1, theme.surface(bottom))
+    return g
 
 
 def _small_font(widget, size=8, bold=True):
@@ -171,7 +180,7 @@ class Knob(QWidget):
         width = self.width()
 
         painter.setFont(_small_font(self, 8))
-        painter.setPen(TEXT_DIM if not self.hasFocus() else TEXT)
+        painter.setPen(theme.ink(TEXT_DIM) if not self.hasFocus() else theme.ink(TEXT))
         painter.drawText(QRectF(0, 0, width, 12), Qt.AlignCenter, self.label.upper())
 
         size = 38
@@ -179,24 +188,22 @@ class Knob(QWidget):
         start_angle = 225.0                       # Qt: degrees, counter-clockwise from 3 o'clock
         unit = self.to_unit(self._value)
 
-        track_pen = QPen(QColor(255, 255, 255, 26), 3.5, Qt.SolidLine, Qt.RoundCap)
+        track_pen = QPen(theme.ink(QColor(255, 255, 255, 26)), 3.5, Qt.SolidLine, Qt.RoundCap)
         painter.setPen(track_pen)
         painter.drawArc(dial, int(start_angle * 16), int(-self._SWEEP * 16))
 
         origin = 0.0
         if not self.log and self.minimum < 0 < self.maximum:
             origin = self.to_unit(0.0)            # bipolar: grow from the middle
-        arc_pen = QPen(self.color if self.isEnabled() else TEXT_DIM, 3.5, Qt.SolidLine, Qt.RoundCap)
+        arc_pen = QPen(theme.ink(self.color) if self.isEnabled() else theme.ink(TEXT_DIM), 3.5, Qt.SolidLine, Qt.RoundCap)
         painter.setPen(arc_pen)
         span = (unit - origin) * self._SWEEP
         if abs(span) > 0.5:
             painter.drawArc(dial, int((start_angle - origin * self._SWEEP) * 16), int(-span * 16))
 
         body = dial.adjusted(6, 6, -6, -6)
-        gradient = QLinearGradient(body.topLeft(), body.bottomLeft())
-        gradient.setColorAt(0, QColor('#3e5363'))
-        gradient.setColorAt(1, QColor('#26333e'))
-        painter.setPen(QPen(QColor(0, 0, 0, 90), 1))
+        gradient = _ramp(body.top(), body.bottom(), '#3e5363', '#26333e')
+        painter.setPen(QPen(theme.ink(QColor(0, 0, 0, 90)), 1))
         painter.setBrush(gradient)
         painter.drawEllipse(body)
 
@@ -205,11 +212,11 @@ class Knob(QWidget):
         radius = body.width() / 2 - 2.5
         tip = QPointF(center.x() + math.cos(angle) * radius, center.y() - math.sin(angle) * radius)
         inner = QPointF(center.x() + math.cos(angle) * radius * 0.35, center.y() - math.sin(angle) * radius * 0.35)
-        painter.setPen(QPen(QColor('#e8f1f8'), 2, Qt.SolidLine, Qt.RoundCap))
+        painter.setPen(QPen(theme.ink(QColor('#e8f1f8')), 2, Qt.SolidLine, Qt.RoundCap))
         painter.drawLine(inner, tip)
 
         painter.setFont(_small_font(self, 10, bold=False))
-        painter.setPen(TEXT)
+        painter.setPen(theme.ink(TEXT))
         text = self.fmt(self._value)
         value_rect = QRectF(0, 56, width, 14)
         if self.unit:
@@ -220,7 +227,7 @@ class Knob(QWidget):
             left = (width - text_width - unit_width) / 2
             painter.drawText(QRectF(left, 56, text_width + 1, 14), Qt.AlignLeft | Qt.AlignVCenter, text)
             painter.setFont(unit_font)
-            painter.setPen(TEXT_DIM)
+            painter.setPen(theme.ink(TEXT_DIM))
             painter.drawText(QRectF(left + text_width, 56, unit_width + 1, 14), Qt.AlignLeft | Qt.AlignVCenter, ' ' + self.unit)
         else:
             painter.drawText(value_rect, Qt.AlignCenter, text)
@@ -277,7 +284,7 @@ class LevelMeter(QWidget):
         painter = QPainter(self)
         width = self.width()
         bar_height = 8 if self.scale else self.height()
-        painter.fillRect(QRectF(0, 0, width, bar_height), PANEL)
+        painter.fillRect(QRectF(0, 0, width, bar_height), theme.color(PANEL))
         segment, gap = 3, 1
         x = 0
         lit_to = self._x(self._display, width)
@@ -286,18 +293,18 @@ class LevelMeter(QWidget):
             color = RED if db > -6 else YELLOW if db > -18 else GREEN
             if x + segment > lit_to:
                 color = QColor(color)
-                color.setAlpha(34)
+                color.setAlpha(70 if theme.is_light() else 34)        # unlit: dimmer on a dark ground than a light one
             painter.fillRect(QRectF(x, 0, min(segment, width - x), bar_height), color)
             x += segment + gap
         if self._hold > self.FLOOR + 0.5:
             hx = self._x(self._hold, width)
-            painter.fillRect(QRectF(max(0, hx - 1.5), 0, 2, bar_height), QColor('#e8f1f8'))
+            painter.fillRect(QRectF(max(0, hx - 1.5), 0, 2, bar_height), theme.color(QColor('#e8f1f8')))
         if self.scale:
             painter.setFont(_small_font(self, 8, bold=False))
-            painter.setPen(TEXT_DIM)
+            painter.setPen(theme.ink(TEXT_DIM))
             for mark in (-60, -40, -30, -20, -12, -6, -3, 0):
                 mx = self._x(mark, width)
-                painter.fillRect(QRectF(mx - 0.5, bar_height + 1, 1, 3), TEXT_DIM)
+                painter.fillRect(QRectF(mx - 0.5, bar_height + 1, 1, 3), theme.color(TEXT_DIM))
                 label = str(mark)
                 align = Qt.AlignHCenter
                 rect = QRectF(mx - 15, bar_height + 3, 30, 11)
@@ -328,8 +335,8 @@ class _Graph(QWidget):
         return QRectF(26, 8, max(10, self.width() - 34), self.height() - 24)
 
     def _background(self, painter):
-        painter.fillRect(self.rect(), PANEL)
-        painter.setPen(QPen(QColor(255, 255, 255, 18), 1))
+        painter.fillRect(self.rect(), theme.color(PANEL))
+        painter.setPen(QPen(theme.ink(QColor(255, 255, 255, 18)), 1))
         painter.drawRect(QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5))
 
 
@@ -450,16 +457,16 @@ class EqGraph(_Graph):
 
         for freq in (50, 100, 200, 500, 1000, 2000, 5000, 10000):
             x = self._fx(freq, rect)
-            painter.setPen(QPen(GRID_STRONG if freq in (100, 1000, 10000) else GRID, 1))
+            painter.setPen(QPen(theme.ink(GRID_STRONG) if freq in (100, 1000, 10000) else theme.ink(GRID), 1))
             painter.drawLine(QPointF(x, rect.top()), QPointF(x, rect.bottom()))
             if freq in (100, 1000, 10000):
-                painter.setPen(TEXT_DIM)
+                painter.setPen(theme.ink(TEXT_DIM))
                 painter.drawText(QRectF(x - 20, rect.bottom() + 2, 40, 12), Qt.AlignCenter, format_hz(freq))
         for db in (-12, 0, 12):
             y = self._fy(db, rect)
-            painter.setPen(QPen(GRID_STRONG if db == 0 else GRID, 1, Qt.SolidLine if db == 0 else Qt.DashLine))
+            painter.setPen(QPen(theme.ink(GRID_STRONG) if db == 0 else theme.ink(GRID), 1, Qt.SolidLine if db == 0 else Qt.DashLine))
             painter.drawLine(QPointF(rect.left(), y), QPointF(rect.right(), y))
-            painter.setPen(TEXT_DIM)
+            painter.setPen(theme.ink(TEXT_DIM))
             painter.drawText(QRectF(0, y - 6, rect.left() - 4, 12), Qt.AlignRight | Qt.AlignVCenter, f'{db:+d}' if db else '0')
 
         xs = np.linspace(rect.left(), rect.right(), max(60, int(rect.width() / 2)))
@@ -473,7 +480,7 @@ class EqGraph(_Graph):
             for i, (x, db) in enumerate(zip(xs, response)):
                 point = QPointF(x, self._fy(max(-self.DB, min(self.DB, db)), rect))
                 path.moveTo(point) if i == 0 else path.lineTo(point)
-            color = QColor(BAND_COLORS[index % len(BAND_COLORS)])
+            color = theme.color(BAND_COLORS[index % len(BAND_COLORS)])
             color.setAlpha(110 if index == self.selected else 50)
             painter.setPen(QPen(color, 1))
             painter.setBrush(Qt.NoBrush)
@@ -489,20 +496,20 @@ class EqGraph(_Graph):
         fill.lineTo(QPointF(xs[-1], zero))
         fill.lineTo(QPointF(xs[0], zero))
         fill.closeSubpath()
-        glow = QColor(self.color)
+        glow = theme.color(self.color)
         glow.setAlpha(40)
         painter.fillPath(fill, glow)
-        painter.setPen(QPen(self.color if self.isEnabled() else TEXT_DIM, 2))
+        painter.setPen(QPen(theme.ink(self.color) if self.isEnabled() else theme.ink(TEXT_DIM), 2))
         painter.drawPath(curve)
 
         for index, band in enumerate(bands):
             point = self._handle(index, rect)
-            color = QColor(BAND_COLORS[index % len(BAND_COLORS)])
+            color = theme.color(BAND_COLORS[index % len(BAND_COLORS)])
             radius = 6.5 if index in (self.selected, self._hover) else 5
-            painter.setPen(QPen(QColor('#e8f1f8') if index == self.selected else QColor(0, 0, 0, 120), 1.5))
+            painter.setPen(QPen(theme.ink(QColor('#e8f1f8')) if index == self.selected else theme.ink(QColor(0, 0, 0, 120)), 1.5))
             painter.setBrush(color)
             painter.drawEllipse(point, radius, radius)
-            painter.setPen(QColor('#121a20'))
+            painter.setPen(theme.ink(QColor('#121a20')))
             painter.setFont(_small_font(self, 7))
             painter.drawText(QRectF(point.x() - 6, point.y() - 6, 12, 12), Qt.AlignCenter, str(index + 1))
 
@@ -510,7 +517,7 @@ class EqGraph(_Graph):
             band = bands[self.selected]
             text = f'{format_hz(float(band.get("freq", 1000)))} Hz   {format_db(float(band.get("gain", 0)))} dB   Q {float(band.get("q", 1)):.2f}'
             painter.setFont(_small_font(self, 8, bold=False))
-            painter.setPen(TEXT)
+            painter.setPen(theme.ink(TEXT))
             painter.drawText(QRectF(rect.left() + 4, rect.top() + 1, rect.width() - 8, 12), Qt.AlignRight | Qt.AlignTop, text)
         painter.end()
 
@@ -593,16 +600,16 @@ class DynamicsGraph(_Graph):
         db = 0.0
         while db >= self.floor:
             x, y = self._x(db, rect), self._y(db, rect)
-            painter.setPen(QPen(GRID, 1))
+            painter.setPen(QPen(theme.ink(GRID), 1))
             painter.drawLine(QPointF(x, rect.top()), QPointF(x, rect.bottom()))
             painter.drawLine(QPointF(rect.left(), y), QPointF(rect.right(), y))
-            painter.setPen(TEXT_DIM)
+            painter.setPen(theme.ink(TEXT_DIM))
             painter.drawText(QRectF(0, y - 6, rect.left() - 4, 12), Qt.AlignRight | Qt.AlignVCenter, f'{db:.0f}')
             if db > self.floor:
                 painter.drawText(QRectF(x - 16, rect.bottom() + 2, 32, 12), Qt.AlignCenter, f'{db:.0f}')
             db -= step
 
-        painter.setPen(QPen(GRID_STRONG, 1, Qt.DashLine))
+        painter.setPen(QPen(theme.ink(GRID_STRONG), 1, Qt.DashLine))
         painter.drawLine(QPointF(rect.left(), rect.bottom()), QPointF(rect.right(), rect.top()))
 
         xs = np.linspace(self.floor, 0.0, 160)
@@ -611,14 +618,14 @@ class DynamicsGraph(_Graph):
         for i, (x_db, y_db) in enumerate(zip(xs, ys)):
             point = QPointF(self._x(x_db, rect), self._y(y_db, rect))
             curve.moveTo(point) if i == 0 else curve.lineTo(point)
-        painter.setPen(QPen(self.color if self.isEnabled() else TEXT_DIM, 2))
+        painter.setPen(QPen(theme.ink(self.color) if self.isEnabled() else theme.ink(TEXT_DIM), 2))
         painter.drawPath(curve)
 
         threshold = float(self.params.get('threshold_db', -18))
         tx = self._x(threshold, rect)
-        painter.setPen(QPen(QColor('#e8f1f8'), 1, Qt.DashLine))
+        painter.setPen(QPen(theme.ink(QColor('#e8f1f8')), 1, Qt.DashLine))
         painter.drawLine(QPointF(tx, rect.top()), QPointF(tx, rect.bottom()))
-        painter.setPen(TEXT)
+        painter.setPen(theme.ink(TEXT))
         label_rect = QRectF(tx + 3, rect.top() + 1, 60, 12)
         if label_rect.right() > rect.right():
             label_rect = QRectF(tx - 63, rect.top() + 1, 60, 12)
@@ -630,18 +637,18 @@ class DynamicsGraph(_Graph):
             out = float(self.output_db(np.array([self.input_db]))[0])
             point = QPointF(self._x(self.input_db, rect), self._y(out, rect))
             painter.setPen(Qt.NoPen)
-            glow = QColor(self.color)
+            glow = theme.color(self.color)
             glow.setAlpha(70)
             painter.setBrush(glow)
             painter.drawEllipse(point, 7, 7)
-            painter.setBrush(QColor('#e8f1f8'))
+            painter.setBrush(theme.surface(QColor('#e8f1f8')))
             painter.drawEllipse(point, 3.5, 3.5)
 
         bar = QRectF(rect.right() + 6, rect.top(), 6, rect.height())
-        painter.fillRect(bar, QColor(255, 255, 255, 12))
+        painter.fillRect(bar, theme.color(QColor(255, 255, 255, 12)))
         depth = min(1.0, -self.reduction_db / 24.0)
         if depth > 0:
-            painter.fillRect(QRectF(bar.left(), bar.top(), bar.width(), bar.height() * depth), self.color)
+            painter.fillRect(QRectF(bar.left(), bar.top(), bar.width(), bar.height() * depth), theme.color(self.color))
         painter.end()
 
 
@@ -665,10 +672,10 @@ class PowerButton(QAbstractButton):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         on = self.isChecked()
-        color = GREEN if on else QColor(184, 206, 224, 90)
+        color = GREEN if on else theme.color(QColor(184, 206, 224, 90))
         if self.underMouse():
             painter.setPen(Qt.NoPen)
-            painter.setBrush(QColor(255, 255, 255, 18))
+            painter.setBrush(theme.color(QColor(255, 255, 255, 18)))
             painter.drawEllipse(QRectF(1, 1, 18, 18))
         if on:
             glow = QColor(GREEN)

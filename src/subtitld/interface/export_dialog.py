@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QStackedWidget
 from PySide6.QtCore import Qt, Signal, QTimer, QRectF
 from PySide6.QtGui import QTextCharFormat, QPixmap, QPainter, QPainterPath, QColor, QImage
 
+from subtitld.interface import theme
 from subtitld.interface import utils
 from subtitld.interface.translation import _
 from subtitld.modules import audio_report
@@ -1595,7 +1596,7 @@ class _LoudnessScale(QWidget):
         from subtitld.modules import audio_report
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-        line = QColor(184, 206, 224, 70)
+        line = theme.color(QColor(184, 206, 224, 70))
         painter.fillRect(QRectF(6, 15, self.width() - 12, 2), line)
         font = painter.font()
         font.setPixelSize(8)
@@ -1603,8 +1604,8 @@ class _LoudnessScale(QWidget):
         painter.setFont(font)
         for number, (key, lufs) in enumerate(audio_report.TARGETS):
             x = self._x(lufs)
-            painter.fillRect(QRectF(x - 0.5, 11, 1, 10), QColor(184, 206, 224, 140))
-            painter.setPen(QColor(184, 206, 224, 120))
+            painter.fillRect(QRectF(x - 0.5, 11, 1, 10), theme.color(QColor(184, 206, 224, 140)))
+            painter.setPen(theme.ink(QColor(184, 206, 224, 120)))
             # the labels alternate above and under the line, as ATSC and EBU sit 1 LU apart
             top = 0 if number % 2 == 0 else 23
             text = _(f'export_dialog.audio_target_{key}')
@@ -1614,7 +1615,7 @@ class _LoudnessScale(QWidget):
         if self.value is not None:
             x = self._x(self.value)
             painter.setPen(Qt.NoPen)
-            painter.setBrush(QColor('#e9eef2'))
+            painter.setBrush(theme.surface(QColor('#e9eef2')))
             painter.drawEllipse(QRectF(x - 4, 12, 8, 8))
         painter.end()
 
@@ -1747,7 +1748,7 @@ def project_logo(fmt):
     """The program's logo, one colour, for the Project tab: a QIcon."""
     from PySide6.QtGui import QIcon
     logo = project_export.FORMATS.get(fmt, {}).get('logo')
-    return QIcon(os.path.join(session.PATH_SUBTITLD_GRAPHICS, f'project_logo_{logo}')) if logo else QIcon()
+    return theme.icon(f'project_logo_{logo}') if logo else QIcon()
 
 
 class _TimelineMiniature(QWidget):
@@ -1793,11 +1794,11 @@ class _TimelineMiniature(QWidget):
         colours = {'video': QColor('#7f9bb0'), 'audio': QColor('#5f7b90'), 'subtitles': QColor('#b8cee0')}
         for index, (number, kind, spans, colour) in enumerate(self.rows):
             y = index * (self.ROW + self.GAP)
-            painter.setPen(QColor(184, 206, 224, 120))
+            painter.setPen(theme.ink(QColor(184, 206, 224, 120)))
             label = painter.fontMetrics().elidedText(number, Qt.ElideRight, self.LABEL - 6)
             painter.drawText(QRectF(0, y - 2, self.LABEL, self.ROW + 4), Qt.AlignLeft | Qt.AlignVCenter, label)
-            painter.fillRect(QRectF(self.LABEL, y, width, self.ROW), QColor(0, 0, 0, 40))
-            fill = QColor(colour) if colour and QColor(colour).isValid() else colours[kind]
+            painter.fillRect(QRectF(self.LABEL, y, width, self.ROW), theme.color(QColor(0, 0, 0, 40)))
+            fill = QColor(colour) if colour and QColor(colour).isValid() else theme.color(colours[kind])
             for start, end in spans:
                 left = self.LABEL + width * start / self.duration
                 size = max(1.0, width * (end - start) / self.duration)
@@ -1806,7 +1807,7 @@ class _TimelineMiniature(QWidget):
                 else:
                     painter.fillRect(QRectF(left, y, size, self.ROW), fill)
         if self.more:
-            painter.setPen(QColor(184, 206, 224, 120))
+            painter.setPen(theme.ink(QColor(184, 206, 224, 120)))
             y = len(self.rows) * (self.ROW + self.GAP)
             painter.drawText(QRectF(self.LABEL, y, width, 10), Qt.AlignLeft | Qt.AlignVCenter,
                              _('export_dialog.audio_more').format(count=self.more))

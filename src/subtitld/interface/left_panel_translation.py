@@ -3,8 +3,8 @@ import subprocess
 
 from PySide6.QtWidgets import QVBoxLayout, QWidget, QLabel, QCheckBox, QStackedWidget, QHBoxLayout, QPushButton, QApplication
 from PySide6.QtCore import Qt, QSize, Signal
-from PySide6.QtGui import QIcon
 
+from subtitld.interface import theme
 from subtitld.interface import left_panel
 from subtitld.interface import utils
 from subtitld.interface.translation import _
@@ -228,7 +228,7 @@ def load(self):
     # Set here as well as in the stylesheet: a QSS icon paints but does not
     # count towards the button's size hint, which would clip the label.
     self.global_panel_translation_invert_translation_button.setIcon(
-        QIcon(str(session.PATH_SUBTITLD_GRAPHICS / 'invert_translation_icon.svg')))
+        theme.icon('invert_translation_icon.svg'))
     self.global_panel_translation_invert_translation_button.setIconSize(QSize(12, 12))
     self.global_panel_translation_invert_translation_button.clicked.connect(lambda: global_panel_translation_invert_translation_button_clicked(self))
     # Bottom-aligned, so it sits on the same line as START TRANSLATION.

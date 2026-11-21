@@ -3,12 +3,17 @@
 The look: no borders, depth from a vertical gradient (raised: lighter at the top, darker at the bottom; sunken: the
 other way round, softer at the bottom), 3px corners on rectangles, 75° slants with 6px curves, and a 1px 45% black
 contact line under raised buttons.
+
+The colours here are the dark look's; `gradient()` and `bottom_colour()` take
+the base in it and draw it in the current look (theme.surface()).
 """
 
 import math
 
 from PySide6.QtCore import QPointF, QRectF
 from PySide6.QtGui import QColor, QImage, QLinearGradient, QPainter, QPainterPath
+
+from subtitld.interface import theme
 
 SLANT = math.radians(75)
 RUN15 = math.tan(math.radians(15))          # horizontal lean of a 75° side per pixel of height
@@ -39,6 +44,7 @@ def shade(color, pct):
 def gradient(y0, y1, base, kind='raised', depth=DEPTH):
     """Vertical gradient over y0..y1: 'raised' (+depth → −depth) or 'sunken' (−depth → +depth/2)."""
     g = QLinearGradient(0, y0, 0, y1)
+    base = _light_enough(base, depth)
     if kind == 'raised':
         g.setColorAt(0, shade(base, depth))
         g.setColorAt(1, shade(base, -depth))
@@ -50,7 +56,19 @@ def gradient(y0, y1, base, kind='raised', depth=DEPTH):
 
 def bottom_colour(base, kind='raised', depth=DEPTH):
     """The colour a gradient ends on, for blending one zone into the next without an edge."""
-    return shade(base, -depth if kind == 'raised' else depth / 2)
+    return shade(_light_enough(base, depth), -depth if kind == 'raised' else depth / 2)
+
+
+def _light_enough(dark, depth):
+    """`dark` in the current look, darker if need be for its lightest stop (+depth) to stay a shade, not white: on
+    the light look the grounds are near white, and a gradient clipped at white loses its depth. The hue is the dark
+    colour's (a near white's own hue, read back from 8 bits, is noise)."""
+    base = theme.surface(dark)
+    if theme.is_light() and base.lightnessF() + depth / 100 > 1:
+        original = QColor(dark)
+        h, s, _l, a = original.getHslF()
+        base = QColor.fromHslF(max(h, 0), min(s, 0.35), 1 - depth / 100, base.alphaF())
+    return base
 
 
 def rect_path(rect):
@@ -122,13 +140,13 @@ def fill_raised(painter, path, rect, base=RAISED, contact=True):
     """A raised piece: gradient fill and, optionally, the 1px contact line along its bottom."""
     painter.fillPath(path, gradient(rect.top(), rect.bottom(), base))
     if contact:
-        painter.fillPath(path.subtracted(path.translated(0, -1)), CONTACT)
+        painter.fillPath(path.subtracted(path.translated(0, -1)), theme.color(CONTACT))
 
 
 def fill_sunk(painter, path, rect, base=SUNK, shadow=TOP_SHADOW):
     """A sunk zone (pressed/checked): sunken gradient and a 1px shadow along its top."""
     painter.fillPath(path, gradient(rect.top(), rect.bottom(), base, 'sunken'))
-    painter.fillPath(path.intersected(rect_path(QRectF(rect.x() - 1, rect.top(), rect.width() + 2, 1))), shadow)
+    painter.fillPath(path.intersected(rect_path(QRectF(rect.x() - 1, rect.top(), rect.width() + 2, 1))), theme.color(shadow))
 
 
 def render_svg_image(renderer, width, height, scale=4):
