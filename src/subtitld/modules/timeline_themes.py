@@ -25,6 +25,10 @@ user's data folder (timeline_themes), where an imported one is copied; a
 user's theme cannot take a built-in one's id. CONFIG['timeline']['theme']
 is the theme the look was last set from: changing a setting after keeps
 it, as "changed".
+
+DEFAULT is the look of everyone who has neither picked a theme nor
+changed a setting (use_default, as Subtitld starts); one who changed
+some keeps their own look, a theme of no name.
 """
 
 import json
@@ -34,6 +38,8 @@ from dataclasses import dataclass, field as dataclass_field
 from subtitld.modules import session, timeline_style, timeline_svg
 
 FORMAT = 1
+# The theme a look no one has set or changed is set from, and Reset to defaults sets.
+DEFAULT = 'subtitld.classic'
 MAX_BYTES = 4 * 1024 * 1024
 MAX_SHAPES = 64
 _ID = re.compile(r'[a-z0-9][a-z0-9._-]*')
@@ -174,8 +180,27 @@ def apply(theme_id):
 
 
 def forget_current():
-    """The look is no theme's any more (set back to the defaults)."""
+    """The look is no theme's any more."""
     _config().pop('theme', None)
+
+
+def use_default():
+    """As Subtitld starts: set a look no theme set and no one changed from
+    the default theme. Whether it did."""
+    changes = timeline_style.changes()
+    if _config().get('theme') or changes['timeline'] or changes['boxes'] or DEFAULT not in available():
+        return False
+    apply(DEFAULT)
+    return True
+
+
+def reset():
+    """Back to the defaults: the default theme's look (the settings' own
+    defaults, should it be missing)."""
+    timeline_style.reset()
+    forget_current()
+    if DEFAULT in available():
+        apply(DEFAULT)
 
 
 def current():

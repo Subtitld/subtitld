@@ -389,7 +389,6 @@ class TimelineStylePanel(QWidget):
             self.build()
 
     def reset(self):
-        timeline_style.reset()
-        timeline_themes.forget_current()
+        timeline_themes.reset()
         self.build()
         self.changed.emit()

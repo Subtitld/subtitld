@@ -110,6 +110,7 @@ from subtitld.modules import config
 from subtitld.modules import file_io
 from subtitld.modules import link_handover
 from subtitld.modules import shortcuts
+from subtitld.modules import timeline_themes
 from subtitld.modules import addons
 from subtitld.modules.addons import registry as addons_registry
 from subtitld.modules.addons.builtin import captions_provider as _captions_provider
@@ -227,6 +228,9 @@ class Window(_MainWindowBase):
         # calling it from both places is safe; this is the call that reaches
         # the dict `CONFIG.save()` actually writes back.
         addons_registry.ensure_seeded()
+
+        # A timeline look no one picked or changed is the default theme's.
+        timeline_themes.use_default()
 
         self.autosave_backup_timer = QTimer(self)
         self.autosave_backup_timer.setInterval(int(session.CONFIG['autosave'].get('backup_interval', 300000)))

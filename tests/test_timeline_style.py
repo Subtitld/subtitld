@@ -21,7 +21,7 @@ from PySide6.QtGui import QColor
 from PySide6.QtCore import QPoint, Qt
 from PySide6.QtTest import QTest
 app = QApplication([])
-from subtitld.modules import config, history, session, timeline_frames, timeline_style, timeline_svg
+from subtitld.modules import config, history, session, timeline_frames, timeline_style, timeline_svg, timeline_themes
 from subtitld.modules.segment import Subtitle
 from subtitld.interface import timeline
 from subtitld.interface.timeline_style_panel import BOX, TIMELINE, TimelineStylePanel
@@ -226,9 +226,11 @@ groups[4].setChecked(False)
 check('a group\'s switch saved', timeline_style.values()['show_waveform'], False)
 check('each change said', len(changes), 8)
 panel.reset()
-check('reset: the defaults, and the controls on them',
-      (timeline_style.changes(), control('corner_radius').value(), control('full_height').isChecked()),
-      ({'timeline': {}, 'boxes': {}}, 3, False))
+check('reset: the default theme, and the controls on it',
+      (timeline_themes.current().id, timeline_themes.changed(), control('corner_radius').value(),
+       control('full_height').isChecked()), ('subtitld.classic', False, 3, False))
+timeline_style.reset()
+timeline_themes.forget_current()
 
 timeline_style.register_kind('title', {'fill_color': '#ff884400'})
 panel.build()
@@ -240,7 +242,8 @@ check('the boxes\' settings: the kind\'s', (panel.kind, control('corner_radius')
 control('corner_radius').setValue(15)
 check('saved for that kind alone', (timeline_style.values('title')['corner_radius'],
                                     timeline_style.values('subtitle')['corner_radius']), (15, 3))
-panel.reset()
+timeline_style.reset()
+timeline_themes.forget_current()
 del timeline_style.KINDS['title']
 panel.build()
 check('a kind gone: back to subtitles', (panel.kind, panel.kind_holder.isHidden()), ('subtitle', True))
@@ -649,7 +652,6 @@ timeline_style.reset()
 
 print('themes: one JSON file, its SVGs in it')
 import copy
-from subtitld.modules import timeline_themes
 themes = timeline_themes.available(reload=True)
 check('Classic, Subtitld\'s own', ([t for t in themes], themes['subtitld.classic'].builtin, timeline_themes.problems), (['subtitld.classic'], True, {}))
 classic_file = json.loads(themes['subtitld.classic'].path.read_text())
@@ -725,7 +727,23 @@ check('a setting changed: said', panel.theme_changed_label.text(), '(changed)')
 check('a file that is no theme: refused, and why', (panel.import_theme(shapes / 'good.svg'), panel.theme_problem.isHidden()),
       (None, False))
 panel.reset()
-check('reset: the defaults, no theme', (timeline_themes.current(), panel.theme_picker.currentText()), (None, 'Custom'))
+check('reset: the default theme', (timeline_themes.current().id, panel.theme_picker.currentText(),
+                                   panel.theme_changed_label.text()), ('subtitld.classic', 'Classic', ''))
+
+print('the default theme, as Subtitld starts')
+timeline_style.reset()
+timeline_themes.forget_current()
+check('no theme picked, nothing changed: set from it', (timeline_themes.use_default(), timeline_themes.current().id,
+      timeline_themes.changed()), (True, 'subtitld.classic', False))
+timeline_themes.apply('user.my-theme')
+check('a theme picked: kept', (timeline_themes.use_default(), timeline_themes.current().id), (False, 'user.my-theme'))
+timeline_style.reset()
+timeline_themes.forget_current()
+timeline_style.set_value('cursor_color', '#ff00ff00')
+check('settings changed, no theme: their own look kept', (timeline_themes.use_default(), timeline_themes.current(),
+      timeline_style.values()['cursor_color']), (False, None, '#ff00ff00'))
+timeline_style.reset()
+timeline_themes.forget_current()
 
 print('Classic draws the timeline as Subtitld always has')
 from PySide6.QtGui import QImage
