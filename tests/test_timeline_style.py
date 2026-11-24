@@ -723,6 +723,97 @@ check('labelled', picker.label.text(), 'Theme')
 timeline_style.reset()
 timeline_themes.forget_current()
 
+print('a theme\'s options')
+classic = timeline_themes.available()['subtitld.classic']
+check('Classic\'s six', [o['key'] for o in classic.options],
+      ['box_color', 'box_opacity', 'selected_box_color', 'text_size', 'playhead_color', 'waveform_color'])
+check('untouched, the theme\'s look as it was', timeline_style.clean(timeline_themes.look_of(classic)),
+      timeline_style.clean(timeline_themes.resolved(classic)))
+
+
+def option_verdict(option):
+    theme = copy.deepcopy(classic_file)
+    theme['options'] = [option]
+    try:
+        timeline_themes.parse(json.dumps(theme).encode())
+        return 'taken'
+    except timeline_themes.ThemeError as error:
+        return str(error).split(':')[1].strip()
+
+
+COLOR = {'key': 'c', 'type': 'color', 'default': '#ff112233'}
+PERCENT = {'key': 'p', 'type': 'int', 'default': 50, 'min': 0, 'max': 100}
+check('options refused: no setting, one there is not, a file, a colour by a number, an opacity past 100, a value it cannot hold',
+      [option_verdict({**COLOR}),
+       option_verdict({**COLOR, 'sets': [{'key': 'sparkle'}]}),
+       option_verdict({**COLOR, 'sets': [{'box': 'subtitle', 'key': 'frame_svg'}]}),
+       option_verdict({**PERCENT, 'sets': [{'key': 'cursor_color', 'part': 'color'}]}),
+       option_verdict({**PERCENT, 'max': 200, 'sets': [{'key': 'cursor_color', 'part': 'alpha'}]}),
+       option_verdict({**PERCENT, 'sets': [{'key': 'cursor_color'}]})],
+      ['sets no setting', 'no setting \'sparkle\' it can set', 'no setting \'frame_svg\' it can set',
+       'a colour\'s colour is set by a colour option', 'a colour\'s opacity is set by a number from 0 to 100',
+       'cursor_color cannot hold 50'])
+check('and taken', option_verdict({**PERCENT, 'sets': [{'box': 'subtitle', 'key': 'fill_color', 'part': 'alpha'}]}), 'taken')
+
+timeline_style.reset()
+timeline_themes.apply('subtitld.classic')
+timeline_themes.set_option('box_color', '#ff00ff00')
+check('a colour\'s colour: the theme\'s opacity kept', timeline_style.values('subtitle')['fill_color'], '#e600ff00')
+timeline_themes.set_option('box_opacity', 50)
+check('its opacity: the colour kept', timeline_style.values('subtitle')['fill_color'], '#8000ff00')
+timeline_themes.set_option('text_size', 14)
+check('a setting as it is', timeline_style.values('subtitle')['font_size'], 14)
+timeline_themes.set_option('playhead_color', '#ff0000ff')
+check('one option, every setting it names', [timeline_style.values()[k] for k in
+      ('cursor_color', 'cursor_badge_color', 'offscreen_arrow_color', 'repeat_area_color')],
+      ['#cc0000ff', '#960000ff', '#dc0000ff', '#500000ff'])
+check('a value past its range: held to it', (timeline_themes.set_option('text_size', 99),
+      timeline_style.values('subtitle')['font_size']), (20, 20))
+try:
+    timeline_themes.set_option('box_color', 'green')
+    check('a value it cannot hold: refused', False, True)
+except ValueError:
+    check('a value it cannot hold: refused', True, True)
+check('kept per theme, defaults left out', session.CONFIG['timeline']['theme_options']['subtitld.classic'],
+      {'box_color': '#ff00ff00', 'box_opacity': 50, 'text_size': 20, 'playhead_color': '#ff0000ff'})
+check('the look its theme\'s with them: not "changed"', timeline_themes.changed(), False)
+timeline_themes.apply('user.my-theme')
+timeline_themes.apply('subtitld.classic')
+check('another theme and back: they are there', timeline_style.values('subtitle')['fill_color'], '#8000ff00')
+newer = copy.deepcopy(classic_file)
+newer['version'] = '27.1.1'
+newer['options'] = [o for o in newer['options'] if o['key'] != 'text_size']
+newer_theme = timeline_themes.parse(json.dumps(newer).encode())
+timeline_themes._themes['subtitld.classic'] = newer_theme
+timeline_themes.apply('subtitld.classic')
+check('a later version of the theme: the options it still has, kept',
+      (timeline_style.values('subtitle')['fill_color'], timeline_style.values('subtitle')['font_size']), ('#8000ff00', 10))
+timeline_themes.available(reload=True)
+timeline_themes.apply('subtitld.classic')
+timeline_themes.reset_options()
+check('reset: the theme\'s own', (session.CONFIG['timeline']['theme_options']['subtitld.classic'],
+                                  timeline_style.values('subtitle')['fill_color']), ({}, '#e6c8dbe9'))
+
+print('the options under the picker')
+picked.clear()
+picker.build()
+from PySide6.QtWidgets import QLabel
+check('Classic\'s, labelled from the locale files',
+      [l.text() for l in picker.options_widget.findChildren(QLabel) if l.property('class') == 'widget_label'],
+      ['Subtitle color', 'Subtitle opacity', 'Selected subtitle color', 'Text size', 'Cursor color', 'Waveform color'])
+check('a control each, and a reset', (sorted(picker.controls), picker.reset_button.text()),
+      (sorted(o['key'] for o in classic.options), 'Reset'))
+picker.controls['box_opacity'].setValue(40)
+check('changed: the look with it, said', (timeline_style.values('subtitle')['fill_color'], len(picked)), ('#66c8dbe9', 1))
+picker.reset_button.click()
+check('reset', (timeline_style.values('subtitle')['fill_color'], picker.controls['box_opacity'].value()), ('#e6c8dbe9', 90))
+picker.picker.activated.emit(picker.picker.findData('user.my-theme'))
+check('a theme with options of its own shows them', sorted(picker.controls), sorted(o['key'] for o in classic.options))
+timeline_style.reset()
+timeline_themes.forget_current()
+picker.build()
+check('no theme: no options', (picker.controls, picker.options_widget.isHidden()), ({}, True))
+
 print('the default theme, as Subtitld starts')
 timeline_style.reset()
 timeline_themes.forget_current()
