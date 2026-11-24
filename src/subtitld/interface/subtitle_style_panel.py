@@ -17,8 +17,8 @@ what it says.
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor, QFontDatabase
-from PySide6.QtWidgets import (QCheckBox, QColorDialog, QComboBox, QDoubleSpinBox, QGroupBox, QHBoxLayout, QLabel,
-                               QLineEdit, QPushButton, QSpinBox, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QAbstractSpinBox, QCheckBox, QColorDialog, QComboBox, QDoubleSpinBox, QGroupBox,
+                               QHBoxLayout, QLabel, QLineEdit, QPushButton, QSpinBox, QVBoxLayout, QWidget)
 
 from subtitld.interface.translation import _
 from subtitld.modules import subtitle_styles
@@ -81,6 +81,9 @@ def field_control(field, value, label, option_text, on_set, parent=None):
             control.setDecimals(2)
         low, high = field.get('min', -999999), field.get('max', 999999)
         control.setRange(*((int(low), int(high)) if kind == 'int' else (low, high)))
+        # A number typed out of range is brought into it on Enter or on
+        # leaving the box, rather than thrown away for the old one.
+        control.setCorrectionMode(QAbstractSpinBox.CorrectToNearestValue)
         if field.get('step') is not None:
             control.setSingleStep(field['step'])
         control.setValue(value)

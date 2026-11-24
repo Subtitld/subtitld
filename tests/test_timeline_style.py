@@ -805,6 +805,12 @@ check('a control each, and a reset', (sorted(picker.controls), picker.reset_butt
       (sorted(o['key'] for o in classic.options), 'Reset'))
 picker.controls['box_opacity'].setValue(40)
 check('changed: the look with it, said', (timeline_style.values('subtitle')['fill_color'], len(picked)), ('#66c8dbe9', 1))
+opacity = picker.controls['box_opacity']
+opacity.lineEdit().selectAll()
+QTest.keyClicks(opacity, '20')
+QTest.keyClick(opacity, Qt.Key_Return)
+check('typed below its range: brought to its least, not thrown away',
+      (opacity.value(), timeline_themes.option_values(classic)['box_opacity']), (30, 30))
 picker.reset_button.click()
 check('reset', (timeline_style.values('subtitle')['fill_color'], picker.controls['box_opacity'].value()), ('#e6c8dbe9', 90))
 picker.picker.activated.emit(picker.picker.findData('user.my-theme'))
