@@ -97,16 +97,21 @@ def _error_text(error):
 
 
 class OpenUrlCard(QWidget):
+    """On the start screen, drawn as a dialog (utils.build_dialog_chrome) without being one: the title, the
+    close notch and the footer with Cancel and the tab of the action at hand."""
+
     def __init__(self, window):
         super().__init__()
         self.window_ = window
-        self.setObjectName('subtitldcc_card')
-        self.setAttribute(Qt.WA_StyledBackground, True)
+        self.setObjectName('open_url_card')
         self.setFixedWidth(460)
         self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
         self.setFocusPolicy(Qt.ClickFocus)
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(16, 14, 16, 16)
+        self.setLayout(QVBoxLayout())
+        self.layout().setContentsMargins(0, 0, 0, 0)
+        self.layout().setSpacing(0)
+        utils.build_dialog_chrome(self, '', self.cancel)
+        layout = self.content.layout()
         layout.setSpacing(8)
 
         self._state = None     # 'enter', 'looking', 'file', 'need_addon', 'no_addon', 'installing', 'page', 'failed'
@@ -118,10 +123,6 @@ class OpenUrlCard(QWidget):
         self._problem = ''
         self._detail = ''
 
-        self.kicker = _text('subtitldcc_kicker')
-        layout.addWidget(self.kicker)
-        self.title = _text('subtitldcc_card_title')
-        layout.addWidget(self.title)
         self.field = utils.LabeledLineEdit()
         self.field.lineedit.returnPressed.connect(self.open)
         layout.addWidget(self.field)
@@ -144,11 +145,11 @@ class OpenUrlCard(QWidget):
         self.error = _text('subtitldcc_error')
         layout.addWidget(self.error)
 
-        self.primary = _button(primary=True, small=False)
+        # The footer's buttons: the action at hand on the tab, Cancel on the left.
+        self.primary = self.accept_button
         self.primary.clicked.connect(lambda: self._primary_action and self._primary_action())
-        self.cancel_button = _button(small=False)
+        self.cancel_button = self.reject_button
         self.cancel_button.clicked.connect(self.cancel)
-        layout.addWidget(_row(self.primary, self.cancel_button))
         self._primary_action = None
 
         self.hide()
@@ -373,6 +374,7 @@ class OpenUrlCard(QWidget):
 
     def _actions(self, primary=None, cancel=True):
         self.primary.setVisible(primary is not None)
+        self.bottom_right.setVisible(primary is not None)
         if primary is not None:
             self.primary.setText(primary[0])
         self._primary_action = primary[1] if primary else None
@@ -435,8 +437,7 @@ class OpenUrlCard(QWidget):
         self.setFixedHeight(max(height, layout.minimumSize().height()))
 
     def retranslate(self):
-        self.kicker.setText(_('open_url.kicker'))
-        self.title.setText(_('open_url.title'))
+        self.title_line.label.setText(_('open_url.title'))
         self.field.setLabel(_('open_url.field'))
         self.field.lineedit.setPlaceholderText('https://')
         self.folder_button.setText(_('open_url.change_folder'))
