@@ -2359,7 +2359,7 @@ def move_start_back_subtitle_clicked(self):
     """Function to move starting position of selected subtitle backward"""
     if session.SUBTITLE.selected is not None:
         amount = step_amount(self)
-        nudge(self, subtitles.move_start_subtitle, amount=-amount, move_nereast=bool(session.CONFIG['timeline'].get('snap_move_nereast', False)))
+        nudge(self, subtitles.move_start_subtitle, amount=-amount, move_nereast=bool(session.CONFIG['timeline'].get('snap_move_nereast', False)), lane=subtitles.speaker_lane(getattr(self.timeline_widget, 'show_speaker_tracks', False)))
         timeline.update(self)
         left_panel.update(self)
         self.timeline_widget.setFocus(Qt.TabFocusReason)
@@ -2371,7 +2371,7 @@ def move_start_forward_subtitle_clicked(self):
     """Function to move starting position of selected subtitle forward"""
     if session.SUBTITLE.selected is not None:
         amount = step_amount(self)
-        nudge(self, subtitles.move_start_subtitle, amount=amount, move_nereast=bool(session.CONFIG['timeline'].get('snap_move_nereast', False)))
+        nudge(self, subtitles.move_start_subtitle, amount=amount, move_nereast=bool(session.CONFIG['timeline'].get('snap_move_nereast', False)), lane=subtitles.speaker_lane(getattr(self.timeline_widget, 'show_speaker_tracks', False)))
         timeline.update(self)
         left_panel.update(self)
         self.timeline_widget.setFocus(Qt.TabFocusReason)
