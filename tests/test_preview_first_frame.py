@@ -19,6 +19,7 @@ _xdg = tempfile.mkdtemp()
 for _key in ('XDG_CONFIG_HOME', 'XDG_CACHE_HOME', 'XDG_DATA_HOME'):
     os.environ[_key] = os.path.join(_xdg, _key.lower())
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
+from PySide6.QtCore import QEventLoop, QTimer
 from PySide6.QtWidgets import QApplication
 from PySide6.QtMultimedia import QMediaPlayer
 app = QApplication([])
@@ -37,10 +38,12 @@ def check(name, got, want):
 
 
 def wait(seconds, until=lambda: False):
+    # In an event loop, as in the app: the handover's deleteLater needs one.
     deadline = time.monotonic() + seconds
+    loop = QEventLoop()
     while time.monotonic() < deadline and not until():
-        app.processEvents()
-        time.sleep(0.01)
+        QTimer.singleShot(10, loop.quit)
+        loop.exec()
 
 
 ffmpeg = shutil.which('ffmpeg')
