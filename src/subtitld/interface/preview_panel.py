@@ -40,7 +40,8 @@ class PlayerWidget(QWidget):
         # Parented, so that Qt deletes it (see `hand_sound_to_engine`).
         widget._audio_output = QAudioOutput(widget)
         widget._media_player.setAudioOutput(widget._audio_output)
-        widget._media_player.audioOutputChanged.connect(widget._sound_handed_over, Qt.QueuedConnection)
+        # Direct: the seek must come before the new pipeline shows a frame.
+        widget._media_player.audioOutputChanged.connect(widget._sound_handed_over, Qt.DirectConnection)
         # widget._media_player.setAudioOutput(QAudioOutput())
         
         widget._audio_device = audioengine.SoundDeviceAudioEngine()
@@ -516,7 +517,9 @@ class PlayerWidget(QWidget):
         # whose sound is in the cache, now and then hung there). The event
         # loop runs the output's destructor without the GIL; the destructor
         # takes the output off the player, which says so in
-        # audioOutputChanged (`_sound_handed_over`).
+        # audioOutputChanged (`_sound_handed_over`, which seeks at once, as
+        # this did right after setAudioOutput: a tick later, the new
+        # demuxer had already shown the next keyframe).
         output.deleteLater()
 
     def _sound_handed_over(widget):
