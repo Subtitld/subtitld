@@ -112,7 +112,17 @@ def load(self):
 
     self.left_panel_stackedwidgets = QStackedWidget()
     self.left_panel_stackedwidgets.setObjectName('left_panel_stackedwidgets')
-    self.left_panel.layout().addWidget(self.left_panel_stackedwidgets)
+    # The panel can be made as narrow as one likes: only the page shown sets a minimum (a stack is
+    # otherwise as wide as its widest page, the Import page's 454px), and a page narrower than that
+    # minimum scrolls sideways instead of stopping the panel.
+    self.left_panel_stackedwidgets.currentChanged.connect(lambda _index: fit_shown_page(self))
+    self.left_panel_pages_scroll = QScrollArea()
+    self.left_panel_pages_scroll.setObjectName('left_panel_pages_scroll')
+    self.left_panel_pages_scroll.setWidgetResizable(True)
+    self.left_panel_pages_scroll.setFrameShape(QScrollArea.NoFrame)
+    self.left_panel_pages_scroll.setWidget(self.left_panel_stackedwidgets)
+    self.left_panel_pages_scroll.viewport().setAutoFillBackground(False)
+    self.left_panel.layout().addWidget(self.left_panel_pages_scroll)
 
     left_panel_subtitleslist.load(self)
     left_panel_plaintext.load(self)
@@ -132,6 +142,17 @@ def load(self):
     left_panel_autosave.load(self)
 
     self.left_panel_navigation.layout().itemAt(0).widget().click()
+    fit_shown_page(self)
+
+
+def fit_shown_page(self):
+    stack = self.left_panel_stackedwidgets
+    for index in range(stack.count()):
+        page = stack.widget(index)
+        shown = page is stack.currentWidget()
+        policy = QSizePolicy.Preferred if shown else QSizePolicy.Ignored
+        page.setSizePolicy(policy, policy)
+    stack.updateGeometry()
 
     
 def show(self):

@@ -1769,6 +1769,12 @@ QPushButton#left_panel_global_panel_export_settings_button:pressed {
     background-color: #40304251;
 }
 
+/* Around the pages, only for a page narrower than its content to scroll sideways: the pages' own ground shows. */
+QScrollArea#left_panel_pages_scroll {
+    border: 0;
+    background: transparent;
+}
+
 #left_panel_subtitleslist_bottom_buttons_container QPushButton,
 #left_panel_subtitleslist_bottom_buttons_container QComboBox {
     border-radius: 0;
