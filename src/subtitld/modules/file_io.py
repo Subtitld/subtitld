@@ -3158,6 +3158,7 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                     'mov': 'video/quicktime',
                     'webm': 'video/webm',
                     'ogv': 'video/ogg',
+                    'avi': 'video/x-msvideo',
                     'npy': 'application/octet-stream',
                 }.get(ext, 'application/octet-stream')
 
