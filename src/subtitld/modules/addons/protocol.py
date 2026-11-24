@@ -46,6 +46,7 @@ class ErrorCode:
     OOM = 'oom'
     DISK_FULL = 'disk_full'
     NETWORK_UNAVAILABLE = 'network_unavailable'
+    UNSUPPORTED_URL = 'unsupported_url'  # media.download: no video it can get at that link
     PROCESS_EXITED = 'process_exited'  # synthesised host-side when add-on dies mid-request
     TIMEOUT = 'timeout'                 # synthesised host-side
 

@@ -32,11 +32,13 @@ from subtitld.modules.addons.process import AddonProcess, DEFAULT_IDLE_GC_SEC
 from subtitld.modules.addons.provider import (
     ASRProvider,
     AudioSeparatorProvider,
+    MediaDownloadProvider,
     OCRProvider,
     TASK_ASR_TRANSCRIBE,
     TASK_ASR_ALIGN,
     TASK_ASR_STREAM,
     TASK_AUDIO_SEPARATE,
+    TASK_MEDIA_DOWNLOAD,
     TASK_OCR_RECOGNIZE,
     TASK_TTS_SYNTHESIZE,
     TASK_TRANSLATE,
@@ -1069,3 +1071,67 @@ class AddonOCRProvider(_AddonProviderMixin, OCRProvider):
         if req is None or self._process is None:
             return
         self._process.cancel(req.id)
+
+
+class AddonMediaDownloadProvider(_AddonProviderMixin, MediaDownloadProvider):
+    """Videos from web pages, got by a subprocess add-on (yt-dlp).
+
+    Protocol for ``media.download``::
+
+        request:  {url, output_dir, options}
+        progress: {value, message}      # value < 0 while the size is unknown
+        result:   {path, title?}
+
+    ``path`` is the file it wrote, in ``output_dir``. Once cancelled, the
+    add-on removes what it had written; the host has already said so.
+    """
+
+    def __init__(self, addon_id: str, manifest: dict, exe_path: str | Path,
+                 parent: QObject | None = None):
+        MediaDownloadProvider.__init__(self, parent)
+        _AddonProviderMixin.__init__(self, addon_id, manifest, exe_path)
+        self._active_request = None
+
+    def download(self, url: str, output_dir: str, options: dict | None = None) -> None:
+        try:
+            proc = self._ensure_process()
+        except Exception as exc:
+            self.error.emit(protocol.ErrorCode.INTERNAL, str(exc))
+            return
+
+        params = {'url': url, 'output_dir': str(output_dir), 'options': self._saved_options(options)}
+        req = proc.request(TASK_MEDIA_DOWNLOAD, params)
+        self._active_request = req
+
+        # Frames of a request cancelled since are not heard.
+        def on_progress(value: float, message: str) -> None:
+            if req is self._active_request:
+                self.progress.emit(float(value), str(message))
+
+        def on_result(data: dict) -> None:
+            if req is not self._active_request:
+                return
+            self._active_request = None
+            path = data.get('path') if isinstance(data, dict) else None
+            if not path or not os.path.isfile(path):
+                self.error.emit(protocol.ErrorCode.INTERNAL, f'{self._addon_id} wrote no file')
+                return
+            self.finished.emit(str(path), {'title': str(data.get('title') or '')})
+
+        def on_error(code: str, message: str) -> None:
+            if req is not self._active_request:
+                return
+            self._active_request = None
+            self.error.emit(str(code), str(message))
+
+        req.progress.connect(on_progress, Qt.QueuedConnection)
+        req.result.connect(on_result, Qt.QueuedConnection)
+        req.error.connect(on_error, Qt.QueuedConnection)
+
+    def cancel(self) -> None:
+        req, self._active_request = self._active_request, None
+        if req is None:
+            return
+        if self._process is not None:
+            self._process.cancel(req.id)
+        self.error.emit(protocol.ErrorCode.CANCELLED, 'cancelled')

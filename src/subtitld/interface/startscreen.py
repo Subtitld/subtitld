@@ -15,6 +15,7 @@ from subtitld.interface import utils
 from subtitld.interface import top_bar
 from subtitld.interface import playercontrols
 from subtitld.interface import recent_cards
+from subtitld.interface import open_url
 
 from subtitld.interface.translation import _
 
@@ -95,6 +96,13 @@ def load(self):
     self.start_screen_open_button.setProperty('class', 'button_dark')
     self.start_screen_bottom_open_file_column.layout().addWidget(self.start_screen_open_button, 0, Qt.AlignRight)
 
+    # A video from the internet: a link to the file, or to a page on a video website.
+    self.start_screen_open_link_button = QPushButton()
+    self.start_screen_open_link_button.setObjectName('start_screen_open_link_button')
+    self.start_screen_open_link_button.setCursor(Qt.PointingHandCursor)
+    self.start_screen_open_link_button.clicked.connect(lambda: open_url.show(self))
+    self.start_screen_bottom_open_file_column.layout().addWidget(self.start_screen_open_link_button, 0, Qt.AlignRight)
+
     self.start_screen_bottom_open_file_column.layout().addStretch()
 
     self.start_screen_bottom_line.layout().addWidget(self.start_screen_bottom_open_file_column, 1)
@@ -143,6 +151,7 @@ def load(self):
     # A project shared on subtitld.cc, opened from a link (no file of it here).
     from subtitld.interface import subtitldcc_open
     subtitldcc_open.load(self)
+    open_url.load(self)
 
     self.central_widget.layout().addWidget(self.start_screen)
 
@@ -381,10 +390,13 @@ def translate(self):
     self.start_screen_open_label.setText(_('startscreen.open_subtitle_or_video'))
     self.start_screen_open_button.setText(_('startscreen.open'))
     self.start_screen_open_button.setToolTip(_('startscreen.open_tooltip'))
+    self.start_screen_open_link_button.setText(_('startscreen.open_link'))
+    self.start_screen_open_link_button.setToolTip(_('startscreen.open_link_tooltip'))
     self.start_screen_recent_label.setText(_('startscreen.recent_subtitles'))
     self.start_screen_adver_label.setText((_('startscreen.version_number').format(__version__)))
     self.start_screen_adver_label_details.setText(_('startscreen.visit_website'))
     self.open_link_card.retranslate()
+    self.open_url_card.retranslate()
     for card in self.start_screen_recent_listwidget.findChildren(recent_cards.RecentCard):
         card.retranslate()
 

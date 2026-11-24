@@ -1604,7 +1604,23 @@ QGroupBox::title {
 
 #start_screen_open_button {
     padding: 10px 40px;
+}
+
+/* Under Open, as a link: a video from the internet. */
+QPushButton#start_screen_open_link_button {
+    background: transparent;
+    border: 0;
+    padding: 4px 0;
     margin-bottom: 40px;
+    color: rgba(184, 206, 224, 0.72);
+    font-family: 'Montserrat';
+    font-weight: 700;
+    font-size: 10px;
+    text-transform: uppercase;
+}
+
+QPushButton#start_screen_open_link_button:hover {
+    color: #b8cee0;
 }
 
 #start_screen_recentfiles_background {
