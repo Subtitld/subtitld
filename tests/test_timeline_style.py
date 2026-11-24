@@ -644,8 +644,18 @@ timeline_style.reset()
 print('themes: one JSON file, its SVGs in it')
 import copy
 themes = timeline_themes.available(reload=True)
-check('Classic, Subtitld\'s own', ([t for t in themes], themes['subtitld.classic'].builtin, timeline_themes.problems), (['subtitld.classic'], True, {}))
+check('Classic and Classic Light, Subtitld\'s own', ([t for t in themes], [t.builtin for t in themes.values()], timeline_themes.problems),
+      (['subtitld.classic', 'subtitld.classic-light'], [True, True], {}))
 classic_file = json.loads(themes['subtitld.classic'].path.read_text())
+light_file = json.loads(themes['subtitld.classic-light'].path.read_text())
+check('Classic Light: Classic\'s settings, options and shapes, only colours changed',
+      (sorted(light_file['timeline']) == sorted(classic_file['timeline']),
+       [k for k, v in light_file['timeline'].items() if v != classic_file['timeline'][k] and not str(v).startswith('#')],
+       [k for k, v in light_file['boxes']['subtitle'].items()
+        if v != classic_file['boxes']['subtitle'][k] and not str(v).startswith('#')],
+       [o['key'] for o in light_file['options']] == [o['key'] for o in classic_file['options']],
+       sorted(light_file['shapes']) == sorted(classic_file['shapes'])),
+      (True, [], [], True, True))
 
 
 def verdict(change):
@@ -695,7 +705,7 @@ timeline_style.reset()
 imported = timeline_themes.import_file(exported)
 timeline_themes.apply(imported.id)
 check('imported back: the same look, kept among the user\'s', (timeline_style.changes() == before, imported.builtin,
-      sorted(timeline_themes.available())), (True, False, ['subtitld.classic', 'user.my-theme']))
+      sorted(timeline_themes.available())), (True, False, ['subtitld.classic', 'subtitld.classic-light', 'user.my-theme']))
 copy_of_classic = Path(tempfile.mkdtemp()) / 'classic.json'
 copy_of_classic.write_text(themes['subtitld.classic'].path.read_text())
 try:
@@ -711,7 +721,7 @@ picked = []
 picker = TimelineThemePanel()
 picker.changed.connect(lambda: picked.append(1))
 check('no theme: Custom, then the themes', [picker.picker.itemText(i) for i in range(picker.picker.count())],
-      ['Custom', 'Classic', 'My Theme'])
+      ['Custom', 'Classic', 'Classic Light', 'My Theme'])
 picker.picker.activated.emit(picker.picker.findData('subtitld.classic'))
 check('picked: the look set from it, shown, said', (timeline_themes.current().id, timeline_themes.changed(),
       picker.picker.currentText(), picker.picker.findData(None), len(picked)), ('subtitld.classic', False, 'Classic', -1, 1))
