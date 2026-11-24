@@ -215,7 +215,8 @@ def load(self):
     # The timeline's look: its theme.
     self.global_panel_interface_tabwidget_timeline = QWidget()
     self.global_panel_interface_tabwidget_timeline.setLayout(QVBoxLayout())
-    self.global_panel_interface_tabwidget_timeline.layout().setContentsMargins(10, 10, 10, 10)
+    # No side margins: the subtitld.cc section's head runs from edge to edge; the cards keep their own.
+    self.global_panel_interface_tabwidget_timeline.layout().setContentsMargins(0, 10, 0, 10)
     self.global_panel_interface_timeline_theme_panel = TimelineThemePanel()
     self.global_panel_interface_timeline_theme_panel.changed.connect(lambda: refresh_timeline(self))
     theme.notifier.changed.connect(lambda name: timeline_follow_look(self, name))

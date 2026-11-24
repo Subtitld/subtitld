@@ -137,7 +137,7 @@ class TimelineThemePanel(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setLayout(QVBoxLayout())
-        self.layout().setContentsMargins(0, 0, 0, 0)
+        self.layout().setContentsMargins(10, 0, 10, 0)
         self.layout().setSpacing(10)
         self.label = QLabel()
         self.label.setProperty('class', 'widget_label')

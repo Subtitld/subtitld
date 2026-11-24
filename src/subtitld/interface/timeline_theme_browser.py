@@ -11,13 +11,14 @@ rated, or by name.
 A subtitld:// theme link (subtitldcc_open.open_link) shows that theme and its pair in the section, or,
 with no editor open, in a dialog holding the same section.
 
-Everything from subtitld.cc comes in the background (subtitldcc_service.call), the first time the section
-is shown; nothing needs signing in.
+Everything from subtitld.cc comes in the background (subtitldcc_service.call), once the section's head
+first comes into sight; nothing needs signing in.
 """
 
 from PySide6.QtCore import QRectF, QSize, Qt, QTimer, QUrl, Signal
-from PySide6.QtGui import QColor, QDesktopServices, QPainter, QPixmap
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QSizePolicy, QVBoxLayout, QWidget
+from PySide6.QtGui import QColor, QDesktopServices, QLinearGradient, QPainter, QPixmap
+from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QPushButton, QScrollArea, QSizePolicy, QVBoxLayout,
+                               QWidget)
 
 from subtitld.interface import shapes, theme, utils
 from subtitld.interface.addons_dialog import _AddonCard, _ElidedLabel, _graphic
@@ -74,6 +75,23 @@ class _Preview(QWidget):
                 painter.fillRect(QRectF(rect.width() * (0.06 + 0.3 * index), band, width, band), color)
         else:
             painter.fillRect(rect, shapes.CONTACT)
+
+
+class _Head(QWidget):
+    """The section's head, set apart from the cards above: a line along its top, and a shade under it
+    that fades out downwards."""
+
+    LINE = QColor(0, 0, 0, 90)
+    SHADE = QColor(0, 0, 0, 46)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        rect = QRectF(self.rect())
+        shade = QLinearGradient(0, 0, 0, rect.height())
+        shade.setColorAt(0, theme.surface(self.SHADE))
+        shade.setColorAt(1, QColor(0, 0, 0, 0))
+        painter.fillRect(rect, shade)
+        painter.fillRect(QRectF(0, 0, rect.width(), 1), theme.color(self.LINE))
 
 
 class ThemeCard(_AddonCard):
@@ -214,8 +232,8 @@ class ThemeCard(_AddonCard):
 
 
 def remote_info(info):
-    """A card's info for a theme subtitld.cc lists."""
-    return {**info, 'state': theme_store.state(info)}
+    """A card's info for a theme subtitld.cc lists: to install, so nothing to set, update or remove yet."""
+    return {**info, 'state': theme_store.state(info), 'options': False, 'removable': False, 'update': None}
 
 
 def install(owner, card, share_id, done, use=True):
@@ -263,15 +281,21 @@ class ThemeBrowser(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(10)
 
+        # The head: its name, then the search, the look and the order on one line.
+        self.head = _Head()
+        self.head.setObjectName('theme_store_head')
+        head = QVBoxLayout(self.head)
+        head.setContentsMargins(10, 14, 10, 18)
+        head.setSpacing(10)
+        layout.addWidget(self.head)
         self.heading = QLabel()
         self.heading.setProperty('class', 'widget_label')
-        layout.addWidget(self.heading)
+        head.addWidget(self.heading)
 
-        # The search, then the look and the order under it: the panel is narrow.
         self.bar = QWidget()
-        rows = QVBoxLayout(self.bar)
-        rows.setContentsMargins(0, 0, 0, 0)
-        rows.setSpacing(8)
+        bar = QHBoxLayout(self.bar)
+        bar.setContentsMargins(0, 0, 0, 0)
+        bar.setSpacing(8)
         self.search_field = utils.LabeledLineEdit()
         self.search = self.search_field.lineedit
         self.search.setObjectName('theme_store_search')
@@ -281,11 +305,8 @@ class ThemeBrowser(QWidget):
         self.search_timer.setInterval(350)
         self.search_timer.timeout.connect(self.reload)
         self.search.textChanged.connect(lambda _text: self.search_timer.start())
-        rows.addWidget(self.search_field)
-        bar = QHBoxLayout()
-        bar.setContentsMargins(0, 0, 0, 0)
-        bar.setSpacing(8)
-        rows.addLayout(bar)
+        self.search.setMinimumWidth(40)
+        bar.addWidget(self.search_field, 1)
         self.look = utils.LabeledComboBox()
         for value in LOOKS:
             self.look.combobox.addItem('', value)
@@ -296,10 +317,20 @@ class ThemeBrowser(QWidget):
             self.sort.combobox.addItem('', value)
         self.sort.combobox.activated.connect(lambda _index: self.reload())
         bar.addWidget(self.sort)
-        bar.addStretch()
-        layout.addWidget(self.bar)
+        # Narrow enough for one line in the panel: a long choice is cut short on the closed field.
+        for field in (self.look, self.sort):
+            field.combobox.setSizeAdjustPolicy(
+                field.combobox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+            field.combobox.setMinimumContentsLength(12)
+            field.setSizePolicy(QSizePolicy.Expanding, field.sizePolicy().verticalPolicy())
+        # Room to spare goes to all three, the search taking the most.
+        bar.setStretch(0, 3)
+        bar.setStretch(1, 2)
+        bar.setStretch(2, 2)
+        head.addWidget(self.bar)
 
         self.showing_one = QWidget()
+        head.addWidget(self.showing_one)
         one = QHBoxLayout(self.showing_one)
         one.setContentsMargins(0, 0, 0, 0)
         self.showing_one_label = QLabel()
@@ -310,26 +341,31 @@ class ThemeBrowser(QWidget):
         self.show_all.clicked.connect(lambda: self.show_theme(None))
         one.addWidget(self.show_all)
         self.showing_one.hide()
-        layout.addWidget(self.showing_one)
 
+        # The rest keeps the panel's 10px sides; the head above runs from edge to edge.
+        self.body = QWidget()
+        body = QVBoxLayout(self.body)
+        body.setContentsMargins(10, 0, 10, 0)
+        body.setSpacing(10)
+        layout.addWidget(self.body)
         self.status = QLabel()
         self.status.setObjectName('theme_store_status')
         self.status.setWordWrap(True)
-        layout.addWidget(self.status)
+        body.addWidget(self.status)
 
         self.list = QVBoxLayout()
         self.list.setContentsMargins(0, 0, 0, 0)
         self.list.setSpacing(10)
-        layout.addLayout(self.list)
+        body.addLayout(self.list)
         self.more = QPushButton()
         self.more.setObjectName('theme_store_more')
         self.more.clicked.connect(self.load_more)
         self.more.hide()
-        layout.addWidget(self.more, 0, Qt.AlignHCenter)
+        body.addWidget(self.more, 0, Qt.AlignHCenter)
         self.gallery = QPushButton()
         self.gallery.setObjectName('theme_store_gallery')
         self.gallery.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(service.site_url('/themes/timeline'))))
-        layout.addWidget(self.gallery, 0, Qt.AlignLeft)
+        body.addWidget(self.gallery, 0, Qt.AlignLeft)
         self.translate()
 
     def translate(self):
@@ -347,8 +383,28 @@ class ThemeBrowser(QWidget):
         self.gallery.setText(_('theme_store.gallery'))
 
     def showEvent(self, event):
+        """Fetched once its head is in sight: in the Timeline tab, when the panel is scrolled down to it,
+        not each time the tab opens."""
         super().showEvent(event)
-        if not self.loaded:
+        if self.loaded:
+            return
+        scroll = self._scroll_area()
+        if scroll is not None and not getattr(self, '_watching', False):
+            self._watching = True
+            scroll.verticalScrollBar().valueChanged.connect(lambda _value: self._load_if_seen())
+            scroll.verticalScrollBar().rangeChanged.connect(lambda _low, _high: self._load_if_seen())
+        QTimer.singleShot(0, self._load_if_seen)
+
+    def _scroll_area(self):
+        parent = self.parentWidget()
+        while parent is not None and not isinstance(parent, QScrollArea):
+            parent = parent.parentWidget()
+        return parent
+
+    def _load_if_seen(self):
+        if self.loaded or not self.isVisible():
+            return
+        if self._scroll_area() is None or not self.head.visibleRegion().isEmpty():
             self.reload()
 
     def show_theme(self, share_id):

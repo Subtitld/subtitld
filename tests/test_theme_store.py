@@ -152,10 +152,33 @@ check('gone, with its picture', (theme_store.theme_id('Night000001') in timeline
 check('the timeline goes back to the default theme', timeline_themes.current().id, timeline_themes.DEFAULT)
 check('and it can be installed again', theme_store.state(SITE['Night000001'][0]), 'install')
 
+print('fetched once scrolled to')
+from PySide6.QtWidgets import QScrollArea, QVBoxLayout, QWidget
+area = QScrollArea()
+area.setWidgetResizable(True)
+area.resize(400, 300)
+page = QWidget()
+QVBoxLayout(page)
+spacer = QWidget()
+spacer.setFixedHeight(2000)
+page.layout().addWidget(spacer)
+below = timeline_theme_browser.ThemeBrowser()
+page.layout().addWidget(below)
+area.setWidget(page)
+area.show()
+app.processEvents()
+app.processEvents()
+check('out of sight: nothing asked of subtitld.cc', (below.loaded, below.cards), (False, []))
+area.verticalScrollBar().setValue(area.verticalScrollBar().maximum())
+app.processEvents()
+check('scrolled to: the list comes', (below.loaded, len(below.cards) > 0), (True, True))
+area.hide()
+
 print('the themes on subtitld.cc, in the Timeline tab')
 dialog = timeline_theme_browser.ThemeBrowser()
 check('nothing fetched before it is shown', dialog.cards, [])
 dialog.show()
+app.processEvents()
 check('the ones not installed here (the installed have their card above)',
       [card.info['share_id'] for card in dialog.cards], ['Night000001', 'Alone000001'])
 card = dialog.cards[0]
