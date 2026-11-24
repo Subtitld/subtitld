@@ -53,6 +53,7 @@ from subtitld.modules.addons import schema as addon_schema
 from subtitld.modules.addons.provider import (
     TASK_ASR_TRANSCRIBE,
     TASK_AUDIO_SEPARATE,
+    TASK_MEDIA_DOWNLOAD,
     TASK_OCR_RECOGNIZE,
     TASK_TRANSLATE,
     TASK_TTS_SYNTHESIZE,
@@ -219,6 +220,7 @@ _TASK_TRANSLATION_KEYS: dict[str, str] = {
     'translate.text': 'addons_dialog.task_name.translate.text',
     'audio.separate': 'addons_dialog.task_name.audio.separate',
     'ocr.recognize': 'addons_dialog.task_name.ocr.recognize',
+    'media.download': 'addons_dialog.task_name.media.download',
 }
 
 
@@ -455,6 +457,7 @@ _TASK_LABELS: dict[str, tuple[str, str]] = {
     'translate.text': ('addons_dialog.filter.task.translate', 'addon_task_translate.svg'),
     'audio.separate': ('addons_dialog.filter.task.separation', 'addon_task_separation.svg'),
     'ocr.recognize': ('addons_dialog.filter.task.ocr', 'addon_task_ocr.svg'),
+    'media.download': ('addons_dialog.filter.task.web', 'addon_task_web.svg'),
 }
 
 
@@ -1623,7 +1626,7 @@ class AddonsPanel(QWidget):
         self._filters_popover = _FiltersPopover(self)
         self._task_combo = self._filters_popover.task.combobox
         for value in (self._TASK_ANY, TASK_TTS_SYNTHESIZE, TASK_ASR_TRANSCRIBE, TASK_AUDIO_SEPARATE, TASK_TRANSLATE,
-                      TASK_OCR_RECOGNIZE):
+                      TASK_OCR_RECOGNIZE, TASK_MEDIA_DOWNLOAD):
             self._task_combo.addItem('', value)
         self._task_combo.currentIndexChanged.connect(self._on_task_changed)
         # `userData` is the canonical lowercased tag we match against.
@@ -2235,7 +2238,7 @@ class AddonsPanel(QWidget):
 
         popover = self._filters_popover
         popover.task.setLabel(_('addons_dialog.filter.task.label'))
-        for index, key in enumerate(('any', 'tts', 'asr', 'separation', 'translate', 'ocr')):
+        for index, key in enumerate(('any', 'tts', 'asr', 'separation', 'translate', 'ocr', 'web')):
             self._task_combo.setItemText(index, _(f'addons_dialog.filter.task.{key}'))
         # Language filter — only the "Any" entry needs translation; the rest
         # of the rows are raw BCP-47 tags. We rebuild the combobox so the
