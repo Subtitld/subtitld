@@ -997,5 +997,10 @@
     "theme_store.gallery": "Відкрити галерею",
     "theme_store.newer": "Новіша: версія {version}",
     "theme_store.showing_one": "Тема за посиланням",
-    "theme_store.show_all": "Показати всі теми"
+    "theme_store.show_all": "Показати всі теми",
+    "theme_store.yours": "Ваші теми",
+    "theme_store.custom_note": "Шкала часу має власне оформлення, не з теми. Вибір теми замінить його.",
+    "theme_store.options": "Параметри",
+    "theme_store.options_title": "{name}: параметри",
+    "theme_store.all_installed": "Усі теми з subtitld.cc уже встановлено."
 }

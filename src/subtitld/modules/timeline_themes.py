@@ -332,11 +332,11 @@ def apply(theme_id):
     _config()['theme'] = theme_id
 
 
-def set_option(key, value):
-    """Set an option of the current theme, and the look with it: the value
-    as kept. KeyError for no such option, ValueError for a value it cannot
-    hold."""
-    theme = current()
+def set_option(key, value, theme_id=None):
+    """Set an option of the current theme (or of `theme_id`'s), and the look
+    with it while that theme is the look's: the value as kept. KeyError for
+    no such option, ValueError for a value it cannot hold."""
+    theme = available().get(theme_id) if theme_id else current()
     option = next((o for o in theme.options if o['key'] == key), None) if theme else None
     if option is None:
         raise KeyError(key)
@@ -348,16 +348,25 @@ def set_option(key, value):
         chosen.pop(key, None)
     else:
         chosen[key] = coerced
-    apply(theme.id)
+    if current() is not None and current().id == theme.id:
+        apply(theme.id)
     return coerced
 
 
-def reset_options():
-    """The current theme's options back to its own."""
-    theme = current()
+def reset_options(theme_id=None):
+    """The current theme's (or `theme_id`'s) options back to its own."""
+    theme = available().get(theme_id) if theme_id else current()
     if theme is not None:
         _chosen(theme.id).clear()
-        apply(theme.id)
+        if current() is not None and current().id == theme.id:
+            apply(theme.id)
+
+
+def preview_path(theme):
+    """The picture of the theme beside its file (<file>.png), drawn by Subtitld itself: shipped with
+    Subtitld's own themes, kept from subtitld.cc for those installed from there. None when there is none."""
+    path = theme.path.with_suffix('.png') if theme.path else None
+    return path if path is not None and path.is_file() else None
 
 
 def forget_current():

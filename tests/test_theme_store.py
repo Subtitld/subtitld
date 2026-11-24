@@ -19,6 +19,7 @@ from subtitld.modules import config, session, subtitldcc_links, theme_store, tim
 from subtitld.modules import subtitldcc_service as service
 from subtitld.interface import theme as interface_theme
 from subtitld.interface import timeline_theme_browser
+from subtitld.interface.timeline_theme_panel import TimelineThemePanel
 
 fails = []
 
@@ -56,6 +57,7 @@ SITE = {
     'Alone000001': (info('Alone000001', 'Alone', 'dark'), theme_file('Alone000001', 'Alone', 'dark')),
 }
 downloaded = []
+PNG = (Path(__file__).resolve().parents[1] / 'src/subtitld/timeline_themes/classic.png').read_bytes()
 
 
 class FakeClient:
@@ -74,7 +76,7 @@ class FakeClient:
         return SITE[share_id][1]
 
     def theme_preview(self, share_id, version=None):
-        return b''
+        return PNG
 
 
 class Done:
@@ -113,7 +115,7 @@ check('not a share ID, or more after it', (subtitldcc_links.parse('subtitld://su
 print('installing')
 check('nothing installed yet', theme_store.state(SITE['Night000001'][0]), 'install')
 files = theme_store.fetch('Night000001')
-check('the theme and its counterpart come down', [share_id for share_id, _version, _data in files],
+check('the theme and its counterpart come down', [file[0] for file in files],
       ['Night000001', 'Day00000001'])
 installed = theme_store.install(files)
 check('both installed, under cc.<share ID in hex>', (theme_store.theme_id('Night000001') in timeline_themes.available(),
@@ -121,8 +123,10 @@ check('both installed, under cc.<share ID in hex>', (theme_store.theme_id('Night
 check('and the timeline takes it (the look is dark)', timeline_themes.current().id, theme_store.theme_id('Night000001'))
 check('the browser says so', (theme_store.state(SITE['Night000001'][0]), theme_store.state(SITE['Day00000001'][0])),
       ('in_use', 'use'))
+check('their pictures kept beside them', all(timeline_themes.preview_path(timeline_themes.available()[theme_store.theme_id(i)])
+                                              for i in ('Night000001', 'Day00000001')), True)
 check('the versions are kept in the config', session.CONFIG['timeline']['installed'][theme_store.theme_id('Day00000001')],
-      {'share_id': 'Day00000001', 'version': 1})
+      {'share_id': 'Day00000001', 'version': 1, 'owner': 'marina'})
 newer = dict(SITE['Night000001'][0], version=2)
 check('a newer version on subtitld.cc is an update', theme_store.state(newer), 'update')
 
@@ -134,49 +138,58 @@ interface_theme.set_current('dark')
 timeline_themes.follow_look('dark')
 
 try:
-    theme_store.save('Alone000001', 1, SITE['Night000001'][1])
+    theme_store.save('Alone000001', 1, SITE['Night000001'][1], PNG)
     check('a file under another id is refused', 'saved', 'refused')
 except theme_store.StoreError:
     check('a file under another id is refused', 'refused', 'refused')
 
 print('removing')
-theme_store.use('Night000001')
-theme_store.remove('Night000001')
-check('gone', (theme_store.theme_id('Night000001') in timeline_themes.available(),
+theme_store.use(theme_store.theme_id('Night000001'))
+check('Use puts that one on, whatever the look', timeline_themes.current().id, theme_store.theme_id('Night000001'))
+theme_store.remove(theme_store.theme_id('Night000001'))
+check('gone, with its picture', (theme_store.theme_id('Night000001') in timeline_themes.available(),
                theme_store.theme_id('Night000001') in session.CONFIG['timeline']['installed']), (False, False))
 check('the timeline goes back to the default theme', timeline_themes.current().id, timeline_themes.DEFAULT)
 check('and it can be installed again', theme_store.state(SITE['Night000001'][0]), 'install')
 
-print('the browser, in the Timeline tab')
+print('the themes on subtitld.cc, in the Timeline tab')
 dialog = timeline_theme_browser.ThemeBrowser()
 check('nothing fetched before it is shown', dialog.cards, [])
 dialog.show()
-check('a card per theme subtitld.cc lists', [card.info['share_id'] for card in dialog.cards],
-      ['Night000001', 'Day00000001', 'Alone000001'])
-check('each with what it offers', [card.state for card in dialog.cards], ['install', 'use', 'install'])
-card = dialog.cards[1]
-check('the main action is the add-on cards\' slanted tab', card.main.property('class'), 'addon_card_tab')
-check('the trash only while the pointer is on the card, the globe always',
-      (card.remove.isHidden(), card.site.isHidden()), (True, False))
-check('nothing to remove on one not installed', hasattr(dialog.cards[0], 'remove'), False)
+check('the ones not installed here (the installed have their card above)',
+      [card.info['share_id'] for card in dialog.cards], ['Night000001', 'Alone000001'])
+card = dialog.cards[0]
+check('Install on the add-on cards\' slanted tab, the globe to its page',
+      (card.main.property('class'), card.site is not None, card.remove), ('addon_card_tab', True, None))
 changes = []
 dialog.installed.connect(lambda: changes.append(1))
 downloaded.clear()
-dialog.cards[2].main.click()
+dialog.cards[1].main.click()
 check('Install downloads it and puts it on the timeline', (downloaded, timeline_themes.current().id),
       (['Alone000001'], theme_store.theme_id('Alone000001')))
-check('and every card follows', [card.state for card in dialog.cards], ['install', 'use', 'in_use'])
+check('and its card goes up to the installed', [card.info['share_id'] for card in dialog.cards], ['Night000001'])
 check('the Timeline tab hears of it', len(changes), 1)
+panel = TimelineThemePanel()
+cards = {card.info['title']: card for card in panel.cards}
+check('installed: a card among the user\'s themes, in use, removable, with its picture and publisher',
+      (cards['Alone'].state, bool(cards['Alone'].remove), cards['Alone'].preview.pixmap is not None,
+       cards['Alone'].site is not None, cards['Alone'].info['owner']), ('in_use', True, True, True, 'marina'))
+timeline_theme_browser.remote['Alone000001'] = dict(SITE['Alone000001'][0], version=2)
+panel.build()
+cards = {card.info['title']: card for card in panel.cards}
+check('a newer version on subtitld.cc: an update button on its card', (cards['Alone'].update_button is not None,
+      cards['Classic'].update_button), (True, None))
 dialog.look.combobox.setCurrentIndex(dialog.look.combobox.findData('light'))
 dialog.reload()
-check('the look filter', [card.info['share_id'] for card in dialog.cards], ['Day00000001'])
+check('the look filter (Day is installed: none left)', ([card.info['share_id'] for card in dialog.cards],
+      dialog.status.isHidden()), ([], False))
 dialog.show_theme('Night000001')
 check('a theme link shows that theme and its pair', [card.info['share_id'] for card in dialog.cards],
       ['Night000001', 'Day00000001'])
 check('without the search bar, with a way back', (dialog.bar.isHidden(), dialog.showing_one.isHidden()),
       (True, False))
 dialog.show_all.click()
-check('back to the list', (dialog.bar.isHidden(), len(dialog.cards)), (False, 1))
+check('back to the list', dialog.bar.isHidden(), False)
 
 print()
 print('ALL PASS' if not fails else f'FAILED: {fails}')

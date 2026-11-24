@@ -997,5 +997,10 @@
     "theme_store.gallery": "打开主题库",
     "theme_store.newer": "更新版本：{version}",
     "theme_store.showing_one": "来自链接的主题",
-    "theme_store.show_all": "显示所有主题"
+    "theme_store.show_all": "显示所有主题",
+    "theme_store.yours": "你的主题",
+    "theme_store.custom_note": "时间轴使用的是自己的外观，不来自任何主题。选择主题会替换它。",
+    "theme_store.options": "选项",
+    "theme_store.options_title": "{name}：选项",
+    "theme_store.all_installed": "subtitld.cc 上的所有主题都已安装。"
 }

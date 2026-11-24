@@ -997,5 +997,10 @@
     "theme_store.gallery": "갤러리 열기",
     "theme_store.newer": "새 버전: {version}",
     "theme_store.showing_one": "링크로 연 테마",
-    "theme_store.show_all": "모든 테마 보기"
+    "theme_store.show_all": "모든 테마 보기",
+    "theme_store.yours": "내 테마",
+    "theme_store.custom_note": "타임라인에 테마가 아닌 자체 모양이 적용되어 있습니다. 테마를 고르면 바뀝니다.",
+    "theme_store.options": "옵션",
+    "theme_store.options_title": "{name}: 옵션",
+    "theme_store.all_installed": "subtitld.cc의 모든 테마가 이미 설치되어 있습니다."
 }

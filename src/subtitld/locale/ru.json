@@ -997,5 +997,10 @@
     "theme_store.gallery": "Открыть галерею",
     "theme_store.newer": "Новее: версия {version}",
     "theme_store.showing_one": "Тема по ссылке",
-    "theme_store.show_all": "Показать все темы"
+    "theme_store.show_all": "Показать все темы",
+    "theme_store.yours": "Ваши темы",
+    "theme_store.custom_note": "У шкалы времени своё оформление, не из темы. Выбор темы заменит его.",
+    "theme_store.options": "Параметры",
+    "theme_store.options_title": "{name}: параметры",
+    "theme_store.all_installed": "Все темы с subtitld.cc уже установлены."
 }

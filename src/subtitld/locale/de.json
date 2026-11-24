@@ -997,5 +997,10 @@
     "theme_store.gallery": "Galerie öffnen",
     "theme_store.newer": "Neuer: Version {version}",
     "theme_store.showing_one": "Ein Design aus einem Link",
-    "theme_store.show_all": "Alle Designs anzeigen"
+    "theme_store.show_all": "Alle Designs anzeigen",
+    "theme_store.yours": "Deine Designs",
+    "theme_store.custom_note": "Die Timeline hat ein eigenes Erscheinungsbild, aus keinem Design. Ein Design zu wählen ersetzt es.",
+    "theme_store.options": "Optionen",
+    "theme_store.options_title": "{name}: Optionen",
+    "theme_store.all_installed": "Alle Designs von subtitld.cc sind hier schon installiert."
 }

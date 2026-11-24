@@ -997,5 +997,10 @@
     "theme_store.gallery": "Galerij openen",
     "theme_store.newer": "Nieuwer: versie {version}",
     "theme_store.showing_one": "Een thema uit een link",
-    "theme_store.show_all": "Alle thema’s tonen"
+    "theme_store.show_all": "Alle thema’s tonen",
+    "theme_store.yours": "Jouw thema’s",
+    "theme_store.custom_note": "De tijdlijn heeft een eigen weergave, van geen thema. Een thema kiezen vervangt die.",
+    "theme_store.options": "Opties",
+    "theme_store.options_title": "{name}: opties",
+    "theme_store.all_installed": "Alle thema’s van subtitld.cc zijn hier al geïnstalleerd."
 }

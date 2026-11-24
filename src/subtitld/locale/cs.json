@@ -997,5 +997,10 @@
     "theme_store.gallery": "Otevřít galerii",
     "theme_store.newer": "Novější: verze {version}",
     "theme_store.showing_one": "Motiv z odkazu",
-    "theme_store.show_all": "Zobrazit všechny motivy"
+    "theme_store.show_all": "Zobrazit všechny motivy",
+    "theme_store.yours": "Vaše motivy",
+    "theme_store.custom_note": "Časová osa má vlastní vzhled, z žádného motivu. Výběr motivu ho nahradí.",
+    "theme_store.options": "Možnosti",
+    "theme_store.options_title": "{name}: možnosti",
+    "theme_store.all_installed": "Všechny motivy ze subtitld.cc už jsou tu nainstalované."
 }

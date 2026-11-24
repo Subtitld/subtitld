@@ -997,5 +997,10 @@
     "theme_store.gallery": "Apri la galleria",
     "theme_store.newer": "Più recente: versione {version}",
     "theme_store.showing_one": "Un tema da un link",
-    "theme_store.show_all": "Mostra tutti i temi"
+    "theme_store.show_all": "Mostra tutti i temi",
+    "theme_store.yours": "I tuoi temi",
+    "theme_store.custom_note": "La timeline ha un aspetto suo, da nessun tema. Scegliere un tema lo sostituisce.",
+    "theme_store.options": "Opzioni",
+    "theme_store.options_title": "{name}: opzioni",
+    "theme_store.all_installed": "Tutti i temi di subtitld.cc sono già installati qui."
 }

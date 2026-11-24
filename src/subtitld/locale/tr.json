@@ -997,5 +997,10 @@
     "theme_store.gallery": "Galeriyi aç",
     "theme_store.newer": "Daha yeni: sürüm {version}",
     "theme_store.showing_one": "Bağlantıdan bir tema",
-    "theme_store.show_all": "Tüm temaları göster"
+    "theme_store.show_all": "Tüm temaları göster",
+    "theme_store.yours": "Temalarınız",
+    "theme_store.custom_note": "Zaman çizelgesinin hiçbir temadan gelmeyen kendi görünümü var. Bir tema seçmek onun yerini alır.",
+    "theme_store.options": "Seçenekler",
+    "theme_store.options_title": "{name}: seçenekler",
+    "theme_store.all_installed": "subtitld.cc’deki tüm temalar zaten burada yüklü."
 }

@@ -224,6 +224,8 @@ def load(self):
     self.global_panel_interface_tabwidget_timeline.layout().addSpacing(24)
     self.global_panel_interface_theme_browser = timeline_theme_browser.ThemeBrowser()
     self.global_panel_interface_theme_browser.installed.connect(lambda: timeline_theme_browser.follow(self))
+    # What subtitld.cc lists tells the installed themes' cards of their updates.
+    self.global_panel_interface_theme_browser.listed.connect(self.global_panel_interface_timeline_theme_panel.build)
     self.global_panel_interface_tabwidget_timeline.layout().addWidget(self.global_panel_interface_theme_browser)
     self.global_panel_interface_tabwidget_timeline.layout().addStretch()
     self.global_panel_interface_tabwidget.addTab(self.global_panel_interface_tabwidget_timeline, '')

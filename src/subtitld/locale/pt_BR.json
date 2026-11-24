@@ -1364,5 +1364,10 @@
     "theme_store.gallery": "Abrir a galeria",
     "theme_store.newer": "Mais nova: versão {version}",
     "theme_store.showing_one": "Um tema de um link",
-    "theme_store.show_all": "Mostrar todos os temas"
+    "theme_store.show_all": "Mostrar todos os temas",
+    "theme_store.yours": "Seus temas",
+    "theme_store.custom_note": "A linha do tempo tem um visual próprio, de nenhum tema. Escolher um tema o substitui.",
+    "theme_store.options": "Opções",
+    "theme_store.options_title": "{name}: opções",
+    "theme_store.all_installed": "Todos os temas do subtitld.cc já estão instalados aqui."
 }

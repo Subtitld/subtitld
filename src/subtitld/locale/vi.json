@@ -997,5 +997,10 @@
     "theme_store.gallery": "Mở thư viện",
     "theme_store.newer": "Mới hơn: phiên bản {version}",
     "theme_store.showing_one": "Giao diện từ một liên kết",
-    "theme_store.show_all": "Hiện tất cả giao diện"
+    "theme_store.show_all": "Hiện tất cả giao diện",
+    "theme_store.yours": "Giao diện của bạn",
+    "theme_store.custom_note": "Dòng thời gian đang có kiểu riêng, không từ giao diện nào. Chọn một giao diện sẽ thay thế nó.",
+    "theme_store.options": "Tùy chọn",
+    "theme_store.options_title": "{name}: tùy chọn",
+    "theme_store.all_installed": "Mọi giao diện trên subtitld.cc đều đã được cài ở đây."
 }

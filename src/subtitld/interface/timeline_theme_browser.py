@@ -1,25 +1,25 @@
-"""Timeline themes from subtitld.cc, browsed and installed in Subtitld (modules/theme_store.py).
+"""Timeline theme cards, and the themes on subtitld.cc to install (modules/theme_store.py).
 
-A section of the Timeline tab, under the theme picker: the public themes on subtitld.cc (by look, popular,
-new or best rated, or by name), each as a card drawn like an add-on's. On its band, the look it is drawn
-for on the slanted label and its name; under it the preview subtitld.cc drew, who made it and whether it
-comes with a counterpart for the other look. In the footer, a globe to its page on subtitld.cc and, on the
-slanted tab in the corner, Install (the theme and its counterpart, and the timeline takes the one drawn
-for the interface's look), Update when subtitld.cc has a newer version, Use for an installed one; the
-trash beside the tab, shown while the pointer is on the card, removes it.
+A card is drawn like an add-on's: the look the theme is drawn for on the slanted label, its name on the
+band, the theme's picture from edge to edge under it, who made it, and the footer: a globe to its page on
+subtitld.cc, then, at the right, its options, an update, the trash (while the pointer is on the card) and
+the slanted tab in the corner: Use, Install, or, for the theme the timeline wears, a quiet In use mark in
+its place. The Timeline tab lists the installed themes so (interface/timeline_theme_panel.py) and, under
+them, this section: the public themes on subtitld.cc not installed here, by look, popular, new or best
+rated, or by name.
 
-A subtitld:// theme link (subtitldcc_open.open_link) shows that theme and its pair here, or, with no
-editor open, in a dialog holding the same section.
+A subtitld:// theme link (subtitldcc_open.open_link) shows that theme and its pair in the section, or,
+with no editor open, in a dialog holding the same section.
 
 Everything from subtitld.cc comes in the background (subtitldcc_service.call), the first time the section
 is shown; nothing needs signing in.
 """
 
 from PySide6.QtCore import QRectF, QSize, Qt, QTimer, QUrl, Signal
-from PySide6.QtGui import QDesktopServices, QPainter, QPixmap
+from PySide6.QtGui import QColor, QDesktopServices, QPainter, QPixmap
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QSizePolicy, QVBoxLayout, QWidget
 
-from subtitld.interface import shapes, utils
+from subtitld.interface import shapes, theme, utils
 from subtitld.interface.addons_dialog import _AddonCard, _ElidedLabel, _graphic
 from subtitld.interface.translation import _
 from subtitld.modules import subtitldcc_service as service
@@ -27,16 +27,18 @@ from subtitld.modules import theme_store
 
 LOOKS = ('', 'dark', 'light')
 SORTS = ('popular', 'new', 'top')
-PREVIEW_RATIO = 2 / 9                   # the previews subtitld.cc draws are 9:2
+PREVIEW_RATIO = 2 / 9                   # the pictures Subtitld draws of a theme are 9:2
 _previews = {}                          # (share_id, version) -> QPixmap, for as long as Subtitld runs
+remote = {}                             # share_id -> what subtitld.cc said of it last
 
 
 class _Preview(QWidget):
-    """The preview, as wide as the card and 9:2."""
+    """The theme's picture, as wide as the card and 9:2; its key colours in bands while there is none."""
 
-    def __init__(self, parent=None):
+    def __init__(self, colors=(), parent=None):
         super().__init__(parent)
         self.pixmap = None
+        self.colors = [QColor(color) for color in colors]
         policy = QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         policy.setHeightForWidth(True)
         self.setSizePolicy(policy)
@@ -60,31 +62,41 @@ class _Preview(QWidget):
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.SmoothPixmapTransform)
-        painter.setRenderHint(QPainter.Antialiasing)
         rect = QRectF(self.rect())
-        painter.setClipPath(shapes.rect_path(rect))
-        if self.pixmap is None or self.pixmap.isNull():
-            painter.fillRect(rect, shapes.CONTACT)
-        else:
+        if self.pixmap is not None and not self.pixmap.isNull():
             painter.drawPixmap(rect, self.pixmap, QRectF(self.pixmap.rect()))
+        elif self.colors:
+            ground, *rest = self.colors
+            painter.fillRect(rect, ground)
+            band = rect.height() / 3
+            for index, color in enumerate(rest[:3]):
+                width = rect.width() * (0.42 - 0.08 * index)
+                painter.fillRect(QRectF(rect.width() * (0.06 + 0.3 * index), band, width, band), color)
+        else:
+            painter.fillRect(rect, shapes.CONTACT)
 
 
 class ThemeCard(_AddonCard):
-    """One theme subtitld.cc lists, drawn as an add-on card is (its band, slanted label, contact line and
-    corner tab). `act(info, action)`: 'install', 'update', 'use' or 'remove'."""
+    """A theme as a card, drawn as an add-on card is (band, slanted label, contact line, corner tab).
+
+    `info`: title, owner (or author), look, counterpart, rating, downloads, url (its page on subtitld.cc),
+    and state: 'install', 'update', 'use' or 'in_use'; with `options` (it has some), `removable` and
+    `update` (subtitld.cc has a newer version of an installed one). `act(info, action)`: 'install',
+    'update', 'use', 'remove' or 'options'."""
 
     act = Signal(dict, str)
+    COLOURS = {**_AddonCard.COLOURS, 'in_use': ('#33475a', '#4a6880')}
 
-    def __init__(self, info, parent=None):
+    def __init__(self, info, colors=(), parent=None):
         QFrame.__init__(self, parent)              # the add-on card's drawing, not its add-on
         self.info = info
-        self.state = theme_store.state(info)
+        self.state = info['state']
         self.setProperty('class', 'addon_card')
         self.setObjectName('theme_card')
         policy = QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         policy.setHeightForWidth(True)
         self.setSizePolicy(policy)
-        self._kind = 'available' if self.state == 'install' else 'installed'
+        self._kind = {'install': 'available', 'in_use': 'in_use'}.get(self.state, 'installed')
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 1)        # the contact line's row
@@ -96,68 +108,86 @@ class ThemeCard(_AddonCard):
         band.setLayout(QHBoxLayout())
         band.layout().setContentsMargins(9, 0, 12, 0)
         band.layout().setSpacing(0)
-        self._task_text = QLabel(_(f"theme_store.look_{info['look']}"))
+        self._task_text = QLabel(_(f"theme_store.look_{info['look']}") if info.get('look') else '')
         self._task_text.setProperty('class', 'addon_card_task')
         self._task_text.setContentsMargins(0, 0, 0, self.BAND - self.LABEL)
         band.layout().addWidget(self._task_text)
-        band.layout().addSpacing(24)                # the label's padding and its slant
+        band.layout().addSpacing(24 if info.get('look') else 5)   # the label's padding and its slant
         title = _ElidedLabel(info['title'], least=60)
         title.setProperty('class', 'addon_card_title')
         band.layout().addWidget(title, 1)
-        if self.state == 'update':
-            version = QLabel(_('theme_store.newer').format(version=info['version']))
+        if info.get('update'):
+            version = QLabel(_('theme_store.newer').format(version=info['update']))
             version.setProperty('class', 'addon_card_version')
             band.layout().addWidget(version)
         outer.addWidget(band)
 
-        # --- The preview and what it is ------------------------------------
-        body = QWidget()
-        body.setLayout(QVBoxLayout())
-        body.layout().setContentsMargins(14, 12, 14, 10)
-        body.layout().setSpacing(9)
-        self.preview = _Preview()
+        # --- The picture, edge to edge, and what it is ----------------------
+        self.preview = _Preview(colors)
         self.preview.setAccessibleName(_('theme_store.preview_of').format(name=info['title']))
-        body.layout().addWidget(self.preview)
-        about = [f"@{info['owner']}" if info.get('owner') else '']
+        outer.addWidget(self.preview)
+        about = [f"@{info['owner']}" if info.get('owner') else info.get('author', '')]
         if info.get('counterpart'):
             about.append(_('theme_store.both_looks'))
         if info.get('rating'):
             about.append(f"★ {info['rating']['average']:.1f}")
-        about.append(_('theme_store.downloads').format(count=info.get('downloads', 0)))
+        if 'downloads' in info:
+            about.append(_('theme_store.downloads').format(count=info['downloads']))
         meta = QLabel(' · '.join(part for part in about if part))
         meta.setProperty('class', 'addon_card_summary')
         meta.setWordWrap(True)
-        body.layout().addWidget(meta)
-        outer.addWidget(body)
+        meta.setContentsMargins(14, 9, 14, 4)
+        outer.addWidget(meta)
 
-        # --- The footer: its page, then the trash and the tab ---------------
+        # --- The footer: its page; its options, update, trash and the tab ---
         footer = QWidget()
         footer.setFixedHeight(30)
         footer.setLayout(QHBoxLayout())
         footer.layout().setContentsMargins(4, 0, 0, 0)
-        footer.layout().setSpacing(0)
-        self.site = self._button('theme_card_site.svg', _('theme_store.on_site'),
-                                 lambda: QDesktopServices.openUrl(QUrl(info['url'])))
-        footer.layout().addWidget(self.site, 0, Qt.AlignVCenter)
+        footer.layout().setSpacing(2)
+        self.site = None
+        if info.get('url'):
+            self.site = self._button('theme_card_site.svg', _('theme_store.on_site'),
+                                     lambda: QDesktopServices.openUrl(QUrl(info['url'])))
+            footer.layout().addWidget(self.site, 0, Qt.AlignVCenter)
         footer.layout().addStretch()
         self._hover_buttons = []
-        if self.state != 'install':
+        self.update_button = self.options = self.remove = None
+        if info.get('update'):
+            self.update_button = self._button('addon_card_update.svg', _('theme_store.action_update'),
+                                              lambda: self.act.emit(self.info, 'update'))
+            footer.layout().addWidget(self.update_button, 0, Qt.AlignVCenter)
+        if info.get('options'):
+            self.options = self._button('theme_card_options.svg', _('theme_store.options'),
+                                        lambda: self.act.emit(self.info, 'options'))
+            footer.layout().addWidget(self.options, 0, Qt.AlignVCenter)
+        if info.get('removable'):
             self.remove = self._button('addon_card_remove.svg', _('theme_store.remove'),
                                        lambda: self.act.emit(self.info, 'remove'))
             self._hover_buttons.append(self.remove)
             footer.layout().addWidget(self.remove, 0, Qt.AlignVCenter)
-            footer.layout().addSpacing(4)
-        self.main = QPushButton(_(f'theme_store.action_{self.state}'))
-        self.main.setObjectName(f'theme_store_{self.state}')
-        self.main.setProperty('class', 'addon_card_tab')
-        self.main.setFixedHeight(30)
-        if self.state == 'install':
-            self.main.setIcon(_graphic('addon_card_install.svg'))
-        elif self.state == 'update':
-            self.main.setIcon(_graphic('addon_card_update.svg'))
-        self.main.setEnabled(self.state != 'in_use')
-        self.main.clicked.connect(lambda: self.act.emit(self.info, self.state))
-        footer.layout().addWidget(self.main)
+        footer.layout().addSpacing(4)
+        if self.state == 'in_use':
+            # Not a button: a mark in the tab's place, saying what is so.
+            self.main = QLabel(_('theme_store.action_in_use'))
+            self.main.setObjectName('theme_store_in_use')
+            self.main.setProperty('class', 'theme_card_in_use')
+            icon = QLabel()
+            icon.setPixmap(theme.icon('theme_card_in_use.svg').pixmap(QSize(16, 16), self.devicePixelRatioF()))
+            icon.setProperty('class', 'theme_card_in_use')
+            footer.layout().addWidget(icon, 0, Qt.AlignVCenter)
+            footer.layout().addSpacing(5)
+            footer.layout().addWidget(self.main, 0, Qt.AlignVCenter)
+            footer.layout().addSpacing(13)
+        else:
+            self.main = QPushButton(_(f'theme_store.action_{self.state}'))
+            self.main.setObjectName(f'theme_store_{self.state}')
+            self.main.setProperty('class', 'addon_card_tab')
+            self.main.setFixedHeight(30)
+            if self.state == 'install':
+                self.main.setIcon(_graphic('addon_card_install.svg'))
+            self.main.clicked.connect(lambda: self.act.emit(self.info, self.state))
+            footer.layout().addWidget(self.main)
         outer.addWidget(footer)
         for button in self._hover_buttons:
             button.setVisible(False)
@@ -174,19 +204,50 @@ class ThemeCard(_AddonCard):
         return button
 
     def set_busy(self, text):
-        self.main.setEnabled(False)
-        self.main.setText(text)
+        if isinstance(self.main, QPushButton):
+            self.main.setEnabled(False)
+            self.main.setText(text)
 
     def set_preview(self, pixmap):
         if pixmap is not None and not pixmap.isNull():
             self.preview.set_pixmap(pixmap)
 
 
+def remote_info(info):
+    """A card's info for a theme subtitld.cc lists."""
+    return {**info, 'state': theme_store.state(info)}
+
+
+def install(owner, card, share_id, done, use=True):
+    """Fetch and install a theme (and its pair) in the background; `done()` after, on the UI thread.
+    With `use`, the timeline takes it (theme_store.install)."""
+    card.set_busy(_('theme_store.installing'))
+
+    def installed(files):
+        try:
+            theme_store.install(files, use=use)
+        except theme_store.StoreError as error:
+            owner.install_failed(card, error)
+            return
+        done()
+
+    owner.calls.append(service.call(lambda: theme_store.fetch(share_id), installed,
+                                    lambda error: owner.install_failed(card, error)))
+
+
+def failure_text(error):
+    if isinstance(error, theme_store.StoreError):
+        return str(error)
+    return service.error_message(error, _) or str(error)
+
+
 class ThemeBrowser(QWidget):
-    """The themes subtitld.cc has, to install. `installed` after the timeline's theme or the list of
-    installed themes changed. Loads the first time it is shown."""
+    """The themes subtitld.cc has that aren't installed here, to install. `installed` after one was;
+    `listed` when subtitld.cc answered (the installed themes' cards then know of their updates). Loads the
+    first time it is shown."""
 
     installed = Signal()
+    listed = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -211,9 +272,6 @@ class ThemeBrowser(QWidget):
         rows = QVBoxLayout(self.bar)
         rows.setContentsMargins(0, 0, 0, 0)
         rows.setSpacing(8)
-        bar = QHBoxLayout()
-        bar.setContentsMargins(0, 0, 0, 0)
-        bar.setSpacing(8)
         self.search_field = utils.LabeledLineEdit()
         self.search = self.search_field.lineedit
         self.search.setObjectName('theme_store_search')
@@ -224,6 +282,9 @@ class ThemeBrowser(QWidget):
         self.search_timer.timeout.connect(self.reload)
         self.search.textChanged.connect(lambda _text: self.search_timer.start())
         rows.addWidget(self.search_field)
+        bar = QHBoxLayout()
+        bar.setContentsMargins(0, 0, 0, 0)
+        bar.setSpacing(8)
         rows.addLayout(bar)
         self.look = utils.LabeledComboBox()
         for value in LOOKS:
@@ -267,7 +328,6 @@ class ThemeBrowser(QWidget):
         layout.addWidget(self.more, 0, Qt.AlignHCenter)
         self.gallery = QPushButton()
         self.gallery.setObjectName('theme_store_gallery')
-        self.gallery.setFlat(True)
         self.gallery.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(service.site_url('/themes/timeline'))))
         layout.addWidget(self.gallery, 0, Qt.AlignLeft)
         self.translate()
@@ -348,20 +408,35 @@ class ThemeBrowser(QWidget):
             self.more.setEnabled(False)
             self._page(self.next_cursor)
 
+    def _remember(self, infos):
+        for info in infos:
+            remote[info['share_id']] = info
+        self.listed.emit()
+
     def _listed(self, answer):
         self.next_cursor = answer.get('next_cursor')
-        self._add(answer.get('results') or [])
+        results = answer.get('results') or []
+        self._remember(results)
+        # Installed ones have their card above, with the installed themes.
+        self._add([info for info in results if theme_store.state(info) == 'install'])
         self.more.setEnabled(True)
         self.more.setVisible(bool(self.next_cursor))
-        if not self.cards:
-            searching = self.search.text().strip() or self.look.combobox.currentData()
-            self.status.setText(_('theme_store.no_matches' if searching else 'theme_store.empty'))
-        else:
+        self._say_if_empty()
+
+    def _say_if_empty(self):
+        if self.cards:
             self.status.hide()
+            return
+        searching = self.search.text().strip() or self.look.combobox.currentData()
+        self.status.setText(_('theme_store.no_matches' if searching else 'theme_store.all_installed'
+                              if remote else 'theme_store.empty'))
+        self.status.show()
 
     def _one(self, info):
         pair = info.pop('pair', None)
-        self._add([info, pair] if pair else [info])
+        infos = [info, pair] if pair else [info]
+        self._remember(infos)
+        self._add(infos)
         self.status.hide()
 
     def _failed(self, error):
@@ -369,13 +444,12 @@ class ThemeBrowser(QWidget):
         if service.error_code(error) == 'not_found':
             self.status.setText(_('theme_store.not_found'))
         else:
-            self.status.setText(_('theme_store.unreachable').format(
-                error=service.error_message(error, _) or str(error)))
+            self.status.setText(_('theme_store.unreachable').format(error=failure_text(error)))
         self.status.show()
 
     def _add(self, infos):
         for info in infos:
-            card = ThemeCard(info)
+            card = ThemeCard(remote_info(info), (info.get('colors') or {}).values())
             card.act.connect(self._act)
             self.list.addWidget(card)
             self.cards.append(card)
@@ -398,41 +472,33 @@ class ThemeBrowser(QWidget):
     # --- Installing -----------------------------------------------------------------------------------
 
     def _act(self, info, action):
-        share_id = info['share_id']
-        if action in ('use', 'remove'):
-            theme_store.use(share_id) if action == 'use' else theme_store.remove(share_id)
+        card = next(card for card in self.cards if card.info['share_id'] == info['share_id'])
+        if action == 'use':
+            theme_store.use(theme_store.theme_id(info['share_id']))
             self._changed()
-            return
-        card = next(card for card in self.cards if card.info['share_id'] == share_id)
-        card.set_busy(_('theme_store.installing'))
+        elif action in ('install', 'update'):
+            install(self, card, info['share_id'], self._changed)
 
-        def done(files):
-            try:
-                theme_store.install(files)
-            except theme_store.StoreError as error:
-                self._install_failed(card, error)
-                return
-            self._changed()
-
-        self._call(lambda: theme_store.fetch(share_id), done, lambda error: self._install_failed(card, error))
-
-    def _install_failed(self, card, error):
-        card.main.setEnabled(True)
-        card.main.setText(_(f'theme_store.action_{card.state}'))
-        self.status.setText(_('theme_store.install_failed').format(
-            error=service.error_message(error, _) if not isinstance(error, theme_store.StoreError) else str(error)))
+    def install_failed(self, card, error):
+        if isinstance(card.main, QPushButton):
+            card.main.setEnabled(True)
+            card.main.setText(_(f'theme_store.action_{card.state}'))
+        self.status.setText(_('theme_store.install_failed').format(error=failure_text(error)))
         self.status.show()
 
     def _changed(self):
-        """Every card's button follows (one theme's install may change its pair's, and which is in use)."""
+        """An install: its card goes up to the installed themes (and its pair's with it)."""
         self.installed.emit()
-        infos = [card.info for card in self.cards]
+        infos = [card.info for card in self.cards if theme_store.state(card.info) == 'install']
+        if self.share_id:
+            infos = [card.info for card in self.cards]
         self._clear()
-        self._add(infos)
+        self._add([{k: v for k, v in info.items() if k != 'state'} for info in infos])
+        self._say_if_empty()
 
 
 def follow(window):
-    """The Timeline tab and the timeline after the browser changed the theme or the installed ones."""
+    """The Timeline tab and the timeline after a theme was installed, removed, used or set."""
     from subtitld.interface import left_panel_interface
 
     panel = getattr(window, 'global_panel_interface_timeline_theme_panel', None)

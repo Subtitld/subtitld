@@ -997,5 +997,10 @@
     "theme_store.gallery": "Otwórz galerię",
     "theme_store.newer": "Nowsza: wersja {version}",
     "theme_store.showing_one": "Motyw z linku",
-    "theme_store.show_all": "Pokaż wszystkie motywy"
+    "theme_store.show_all": "Pokaż wszystkie motywy",
+    "theme_store.yours": "Twoje motywy",
+    "theme_store.custom_note": "Oś czasu ma własny wygląd, z żadnego motywu. Wybranie motywu go zastąpi.",
+    "theme_store.options": "Opcje",
+    "theme_store.options_title": "{name}: opcje",
+    "theme_store.all_installed": "Wszystkie motywy z subtitld.cc są już tu zainstalowane."
 }

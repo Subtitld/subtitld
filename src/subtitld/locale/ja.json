@@ -997,5 +997,10 @@
     "theme_store.gallery": "ギャラリーを開く",
     "theme_store.newer": "新しいバージョン: {version}",
     "theme_store.showing_one": "リンクから開いたテーマ",
-    "theme_store.show_all": "すべてのテーマを表示"
+    "theme_store.show_all": "すべてのテーマを表示",
+    "theme_store.yours": "あなたのテーマ",
+    "theme_store.custom_note": "タイムラインはテーマによらない独自の見た目です。テーマを選ぶと置き換わります。",
+    "theme_store.options": "オプション",
+    "theme_store.options_title": "{name}: オプション",
+    "theme_store.all_installed": "subtitld.cc のテーマはすべてインストール済みです。"
 }

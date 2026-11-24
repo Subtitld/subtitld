@@ -997,5 +997,10 @@
     "theme_store.gallery": "Buka galeri",
     "theme_store.newer": "Lebih baru: versi {version}",
     "theme_store.showing_one": "Tema dari tautan",
-    "theme_store.show_all": "Tampilkan semua tema"
+    "theme_store.show_all": "Tampilkan semua tema",
+    "theme_store.yours": "Tema Anda",
+    "theme_store.custom_note": "Linimasa punya tampilan sendiri, bukan dari tema. Memilih tema akan menggantinya.",
+    "theme_store.options": "Opsi",
+    "theme_store.options_title": "{name}: opsi",
+    "theme_store.all_installed": "Semua tema di subtitld.cc sudah terpasang di sini."
 }

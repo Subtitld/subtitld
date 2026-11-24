@@ -734,6 +734,16 @@ QLabel[class='addons_empty_state'] {
     padding: 24px;
 }
 
+/* A timeline theme's card (timeline_theme_browser.ThemeCard) is an add-on card; the theme the timeline wears
+   says so in its corner with a mark, not a button. */
+QLabel[class='theme_card_in_use'] {
+    background: transparent;
+    color: #a8dcb5;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
 /* Add-on card (addons_dialog._AddonCard): it paints its own face (the band, the task label, the contact line), so
    the frame is transparent; these are the words and the buttons on it. */
 QFrame[class='addon_card'] {

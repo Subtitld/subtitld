@@ -43,6 +43,18 @@ def installed_version(share_id):
     return record.get('version')
 
 
+def share_id_of(theme):
+    """The subtitld.cc share ID a theme was installed from, or None."""
+    record = _installed().get(theme.id)
+    return record.get('share_id') if isinstance(record, dict) else None
+
+
+def owner_of(theme):
+    """Who published on subtitld.cc a theme installed from there ('' when not known)."""
+    record = _installed().get(theme.id)
+    return (record.get('owner') or '') if isinstance(record, dict) else ''
+
+
 def state(info):
     """What the browser offers for a theme subtitld.cc lists: 'install', 'update', 'use' or 'in_use'."""
     version = installed_version(info['share_id'])
@@ -54,8 +66,9 @@ def state(info):
     return 'in_use' if current is not None and current.id == theme_id(info['share_id']) else 'use'
 
 
-def save(share_id, version, data):
-    """Install a theme file subtitld.cc sent (bytes). Returns the Theme."""
+def save(share_id, version, data, preview=b'', owner=''):
+    """Install a theme file subtitld.cc sent (bytes), with its preview (PNG) beside it and who published
+    it there. Returns the Theme."""
     try:
         theme = timeline_themes.parse(data)
     except timeline_themes.ThemeError as error:
@@ -65,20 +78,32 @@ def save(share_id, version, data):
     folder = timeline_themes.folders()[1][0]
     folder.mkdir(parents=True, exist_ok=True)
     (folder / f'{theme.id}.json').write_bytes(data)
-    _installed()[theme.id] = {'share_id': share_id, 'version': version}
+    picture = folder / f'{theme.id}.png'
+    if preview:
+        picture.write_bytes(preview)
+    else:
+        picture.unlink(missing_ok=True)
+    _installed()[theme.id] = {'share_id': share_id, 'version': version, 'owner': owner or ''}
     timeline_themes.available(reload=True)
     return timeline_themes.available()[theme.id]
 
 
 def fetch(share_id, with_pair=True):
-    """Download a theme (and its counterpart) from subtitld.cc. Blocking. Returns [(share_id, version,
-    data)], the theme first."""
+    """Download a theme (and its counterpart) from subtitld.cc, with their previews. Blocking. Returns
+    [(share_id, version, data, preview, owner)], the theme first."""
     connection = service.client()
     info = connection.theme(share_id)
-    files = [(share_id, info['version'], connection.download_theme(share_id))]
+    wanted = [(share_id, info['version'], info.get('owner'))]
     pair = info.get('pair') if with_pair else None
     if pair:
-        files.append((pair['share_id'], pair['version'], connection.download_theme(pair['share_id'])))
+        wanted.append((pair['share_id'], pair['version'], pair.get('owner')))
+    files = []
+    for wanted_id, version, owner in wanted:
+        try:
+            preview = connection.theme_preview(wanted_id, version)
+        except Exception:  # a theme without its picture still installs
+            preview = b''
+        files.append((wanted_id, version, connection.download_theme(wanted_id, version), preview, owner))
     return files
 
 
@@ -87,7 +112,7 @@ def install(files, use=True):
     that one is drawn for the interface's current look. Returns the first Theme."""
     from subtitld.interface import theme as interface_theme
 
-    themes = [save(share_id, version, data) for share_id, version, data in files]
+    themes = [save(*file) for file in files]
     _save_config()
     if use:
         timeline_themes.apply(themes[0].id)
@@ -95,19 +120,23 @@ def install(files, use=True):
     return themes[0]
 
 
-def use(share_id):
-    from subtitld.interface import theme as interface_theme
+def use(chosen):
+    """Put a theme (by its id) on the timeline: the one picked, whatever the look (it follows the look
+    from the next change of it, as any theme does)."""
+    timeline_themes.apply(chosen)
+    _save_config()
 
-    timeline_themes.apply(theme_id(share_id))
-    timeline_themes.follow_look(interface_theme.current())
 
-
-def remove(share_id):
-    """Uninstall a theme from subtitld.cc. The timeline goes back to the default theme if it used it."""
+def remove(removed):
+    """Remove one of the user's themes (from subtitld.cc or imported), by its id; never one of Subtitld's.
+    The timeline goes back to the default theme if it used it."""
     current = timeline_themes.current()
-    removed = theme_id(share_id)
-    path = timeline_themes.folders()[1][0] / f'{removed}.json'
-    path.unlink(missing_ok=True)
+    theme = timeline_themes.available().get(removed)
+    if theme is None or theme.builtin:
+        return
+    if theme.path is not None:
+        theme.path.unlink(missing_ok=True)
+        theme.path.with_suffix('.png').unlink(missing_ok=True)
     _installed().pop(removed, None)
     options = session.CONFIG.get('timeline', {}).get('theme_options') if isinstance(session.CONFIG, dict) else None
     if isinstance(options, dict):

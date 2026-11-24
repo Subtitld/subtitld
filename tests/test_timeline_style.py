@@ -714,22 +714,30 @@ try:
 except timeline_themes.ThemeError:
     check('a theme taking Subtitld\'s own id refused', True, True)
 
-print('the theme picker')
+print('the themes, as cards')
 timeline_style.reset()
 timeline_themes.forget_current()
 picked = []
 picker = TimelineThemePanel()
 picker.changed.connect(lambda: picked.append(1))
-check('no theme: Custom, then the themes', [picker.picker.itemText(i) for i in range(picker.picker.count())],
-      ['Custom', 'Classic', 'Classic Light', 'My Theme'])
-picker.picker.activated.emit(picker.picker.findData('subtitld.classic'))
-check('picked: the look set from it, shown, said', (timeline_themes.current().id, timeline_themes.changed(),
-      picker.picker.currentText(), picker.picker.findData(None), len(picked)), ('subtitld.classic', False, 'Classic', -1, 1))
-picker.picker.activated.emit(picker.picker.findData('subtitld.classic'))
-check('the same one again: nothing to do', len(picked), 1)
-picker.picker.activated.emit(picker.picker.findData('user.my-theme'))
-check('another', (timeline_themes.current().id, picker.picker.currentText(), len(picked)), ('user.my-theme', 'My Theme', 2))
-check('labelled', picker.label.text(), 'Theme')
+check('a card per theme, Subtitld\'s own first', [card.info['title'] for card in picker.cards],
+      ['Classic', 'Classic Light', 'My Theme'])
+check('no theme: said so, none in use', (picker.custom.isHidden(), [card.state for card in picker.cards]),
+      (False, ['use', 'use', 'use']))
+check('Subtitld\'s own come with their picture; one without has its colours',
+      ([card.preview.pixmap is not None for card in picker.cards], bool(picker.cards[2].preview.colors)),
+      ([True, True, False], True))
+check('only an installed or imported one can be removed', [bool(card.remove) for card in picker.cards],
+      [False, False, True])
+picker.cards[0].main.click()
+check('Use: the look set from it, its card in use, said', (timeline_themes.current().id, timeline_themes.changed(),
+      [card.state for card in picker.cards], picker.custom.isHidden(), len(picked)),
+      ('subtitld.classic', False, ['in_use', 'use', 'use'], True, 1))
+check('in use is a mark, not a button', type(picker.cards[0].main).__name__, 'QLabel')
+picker.cards[2].main.click()
+check('another', (timeline_themes.current().id, [card.state for card in picker.cards], len(picked)),
+      ('user.my-theme', ['use', 'use', 'in_use'], 2))
+check('labelled', picker.label.text(), 'Your themes')
 timeline_style.reset()
 timeline_themes.forget_current()
 
@@ -830,31 +838,40 @@ timeline_themes.reset_options()
 check('reset: the theme\'s own', (session.CONFIG['timeline']['theme_options']['subtitld.classic'],
                                   timeline_style.values('subtitle')['fill_color']), ({}, '#e6c8dbe9'))
 
-print('the options under the picker')
+print('a theme\'s options, in a dialog')
 picked.clear()
-picker.build()
+picker.apply_theme('subtitld.classic')
+picked.clear()
 from PySide6.QtWidgets import QLabel
+from subtitld.interface.timeline_theme_panel import ThemeOptionsDialog
+check('a card has its options button when its theme has options', [bool(card.options) for card in picker.cards],
+      [True, True, True])
+dialog = ThemeOptionsDialog(classic)
+dialog.changed.connect(lambda: picked.append(1))
 check('Classic\'s, labelled from the locale files',
-      [l.text() for l in picker.options_widget.findChildren(QLabel) if l.property('class') == 'widget_label'],
+      [l.text() for l in dialog.fields.findChildren(QLabel) if l.property('class') == 'widget_label'],
       ['Subtitle color', 'Subtitle opacity', 'Selected subtitle color', 'Text size', 'Cursor color', 'Waveform color'])
-check('a control each, and a reset', (sorted(picker.controls), picker.reset_button.text()),
+check('a control each, and a reset', (sorted(dialog.controls), dialog.reject_button.text()),
       (sorted(o['key'] for o in classic.options), 'Reset'))
-picker.controls['box_opacity'].setValue(40)
+dialog.controls['box_opacity'].setValue(40)
 check('changed: the look with it, said', (timeline_style.values('subtitle')['fill_color'], len(picked)), ('#66c8dbe9', 1))
-size = picker.controls['text_size']
+size = dialog.controls['text_size']
 size.lineEdit().selectAll()
 QTest.keyClicks(size, '3')
 QTest.keyClick(size, Qt.Key_Return)
 check('typed below its range: brought to its least, not thrown away',
       (size.value(), timeline_themes.option_values(classic)['text_size']), (5, 5))
-picker.reset_button.click()
-check('reset', (timeline_style.values('subtitle')['fill_color'], picker.controls['box_opacity'].value()), ('#e6c8dbe9', 90))
-picker.picker.activated.emit(picker.picker.findData('user.my-theme'))
-check('a theme with options of its own shows them', sorted(picker.controls), sorted(o['key'] for o in classic.options))
+dialog.reject_button.click()
+check('reset', (timeline_style.values('subtitle')['fill_color'], dialog.controls['box_opacity'].value()), ('#e6c8dbe9', 90))
+light = timeline_themes.available()['subtitld.classic-light']
+other = ThemeOptionsDialog(light)
+other.controls['box_opacity'].setValue(50)
+check('a theme not in use keeps its options, and the look stays the one in use',
+      (timeline_themes.option_values(light)['box_opacity'], timeline_style.values('subtitle')['fill_color'],
+       timeline_themes.current().id), (50, '#e6c8dbe9', 'subtitld.classic'))
+other.reject_button.click()
 timeline_style.reset()
 timeline_themes.forget_current()
-picker.build()
-check('no theme: no options', (picker.controls, picker.options_widget.isHidden()), ({}, True))
 
 print('the default theme, as Subtitld starts')
 timeline_style.reset()

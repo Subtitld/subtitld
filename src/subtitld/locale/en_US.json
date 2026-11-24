@@ -1507,5 +1507,10 @@
     "theme_store.gallery": "Open the gallery",
     "theme_store.newer": "Newer: version {version}",
     "theme_store.showing_one": "A theme from a link",
-    "theme_store.show_all": "Show all themes"
+    "theme_store.show_all": "Show all themes",
+    "theme_store.yours": "Your themes",
+    "theme_store.custom_note": "The timeline has a look of its own, from no theme. Picking a theme replaces it.",
+    "theme_store.options": "Options",
+    "theme_store.options_title": "{name}: options",
+    "theme_store.all_installed": "Every theme on subtitld.cc is installed here."
 }
