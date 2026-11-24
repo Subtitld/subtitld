@@ -43,7 +43,8 @@ a box's with "box" (its kind of cue), the timeline's without. A colour
 option sets a colour whole, or with "part": "color" its red, green and
 blue alone (the theme's transparency kept); a number from 0 to 100 sets
 a colour's "part": "alpha", its opacity in percent; any other option sets
-the setting as it is, if the setting can hold it. A theme whose options
+the setting as it is, if the setting can hold it. A number option without
+"min" or "max" goes as far as what it sets can (0 to 100 for an opacity). A theme whose options
 name a setting there is not, or one they cannot set, is refused whole.
 
 What the user chose is kept per theme in CONFIG['timeline']['theme_options']
@@ -130,6 +131,13 @@ def _check_options(raw):
                 raise ThemeError(f'option "{key}": part {part!r} is not color or alpha')
             if part == 'color' and not (option['type'] == 'color' and field['type'] == 'color'):
                 raise ThemeError(f'option "{key}": a colour\'s colour is set by a colour option')
+            if option['type'] in ('int', 'number'):
+                # Limits it leaves out are those of what it sets.
+                low, high = (0, 100) if part == 'alpha' else (field.get('min'), field.get('max'))
+                if low is not None and 'min' not in entry:
+                    option['min'] = max(option.get('min', low), low)
+                if high is not None and 'max' not in entry:
+                    option['max'] = min(option.get('max', high), high)
             if part == 'alpha' and not (option['type'] in ('int', 'number') and field['type'] == 'color'
                                         and option.get('min', -1) >= 0 and option.get('max', 101) <= 100):
                 raise ThemeError(f'option "{key}": a colour\'s opacity is set by a number from 0 to 100')

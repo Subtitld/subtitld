@@ -119,8 +119,6 @@
       "type": "int",
       "label": "Subtitle opacity",
       "unit": "%",
-      "min": 30,
-      "max": 100,
       "default": 90,
       "sets": [
         {
@@ -148,8 +146,6 @@
       "type": "int",
       "label": "Text size",
       "unit": "pt",
-      "min": 7,
-      "max": 20,
       "default": 10,
       "sets": [
         {

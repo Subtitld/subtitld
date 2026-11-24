@@ -755,6 +755,23 @@ check('options refused: no setting, one there is not, a file, a colour by a numb
        'cursor_color cannot hold 50'])
 check('and taken', option_verdict({**PERCENT, 'sets': [{'box': 'subtitle', 'key': 'fill_color', 'part': 'alpha'}]}), 'taken')
 
+
+def option_limits(option):
+    theme = copy.deepcopy(classic_file)
+    theme['options'] = [option]
+    parsed = timeline_themes.parse(json.dumps(theme).encode()).options[0]
+    return parsed.get('min'), parsed.get('max')
+
+
+NUMBER = {'key': 'n', 'type': 'int', 'default': 10}
+check('limits left out: what it sets can hold; an opacity 0 to 100; ones given kept',
+      [option_limits({**NUMBER, 'sets': [{'box': 'subtitle', 'key': 'font_size'}]}),
+       option_limits({**NUMBER, 'sets': [{'box': 'subtitle', 'key': 'fill_color', 'part': 'alpha'}]}),
+       option_limits({**NUMBER, 'sets': [{'box': 'subtitle', 'key': 'font_size'}, {'key': 'ruler_font_size'}]}),
+       option_limits({**NUMBER, 'min': 8, 'sets': [{'box': 'subtitle', 'key': 'font_size'}]})],
+      [(5, 32), (0, 100), (max(5, timeline_style.TIMELINE_FIELDS_BY_KEY['ruler_font_size']['min']),
+                           min(32, timeline_style.TIMELINE_FIELDS_BY_KEY['ruler_font_size']['max'])), (8, 32)])
+
 timeline_style.reset()
 timeline_themes.apply('subtitld.classic')
 timeline_themes.set_option('box_color', '#ff00ff00')
@@ -768,14 +785,14 @@ check('one option, every setting it names', [timeline_style.values()[k] for k in
       ('cursor_color', 'cursor_badge_color', 'offscreen_arrow_color', 'repeat_area_color')],
       ['#cc0000ff', '#960000ff', '#dc0000ff', '#500000ff'])
 check('a value past its range: held to it', (timeline_themes.set_option('text_size', 99),
-      timeline_style.values('subtitle')['font_size']), (20, 20))
+      timeline_style.values('subtitle')['font_size']), (32, 32))
 try:
     timeline_themes.set_option('box_color', 'green')
     check('a value it cannot hold: refused', False, True)
 except ValueError:
     check('a value it cannot hold: refused', True, True)
 check('kept per theme, defaults left out', session.CONFIG['timeline']['theme_options']['subtitld.classic'],
-      {'box_color': '#ff00ff00', 'box_opacity': 50, 'text_size': 20, 'playhead_color': '#ff0000ff'})
+      {'box_color': '#ff00ff00', 'box_opacity': 50, 'text_size': 32, 'playhead_color': '#ff0000ff'})
 check('the look its theme\'s with them: not "changed"', timeline_themes.changed(), False)
 timeline_themes.apply('user.my-theme')
 timeline_themes.apply('subtitld.classic')
@@ -805,12 +822,12 @@ check('a control each, and a reset', (sorted(picker.controls), picker.reset_butt
       (sorted(o['key'] for o in classic.options), 'Reset'))
 picker.controls['box_opacity'].setValue(40)
 check('changed: the look with it, said', (timeline_style.values('subtitle')['fill_color'], len(picked)), ('#66c8dbe9', 1))
-opacity = picker.controls['box_opacity']
-opacity.lineEdit().selectAll()
-QTest.keyClicks(opacity, '20')
-QTest.keyClick(opacity, Qt.Key_Return)
+size = picker.controls['text_size']
+size.lineEdit().selectAll()
+QTest.keyClicks(size, '3')
+QTest.keyClick(size, Qt.Key_Return)
 check('typed below its range: brought to its least, not thrown away',
-      (opacity.value(), timeline_themes.option_values(classic)['box_opacity']), (30, 30))
+      (size.value(), timeline_themes.option_values(classic)['text_size']), (5, 5))
 picker.reset_button.click()
 check('reset', (timeline_style.values('subtitle')['fill_color'], picker.controls['box_opacity'].value()), ('#e6c8dbe9', 90))
 picker.picker.activated.emit(picker.picker.findData('user.my-theme'))
