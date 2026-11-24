@@ -239,6 +239,20 @@ def move_subtitle(selected_subtitle=False, amount=0.0, absolute_time=None, recor
         _shift_locked_dubs(selected_subtitle, selected_subtitle['start'] - old_start)
 
 
+def speaker_lane(tracks_shown):
+    """A subtitle's lane when speakers have tracks of their own, as a
+    function of the subtitle: its speaker's track (the first for a speaker
+    not listed). None when every subtitle is on the one line."""
+    if not (tracks_shown and session.SPEAKERS):
+        return None
+    speakers = list(session.SPEAKERS.keys())
+
+    def lane(subtitle):
+        speaker = subtitle.get('speaker', 'A')
+        return speakers.index(speaker) if speaker in speakers else 0
+    return lane
+
+
 def lane_segments(subtitle, lane=None):
     """The subtitles on the same lane as `subtitle`, in order. `lane` maps a
     subtitle to its lane (the timeline's speaker tracks); without one every

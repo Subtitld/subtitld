@@ -3354,10 +3354,7 @@ class Timeline(QWidget):
         """What puts subtitles on one line of the timeline, as a function of
         a subtitle: its speaker track when speakers have tracks of their
         own; None when every subtitle is on the one line."""
-        if not (widget.show_speaker_tracks and session.SPEAKERS):
-            return None
-        speakers = list(session.SPEAKERS.keys())
-        return lambda subtitle: speakers.index(subtitle.get('speaker', 'A')) if subtitle.get('speaker', 'A') in speakers else 0
+        return subtitles.speaker_lane(widget.show_speaker_tracks)
 
     def _subtitle_at(widget, pos):
         """The subtitle under pos: with speaker tracks, the one on the track
