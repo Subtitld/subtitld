@@ -78,6 +78,10 @@ class TimelineScroll(QScrollArea):
         event.accept()
 
 
+# How much of ffmpeg's raw output is read at a time: 4 MB, about 22 seconds of mono float32 at 48 kHz.
+_PCM_READ_BYTES = 4 * 1024 * 1024
+
+
 class AudioLoaderThread(QThread):
     """
     Thread that loads audio samples and normalizes them for waveform visualization.
@@ -104,6 +108,12 @@ class AudioLoaderThread(QThread):
 
 
     def _load_audio(self, filepath, samplerate=48000):
+        """The file's sound as int16, its loudest sample at full scale: what WaveformManager keeps.
+
+        Read from ffmpeg a piece at a time and turned into int16 a piece at a time. Taking the whole
+        float32 decode at once (communicate, then a copy, then a scaled copy, then the int16) held
+        four full-length copies: 1.8 GB at the peak for a 40-minute video, enough to have the app
+        killed on an 8 GB machine (issue #59). This way the peak is the float32 decode once."""
         cmd = [
             session.FFMPEG_EXECUTABLE,
             "-v", "error",
@@ -117,24 +127,39 @@ class AudioLoaderThread(QThread):
         self.proc = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
             startupinfo=session.STARTUPINFO
         )
 
+        pieces, peak = [], 0.0
         try:
-            stdout, _ = self.proc.communicate()
+            while not self._cancelled:
+                data = self.proc.stdout.read(_PCM_READ_BYTES)
+                if not data:
+                    break
+                piece = np.frombuffer(data[:len(data) - len(data) % 4], dtype=np.float32)
+                if piece.size:
+                    peak = max(peak, float(np.max(np.abs(piece))))
+                    pieces.append(piece)
+            self.proc.wait()
         except Exception:
             if self.proc:
                 self.proc.kill()
             raise
 
         if self._cancelled or self.proc.returncode not in (0, None):
-            return np.array([], dtype=np.float32), samplerate
+            return np.array([], dtype=np.int16), samplerate
 
-        raw = np.frombuffer(stdout, dtype=np.float32).copy()
-        if raw.size > 0:
-            raw /= np.max(np.abs(raw))
-        return raw, samplerate
+        samples = np.empty(sum(piece.size for piece in pieces), dtype=np.int16)
+        scale = np.float32(32767.0 / peak) if peak > 0 else np.float32(0.0)
+        start = 0
+        pieces.reverse()
+        while pieces:
+            piece = pieces.pop() * scale  # each float32 piece is let go as soon as it's written
+            np.clip(piece, -32767.0, 32767.0, out=piece)
+            samples[start:start + piece.size] = piece
+            start += piece.size
+        return samples, samplerate
 
     def cancel(self):
         """Terminate ffmpeg process if running and mark as cancelled."""
@@ -277,11 +302,10 @@ class WaveformManager:
     def set_samples(self, samples):
         # Compact storage: int16 instead of float32 cuts the RAM cost of
         # the raw waveform in half. For a 1-hour project at 48 kHz mono
-        # that's 691 MB → 345 MB. The waveform is normalized to
-        # [-1.0, 1.0] upstream (AudioLoaderThread divides by max abs), so
-        # we can pack it into int16 by multiplying by 32767 and clipping
-        # before cast. The worker handles both dtypes for backwards
-        # compatibility with cached float32 samples on disk.
+        # that's 691 MB → 345 MB. AudioLoaderThread hands it over as int16
+        # already; float32 in [-1.0, 1.0] is packed here by multiplying by
+        # 32767 and clipping before cast. The worker handles both dtypes
+        # for backwards compatibility with cached float32 samples on disk.
         arr = np.asarray(samples)
         if arr.dtype == np.int16:
             self.samples = arr
@@ -423,6 +447,10 @@ class OnsetDetectionThread(QThread):
                 sr = ONSET_DETECTION_SAMPLERATE
             else:
                 sr = self.samplerate
+            # The waveform's int16, turned to float only once it's a third
+            # of the length: not the whole 48 kHz track as float32 on top.
+            if getattr(samples, 'dtype', None) == np.int16:
+                samples = samples.astype(np.float32) / np.float32(32768.0)
             onsets = detect_onsets(samples, sr)
             if not self._cancelled:
                 self.finished.emit(onsets)
@@ -453,7 +481,8 @@ def _detect_onsets_via_ffmpeg(path):
     stdout, _ = proc.communicate()
     if proc.returncode not in (0, None):
         return None
-    samples = np.frombuffer(stdout, dtype=np.float32).copy()
+    # Read-only over ffmpeg's output, not a copy of it: detect_onsets only reads.
+    samples = np.frombuffer(stdout[:len(stdout) - len(stdout) % 4], dtype=np.float32)
     if samples.size == 0:
         return None
     from subtitld.modules.onset_detection import detect_onsets
@@ -3135,15 +3164,11 @@ class Timeline(QWidget):
         sr = session.VIDEO.get('samplerate', 48000)
         if samples is None or getattr(samples, 'size', 0) == 0:
             return
-        if getattr(samples, 'dtype', None) == np.int16:
-            samples_f = samples.astype(np.float32) / 32768.0
-        else:
-            samples_f = samples
         prev = widget.background_onset_thread
         if prev is not None and prev.isRunning():
             if hasattr(prev, 'cancel'):
                 prev.cancel()
-        thread = OnsetDetectionThread(samples_f, sr, parent=widget)
+        thread = OnsetDetectionThread(samples, sr, parent=widget)
         thread.finished.connect(lambda o: widget._on_background_onsets_ready(o, source='mix'))
         widget.background_onset_thread = thread
         thread.start()
@@ -4077,27 +4102,3 @@ def update(self):
 
     self.timeline_widget.update()
 
-
-def load_audio_for_timeline(filepath: str, samplerate: int = 48000):
-    """
-    Uses ffmpeg to decode audio into mono float32 PCM for waveform visualization.
-    Requires ffmpeg installed in PATH.
-    """
-    cmd = [
-        session.FFMPEG_EXECUTABLE, "-v", "error", "-i", filepath,
-        "-ac", "1",             # mono
-        "-ar", str(samplerate), # resample rate
-        "-f", "f32le", "-"      # raw 32-bit float to stdout
-    ]
-    proc = subprocess.run(
-        cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
-        check=True,
-        startupinfo=session.STARTUPINFO,
-    )
-    raw = np.frombuffer(proc.stdout, dtype=np.float32).copy()
-    # Normalize
-    if raw.size > 0:
-        raw /= np.max(np.abs(raw))
-    return raw, samplerate

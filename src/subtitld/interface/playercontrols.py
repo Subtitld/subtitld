@@ -168,8 +168,9 @@ class _ChildResizeWatcher(QObject):
 
 
 class _OriginalDecodeThread(QThread):
-    """Decodes the source media to a 48 kHz mono FLAC sidecar at
-    `<cache>/audioseparation/<hash>_original.flac`. Used as the playback
+    """Decodes the source media to a 48 kHz FLAC sidecar at
+    `<cache>/audioseparation/<hash>_original.flac`, mono or stereo as the
+    source is, more channels mixed down to stereo. Used as the playback
     track until vocals/background separation finishes — and as the
     fallback audio source for ASR/clone-ref when separation hasn't been
     requested yet. Cheap (a straight ffmpeg copy/decode), so we always
@@ -190,6 +191,10 @@ class _OriginalDecodeThread(QThread):
                 "-hide_banner", "-loglevel", "error",
                 "-i", self.filename,
                 "-vn",
+                # The sound engine plays mono and stereo: a 5.1 film's six
+                # channels stopped its mixer, and the sound with it, seconds
+                # into playback (issue #59). ffmpeg picks the closer of the two.
+                "-af", "aformat=channel_layouts=mono|stereo",
                 "-ar", '48000', '-y',
                 self.output_path,
             ]
