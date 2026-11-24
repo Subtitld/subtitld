@@ -26,6 +26,7 @@ from PySide6.QtCore import Qt, QTimer, QRect, QSize, QPoint, Signal, QEvent
 from PySide6.QtGui import (QFont, QColor, QPainter, QTextCharFormat, QSyntaxHighlighter, QTextCursor,
                            QTextFormat, QTextOption, QIcon, QPixmap)
 
+from subtitld.interface import theme
 from subtitld.interface import left_panel
 from subtitld.interface import utils
 from subtitld.interface.translation import _
@@ -94,6 +95,15 @@ THEMES = {
 DEFAULT_THEME = 'subtitld'
 
 
+def _editor_theme(name):
+    """The editor theme `name`; Subtitld's own follows the interface's look."""
+    colours = THEMES.get(name, THEMES[DEFAULT_THEME])
+    if colours is THEMES['subtitld'] and theme.is_light():
+        colours = {key: value if key == 'name' else theme.color(value).name(QColor.HexArgb)
+                   for key, value in colours.items()}
+    return colours
+
+
 def _config():
     config = session.CONFIG.setdefault('plaintext_panel', {})
     if config.get('format') not in plaintext.FORMATS:
@@ -155,7 +165,7 @@ class Highlighter(QSyntaxHighlighter):
         super().__init__(document)
         self.fmt = plaintext.SRT
         self.primaries = plaintext._primary_tags(_LANGUAGES)
-        self.set_theme(THEMES[DEFAULT_THEME], rehighlight=False)
+        self.set_theme(_editor_theme(DEFAULT_THEME), rehighlight=False)
 
     def set_theme(self, theme, rehighlight=True):
         self.formats = {name: _format(color) for name, color in theme.items() if name != 'name'}
@@ -347,7 +357,7 @@ class Editor(QPlainTextEdit):
         self.setWordWrapMode(QTextOption.WrapAtWordBoundaryOrAnywhere)
         self.setFrameShape(QFrame.NoFrame)
         self.document().setDocumentMargin(6)
-        self.theme = THEMES[DEFAULT_THEME]
+        self.theme = _editor_theme(DEFAULT_THEME)
         self.highlighter = Highlighter(self.document())
         self.gutter = _Gutter(self)
         # line -> 'error' | 'warning' (the worst on that line)
@@ -359,6 +369,10 @@ class Editor(QPlainTextEdit):
         self.updateRequest.connect(self._update_gutter)
         self.cursorPositionChanged.connect(self.refresh_selections)
         self.set_appearance(DEFAULT_FONT, DEFAULT_SIZE, DEFAULT_THEME)
+        theme.notifier.changed.connect(self._look_changed)
+
+    def _look_changed(self, _name):
+        self.set_appearance(*self.appearance)
 
     def set_appearance(self, family, size, theme_name):
         """Font and colour theme, as chosen in the tab's options."""
@@ -368,15 +382,15 @@ class Editor(QPlainTextEdit):
         self.setFont(font)
         self.gutter.setFont(font)
         self.setTabStopDistance(self.fontMetrics().horizontalAdvance(' ') * 4)
-        self.theme = THEMES.get(theme_name, THEMES[DEFAULT_THEME])
-        theme = self.theme
+        self.appearance = (family, size, theme_name)
+        self.theme = colours = _editor_theme(theme_name)
         # Set on the widget, so it wins over the application stylesheet.
         self.setStyleSheet(
             'QPlainTextEdit#plaintext_panel_editor {'
-            f' background-color: {_css(theme["background"])}; color: {_css(theme["text"])};'
-            f' selection-background-color: {_css(theme["selection"])};'
-            f' selection-color: {_css(theme["selection_text"])}; border: 0; }}')
-        self.highlighter.set_theme(theme)
+            f' background-color: {_css(colours["background"])}; color: {_css(colours["text"])};'
+            f' selection-background-color: {_css(colours["selection"])};'
+            f' selection-color: {_css(colours["selection_text"])}; border: 0; }}')
+        self.highlighter.set_theme(colours)
         self._update_gutter_width()
         self.set_issues(self.issues)
 
@@ -580,6 +594,7 @@ class PlainTextPanel(QWidget):
         self.options_chip.setCheckable(True)
         self.options_chip.setIcon(_options_icon())
         self.options_chip.setIconSize(QSize(16, 16))
+        theme.notifier.changed.connect(self._look_changed)
         self.options_chip.clicked.connect(lambda: self.set_options_open(self.options.isHidden()))
         status.layout().addWidget(self.options_chip, 0, Qt.AlignTop)
         status.installEventFilter(self)
@@ -682,8 +697,8 @@ class PlainTextPanel(QWidget):
         self.theme_block = utils.LabeledComboBox()
         self.theme_combobox = self.theme_block.combobox
         self.theme_combobox.setObjectName('plaintext_panel_theme_combobox')
-        for key, theme in THEMES.items():
-            self.theme_combobox.addItem(theme['name'], key)
+        for key, colours in THEMES.items():
+            self.theme_combobox.addItem(colours['name'], key)
         self.theme_combobox.setCurrentIndex(list(THEMES).index(config['theme']))
         self.theme_combobox.activated.connect(
             lambda index: self._option_changed('theme', self.theme_combobox.itemData(index)))
@@ -973,6 +988,10 @@ class PlainTextPanel(QWidget):
             self.editor.setTextCursor(self.editor.cursor_at(cue.text_line, cue.text_column))
             self.editor.centerCursor()
 
+    def _look_changed(self, _name):
+        self.options_chip.setIcon(_options_icon())
+        self._fill_issue_list()
+
     # -- problems ------------------------------------------------------------
 
     def _fill_issue_list(self):
@@ -1060,7 +1079,7 @@ class _ElidedLabel(QLabel):
 def _options_icon():
     """The settings icon: dim while the options are closed, full when open
     (the chip is checked then). Built from pixmaps so both states are kept."""
-    source = QIcon(str(session.PATH_SUBTITLD_GRAPHICS / 'plaintext_options_icon.svg'))
+    source = theme.icon('plaintext_options_icon.svg')
     icon = QIcon()
     for size in (16, 32):
         full = source.pixmap(QSize(size, size))

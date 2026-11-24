@@ -10,6 +10,7 @@ from PySide6.QtCore import Qt, QPropertyAnimation, QEasingCurve, QSize, Signal, 
 from PySide6.QtGui import QPainter, QColor, QRadialGradient
 
 import subtitld
+from subtitld.interface import theme
 from subtitld.interface import utils
 from subtitld.interface.translation import _
 
@@ -154,27 +155,31 @@ def load(self):
         # so the hover state (low-alpha black overlay) is invisible against our
         # titleBar. Apply the app's light palette and a very subtle white-overlay
         # hover/press tint so the buttons react gently.
-        _icon_color = QColor('#77b8cee0')
-        _hover_bg = QColor(255, 255, 255, 6)
-        _pressed_bg = QColor(255, 255, 255, 12)
-        for _btn in (self.titleBar.minBtn, self.titleBar.maxBtn):
-            _btn.setNormalColor(_icon_color)
-            _btn.setHoverColor(_icon_color)
-            _btn.setPressedColor(_icon_color)
-            _btn.setHoverBackgroundColor(_hover_bg)
-            _btn.setPressedBackgroundColor(_pressed_bg)
+        def _paint_buttons(_name=None):
+            _icon_color = theme.color('#77b8cee0')
+            _hover_bg = theme.color(QColor(255, 255, 255, 6))
+            _pressed_bg = theme.color(QColor(255, 255, 255, 12))
+            for _btn in (self.titleBar.minBtn, self.titleBar.maxBtn):
+                _btn.setNormalColor(_icon_color)
+                _btn.setHoverColor(_icon_color)
+                _btn.setPressedColor(_icon_color)
+                _btn.setHoverBackgroundColor(_hover_bg)
+                _btn.setPressedBackgroundColor(_pressed_bg)
 
-        # qframelesswindow's SvgTitleBarButton.paintEvent drops the alpha of the
-        # configured icon color (it calls QColor.name() which is RGB-only), so
-        # the close button's dimming has to live in the SVG itself via
-        # stroke-opacity. The colour still tints the stroke so hover/press tints
-        # work — share the same `_icon_color` as min/max for consistency.
-        self.titleBar.closeBtn.setIcon(os.path.join(session.PATH_SUBTITLD_GRAPHICS, 'titleBar_close.svg'))
-        self.titleBar.closeBtn.setNormalColor(_icon_color)
-        self.titleBar.closeBtn.setHoverColor(_icon_color)
-        self.titleBar.closeBtn.setPressedColor(_icon_color)
-        self.titleBar.closeBtn.setHoverBackgroundColor(_hover_bg)
-        self.titleBar.closeBtn.setPressedBackgroundColor(_pressed_bg)
+            # qframelesswindow's SvgTitleBarButton.paintEvent drops the alpha of the
+            # configured icon color (it calls QColor.name() which is RGB-only), so
+            # the close button's dimming has to live in the SVG itself via
+            # stroke-opacity. The colour still tints the stroke so hover/press tints
+            # work — share the same `_icon_color` as min/max for consistency.
+            self.titleBar.closeBtn.setIcon(theme.graphic('titleBar_close.svg'))
+            self.titleBar.closeBtn.setNormalColor(_icon_color)
+            self.titleBar.closeBtn.setHoverColor(_icon_color)
+            self.titleBar.closeBtn.setPressedColor(_icon_color)
+            self.titleBar.closeBtn.setHoverBackgroundColor(_hover_bg)
+            self.titleBar.closeBtn.setPressedBackgroundColor(_pressed_bg)
+
+        _paint_buttons()
+        theme.notifier.changed.connect(_paint_buttons)
 
     # Remove spacer
     for i in range(self.titleBar.layout().count()):
@@ -321,11 +326,17 @@ def load(self):
     # self.tilteBar_subtitld_label.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.MinimumExpanding))
     self.titleBar.layout().insertWidget(1, self.tilteBar_subtitld_label, alignment=Qt.AlignRight | Qt.AlignVCenter)
     # The mark before the name. Its file is 11 px tall; Qt takes the @2x one
-    # beside it on a high-DPI screen.
-    mark = os.path.join(session.PATH_SUBTITLD_GRAPHICS, 'subtitld_mark.png')
-    self.tilteBar_subtitld_label.setText(
-        f'<img src="{mark}" width="13" height="11" style="vertical-align: middle">'
-        f'&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>SUBTITLD</b>&nbsp; v{subtitld.__version__}')
+    # beside it on a high-DPI screen. On the light look its bar is dark
+    # (subtitld_mark_light.png), as subtitld.cc's favicon draws it.
+    def _set_mark(_name=None):
+        mark = os.path.join(session.PATH_SUBTITLD_GRAPHICS,
+                            'subtitld_mark_light.png' if theme.is_light() else 'subtitld_mark.png')
+        self.tilteBar_subtitld_label.setText(
+            f'<img src="{mark}" width="13" height="11" style="vertical-align: middle">'
+            f'&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>SUBTITLD</b>&nbsp; v{subtitld.__version__}')
+
+    _set_mark()
+    theme.notifier.changed.connect(_set_mark)
 
 
 def update(self):

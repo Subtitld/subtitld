@@ -15,6 +15,7 @@ from PySide6.QtCore import QEvent, QObject, QRectF, QSize, Qt, Signal
 from PySide6.QtGui import QColor, QCursor, QFont, QFontMetricsF, QLinearGradient, QPainter, QPen
 from PySide6.QtWidgets import QApplication, QComboBox, QDoubleSpinBox, QHBoxLayout, QLabel, QLineEdit, QVBoxLayout, QWidget
 
+from subtitld.interface import theme
 from subtitld.interface.translation import _
 from subtitld.modules import history, segment as segments
 
@@ -28,6 +29,11 @@ _FIELD = (QColor('#324350'), QColor('#445b6c'))
 _FIELD_HOVER = (QColor('#3a4a58'), QColor('#4c6173'))
 _TEXT = QColor('#b8cee0')
 _TEXT_CHOSEN = QColor('#ffffff')
+
+
+def _field_stops(stops):
+    """A field's gradient in the current look (darker at the top in both)."""
+    return tuple(theme.surface(color) for color in stops)
 
 # How a piece lights up, as the menu lists it; '' the style's way.
 EFFECTS = ('', *segments.EFFECTS)
@@ -292,22 +298,22 @@ class _Chips(QWidget):
             chosen = number == self.chosen
             lit = chosen or (self.hover is not None and self.hover[1] == number and self.hover[0] != 'gap')
             shade = QLinearGradient(rect.topLeft(), rect.bottomLeft())
-            for stop, color in zip((0, 1), _FIELD_HOVER if lit else _FIELD):
+            for stop, color in zip((0, 1), _field_stops(_FIELD_HOVER if lit else _FIELD)):
                 shade.setColorAt(stop, color)
             painter.setPen(Qt.NoPen)
             painter.setBrush(shade)
             painter.drawRoundedRect(rect, _RADIUS, _RADIUS)
-            painter.setPen(_TEXT_CHOSEN if chosen else _TEXT)
+            painter.setPen(theme.ink(_TEXT_CHOSEN if chosen else _TEXT))
             text = ''.join(character for _index, character in _shown(self.pieces[number]['text']))
             painter.drawText(rect.adjusted(_PAD, 0, -_PAD + 1, 0), Qt.AlignVCenter | Qt.AlignLeft, text)
         if self.hover and self.hover[0] == 'cut':
             rect = self._chips[self.hover[1]][0]
-            painter.setPen(QPen(_TEXT_CHOSEN, 1))
+            painter.setPen(QPen(theme.ink(_TEXT_CHOSEN), 1))
             painter.drawLine(int(self.hover[3]), int(rect.top() + 4), int(self.hover[3]), int(rect.bottom() - 4))
         elif self.hover and self.hover[0] == 'gap':
             rect = self._chips[self.hover[1]][0]
             painter.setPen(Qt.NoPen)
-            painter.setBrush(_TEXT)
+            painter.setBrush(theme.color(_TEXT))
             painter.drawRoundedRect(QRectF(rect.right() + _GAP / 2 - 1, rect.top() + 4, 2, rect.height() - 8), 1, 1)
         painter.end()
 

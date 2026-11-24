@@ -23,7 +23,7 @@ from PySide6.QtGui import (QBrush, QColor, QCursor, QFont, QFontMetrics, QIcon, 
                            QPainterPath, QPen, QPixmap, QPolygonF, QRadialGradient)
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QScrollArea, QVBoxLayout, QWidget
 
-from subtitld.interface import left_panel, timeline_edges, timeline_shapes
+from subtitld.interface import left_panel, theme, timeline_edges, timeline_shapes
 from subtitld.interface.translation import _
 from subtitld.modules import markup, quality_check, session, subtitles, timeline_frames, timeline_style, timeline_svg
 from subtitld.modules.segment import text_of
@@ -499,8 +499,8 @@ class VerticalTimeline(QWidget):
         self._tile(painter, look['ruler_background_svg'], band, band_rect)
 
         # The lanes: the waveform's well and the subtitles' track.
-        painter.fillRect(QRectF(waveform[0], TOP, waveform[1] - waveform[0], end_y - TOP), QColor(0, 0, 0, 38))
-        painter.fillRect(QRectF(subs[0] - 2, TOP, subs[1] - subs[0] + 4, end_y - TOP), QColor(255, 255, 255, 6))
+        painter.fillRect(QRectF(waveform[0], TOP, waveform[1] - waveform[0], end_y - TOP), theme.color(QColor(0, 0, 0, 38)))
+        painter.fillRect(QRectF(subs[0] - 2, TOP, subs[1] - subs[0] + 4, end_y - TOP), theme.color(QColor(255, 255, 255, 6)))
 
         self._paint_ruler(painter, cfg, top_time, bottom_time, ruler, (waveform[0], subs[1]))
 
@@ -1617,17 +1617,17 @@ class VerticalTimelinePanel(QWidget):
         zoom.layout().setSpacing(0)
         self.zoom_out_button = QPushButton(objectName='vtimeline_panel_zoom_button')
         self.zoom_out_button.setProperty('position', 'first')
-        self.zoom_out_button.setIcon(_icon('zoom_out_icon'))
         self.zoom_out_button.clicked.connect(lambda: self.scroll.set_zoom(self.canvas.pps / ZOOM_STEP))
         self.zoom_in_button = QPushButton(objectName='vtimeline_panel_zoom_button')
         self.zoom_in_button.setProperty('position', 'last')
-        self.zoom_in_button.setIcon(_icon('zoom_in_icon'))
         self.zoom_in_button.clicked.connect(lambda: self.scroll.set_zoom(self.canvas.pps * ZOOM_STEP))
         for button in (self.zoom_out_button, self.zoom_in_button):
             button.setCursor(Qt.PointingHandCursor)
             button.setIconSize(QSize(12, 12))
             zoom.layout().addWidget(button)
         status.layout().addWidget(zoom, 0, Qt.AlignVCenter)
+        self.set_icons()
+        theme.notifier.changed.connect(self.set_icons)
         self.layout().addWidget(status)
 
         self.label_timer = QTimer(self, interval=100)
@@ -1650,6 +1650,10 @@ class VerticalTimelinePanel(QWidget):
         pps = self.canvas.pps
         self.zoom_out_button.setEnabled(pps > ZOOM_RANGE[0] + 1e-6)
         self.zoom_in_button.setEnabled(pps < ZOOM_RANGE[1] - 1e-6)
+
+    def set_icons(self, _theme=None):
+        self.zoom_out_button.setIcon(_icon('zoom_out_icon'))
+        self.zoom_in_button.setIcon(_icon('zoom_in_icon'))
 
     def update_labels(self):
         position = float(session.SUBTITLE.position or 0.0)
@@ -1683,8 +1687,10 @@ def _clock(seconds):
 
 
 def _icon(name):
-    icon = QIcon(str(session.PATH_SUBTITLD_GRAPHICS / f'{name}.svg'))
-    icon.addFile(str(session.PATH_SUBTITLD_GRAPHICS / f'{name}_disabled.svg'), QSize(), QIcon.Disabled)
+    """graphics/`name` in the current look, with its own disabled file
+    (set again on a change of look: see `set_icons`)."""
+    icon = QIcon(theme.graphic(f'{name}.svg'))
+    icon.addFile(theme.graphic(f'{name}_disabled.svg'), QSize(), QIcon.Disabled)
     return icon
 
 

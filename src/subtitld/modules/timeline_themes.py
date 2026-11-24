@@ -36,6 +36,12 @@ DEFAULT is the look of everyone who has neither picked a theme nor
 changed a setting (use_default, as Subtitld starts); one who changed
 some keeps their own look, a theme of no name.
 
+A theme drawn for one of the interface's looks says so ("look": "dark"
+or "light") and may name its "counterpart", the same theme for the other
+look: as the interface's look changes, a theme set and not changed since
+gives way to its counterpart (follow_look), so Classic becomes Classic
+Light in the light look and back.
+
 Options are what a theme lets its user change, and all: a few fields in
 the subtitle styles' shape (modules.subtitle_styles: color, int, number,
 bool, select, font), each setting the theme's settings it names ("sets"),
@@ -71,6 +77,7 @@ _OPTION_KEYS = ('key', 'type', 'default', 'label', 'min', 'max', 'step', 'unit',
 _PARTS = (None, 'color', 'alpha')
 _ID = re.compile(r'[a-z0-9][a-z0-9._-]*')
 _ABOUT = ('name', 'author', 'version', 'description')
+LOOKS = ('dark', 'light')
 
 
 class ThemeError(ValueError):
@@ -89,6 +96,8 @@ class Theme:
     options: list = dataclass_field(default_factory=list)  # fields, each with its "sets"
     path: object = None
     builtin: bool = False
+    look_for: str = ''          # the interface's look it is drawn for ('' for any)
+    counterpart: str = ''       # the id of the same theme for the other look
 
 
 def _file_fields():
@@ -188,8 +197,13 @@ def parse(data, path=None, builtin=False):
     if missing:
         raise ThemeError(f'names shapes it does not carry: {", ".join(missing)}')
     options = _check_options(raw.get('options'))
+    look_for, counterpart = raw.get('look', ''), raw.get('counterpart', '')
+    if look_for not in ('',) + LOOKS:
+        raise ThemeError(f'look {look_for!r}: dark or light')
+    if not isinstance(counterpart, str) or (counterpart and (not _ID.fullmatch(counterpart) or not look_for)):
+        raise ThemeError(f'counterpart {counterpart!r}: a theme\'s id, from a theme that says its look')
     return Theme(theme_id, about['name'].strip(), about['author'], about['version'], about['description'],
-                 look, kept, options, path, builtin)
+                 look, kept, options, path, builtin, look_for, counterpart)
 
 
 def load(path, builtin=False):
@@ -351,13 +365,37 @@ def forget_current():
     _config().pop('theme', None)
 
 
-def use_default():
+def use_default(interface_look=None):
     """As Subtitld starts: set a look no theme set and no one changed from
-    the default theme. Whether it did."""
+    the default theme (its counterpart for `interface_look`, if it has
+    one). Whether it did."""
     changes = timeline_style.changes()
     if _config().get('theme') or changes['timeline'] or changes['boxes'] or DEFAULT not in available():
         return False
     apply(DEFAULT)
+    if interface_look:
+        follow_look(interface_look)
+    return True
+
+
+def counterpart_for(theme, interface_look):
+    """The theme to draw in `interface_look` in place of `theme`: its
+    counterpart if it is drawn for the other look and the counterpart for
+    this one, else None."""
+    if theme is None or not theme.look_for or theme.look_for == interface_look:
+        return None
+    other = available().get(theme.counterpart)
+    return other if other is not None and other.look_for == interface_look else None
+
+
+def follow_look(interface_look):
+    """The interface's look is now `interface_look`: a theme set and not
+    changed since gives way to its counterpart for it. Whether it did."""
+    theme = current()
+    other = counterpart_for(theme, interface_look)
+    if other is None or changed():
+        return False
+    apply(other.id)
     return True
 
 

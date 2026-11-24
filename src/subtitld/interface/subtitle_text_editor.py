@@ -16,6 +16,7 @@ from PySide6.QtGui import (QActionGroup, QColor, QFont, QIcon, QKeySequence, QPa
 from PySide6.QtWidgets import (QColorDialog, QDoubleSpinBox, QGridLayout, QHBoxLayout, QLabel, QMenu, QPushButton, QWidget,
                                QWidgetAction)
 
+from subtitld.interface import theme
 from subtitld.interface.translation import _
 from subtitld.modules import history, look as subtitld_look, markup, position, segment as segments, session
 
@@ -225,6 +226,7 @@ def _pixmap(size):
 
 def _position_icon(keypad, color='#b8cee0', size=16):
     """The screen as nine places, the one for `keypad` lit."""
+    color = theme.color(color)
     pixmap = _pixmap(size)
     painter = QPainter(pixmap)
     painter.setRenderHint(QPainter.Antialiasing)
@@ -260,6 +262,7 @@ def _swatch_icon(color, size=14):
 def _color_icon(color, text_color='#b8cee0', size=16):
     """An "A" over a bar in the colour (as word processors show it); the
     bar is outlined when the text keeps the default colour."""
+    text_color = theme.color(text_color)
     pixmap = _pixmap(size)
     painter = QPainter(pixmap)
     painter.setRenderHint(QPainter.Antialiasing)
@@ -282,6 +285,7 @@ def _color_icon(color, text_color='#b8cee0', size=16):
 
 def _clear_icon(color='#b8cee0', size=16):
     """An "A" struck through: formatting gone."""
+    color = theme.color(color)
     pixmap = _pixmap(size)
     painter = QPainter(pixmap)
     painter.setRenderHint(QPainter.Antialiasing)
@@ -299,6 +303,7 @@ def _clear_icon(color='#b8cee0', size=16):
 
 def _subtitle_icon(color='#b8cee0', size=16):
     """Three dots: what the subtitle is besides its text."""
+    color = theme.color(color)
     pixmap = _pixmap(size)
     painter = QPainter(pixmap)
     painter.setRenderHint(QPainter.Antialiasing)
@@ -313,6 +318,7 @@ def _subtitle_icon(color='#b8cee0', size=16):
 
 def _timing_icon(color='#b8cee0', size=16):
     """Three short bars in a row: a text in timed pieces."""
+    color = theme.color(color)
     pixmap = _pixmap(size)
     painter = QPainter(pixmap)
     painter.setRenderHint(QPainter.Antialiasing)
@@ -534,7 +540,15 @@ class FormattingBar(QWidget):
 
         textedit.cursorPositionChanged.connect(self.refresh)
         textedit.selectionChanged.connect(self.refresh)
+        theme.notifier.changed.connect(self._restyle)
         self.retranslate()
+        self.refresh()
+
+    def _restyle(self, _name=None):
+        """Redraw the drawn icons in the new look."""
+        for key, cell in self.position_cells.items():
+            cell.setIcon(_position_icon(key, '#dfe8f0', 22))
+        self.clear_button.setIcon(_clear_icon())
         self.refresh()
 
     _KEYS = ((QKeySequence.Italic, 'italic'), (QKeySequence.Bold, 'bold'), (QKeySequence.Underline, 'underline'))

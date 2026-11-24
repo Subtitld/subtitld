@@ -10,6 +10,7 @@ from PySide6.QtWidgets import QWidget, QScrollArea, QSizePolicy
 from PySide6.QtGui import QPainter, QPen, QColor, QFont, QPainterPath, QLinearGradient, QRadialGradient, QFontMetrics, QPixmap, QCursor, QBrush
 from PySide6.QtCore import Qt, QRect, QRectF, QPointF, QLineF, QThread, Signal, QMarginsF, QTimer, QMargins
 
+from subtitld.interface import theme
 from subtitld.modules import config
 from subtitld.modules import session
 from subtitld.modules import markup
@@ -1356,7 +1357,7 @@ class Timeline(QWidget):
             show_translations = translation_opts.get('show_translations', False)
             translation_target_lang = translation_opts.get('target_language', 'en-us')
             dub_waveform_color = look.color('dub_waveform_color')
-            smart_splice_divider_color = QColor("#1a000000")
+            smart_splice_divider_color = theme.color(QColor("#1a000000"))
             _rec_pending = getattr(widget, 'record_pending', None) or ()
             if _rec_pending:
                 # Not `_, _, pen, body = ...`: assigning `_` anywhere in this

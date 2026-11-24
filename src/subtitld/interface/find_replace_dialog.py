@@ -52,7 +52,6 @@ from __future__ import annotations
 import re
 
 from PySide6.QtCore import Qt, QSize, QObject, QEvent
-from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QFrame,
@@ -65,6 +64,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from subtitld.interface import theme
 from subtitld.interface import utils
 from subtitld.interface.translation import _
 from subtitld.modules import session
@@ -375,14 +375,14 @@ class FindReplaceDialog(utils.SimpleDialog):
         # also given the icon itself, or Qt would size it without one.
         self._find_previous_button = QPushButton()
         self._find_previous_button.setIcon(
-            QIcon(str(session.PATH_SUBTITLD_GRAPHICS / 'find_back_icon_tab.svg')))
+            theme.icon('find_back_icon_tab.svg'))
         self._find_previous_button.setObjectName('find_replace_previous_button')
         self._find_previous_button.setToolTip(_('find_replace_dialog.find_previous_tooltip'))
         # Upper-cased here, not only by the stylesheet: with an icon, Qt sizes
         # the button from the raw text and would clip the capitals.
         self._find_next_button = QPushButton(_('find_replace_dialog.find').upper())
         self._find_next_button.setIcon(
-            QIcon(str(session.PATH_SUBTITLD_GRAPHICS / 'find_next_icon_tab.svg')))
+            theme.icon('find_next_icon_tab.svg'))
         self._find_next_button.setObjectName('find_replace_next_button')
         # Right-to-left puts the icon after the text: FIND ›.
         self._find_next_button.setLayoutDirection(Qt.RightToLeft)

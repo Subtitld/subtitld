@@ -5,6 +5,8 @@
   "author": "Subtitld",
   "version": "26.11.1",
   "description": "The timeline as Subtitld has always drawn it.",
+  "look": "dark",
+  "counterpart": "subtitld.classic-light",
   "timeline": {
     "background_color": "#00000000",
     "ruler_background_color": "#00000000",

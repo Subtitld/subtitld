@@ -20,6 +20,7 @@ from PySide6.QtCore import QTimer, Qt, Signal, QSize
 from PySide6.QtGui import QPainter, QColor, QPen, QPolygonF, QIcon, QPixmap
 from PySide6.QtCore import QPointF
 
+from subtitld.interface import theme
 from subtitld.interface import left_panel
 from subtitld.interface import utils
 from subtitld.interface import audio_widgets as aw
@@ -470,7 +471,7 @@ class _Connector(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         x = self.width() / 2
-        color = QColor(184, 206, 224, 70)
+        color = theme.color(QColor(184, 206, 224, 70))
         painter.setPen(QPen(color, 1.5))
         painter.drawLine(QPointF(x, 0), QPointF(x, self.height() - 5))
         painter.setPen(Qt.NoPen)
@@ -514,7 +515,7 @@ def _fx_icon(name):
     """A header icon, with a faint version for when its button is disabled
     (Qt's own greying is barely visible on these dark cards). Built from
     pixmaps: an SVG icon only uses an added pixmap of the exact size asked."""
-    source = QIcon(str(session.PATH_SUBTITLD_GRAPHICS / f'audio_fx_{name}.svg'))
+    source = theme.icon(f'audio_fx_{name}.svg')
     icon = QIcon()
     for size in (12, 16, 24, 32):
         normal = source.pixmap(QSize(size, size))

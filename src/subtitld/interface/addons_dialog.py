@@ -43,6 +43,7 @@ from PySide6.QtWidgets import (
 )
 
 from subtitld.interface import shapes
+from subtitld.interface import theme
 from subtitld.interface import utils
 from subtitld.interface.translation import _
 from subtitld.modules import addons, hardware as _hardware, session
@@ -458,7 +459,44 @@ _TASK_LABELS: dict[str, tuple[str, str]] = {
 
 
 def _graphic(name: str) -> QIcon:
-    return QIcon(str(session.PATH_SUBTITLD_GRAPHICS / name))
+    return theme.icon(name)
+
+
+class _IconLabel(QLabel):
+    """A label with graphics/`name` painted in it, in the look current when painted."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._icon = None
+
+    def set_icon(self, name: str, size: int) -> None:
+        self._icon = theme.icon(name)
+        self.setFixedSize(size, size)
+        self.update()
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        if self._icon is not None:
+            painter = QPainter(self)
+            self._icon.paint(painter, self.rect())
+            painter.end()
+
+
+class _VersionLabel(QLabel):
+    """The add-on's version, and the one an update brings in the update green."""
+
+    def __init__(self, version: str, update: str | None = None):
+        super().__init__()
+        self._version, self._update = version, update
+        self._show()
+        if update:
+            theme.notifier.changed.connect(self._show)
+
+    def _show(self, *_args):
+        text = f'v{self._version}'
+        if self._update:
+            text += f' <span style="color:{theme.css("#9fd3ac")}">→ {self._update}</span>'
+        self.setText(text)
 
 
 class _Switch(QAbstractButton):
@@ -476,9 +514,9 @@ class _Switch(QAbstractButton):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         painter.setPen(Qt.NoPen)
-        painter.setBrush(self.ON if self.isChecked() else self.OFF)
+        painter.setBrush(theme.color(self.ON if self.isChecked() else self.OFF))
         painter.drawRoundedRect(QRectF(0, 0, 32, 18), 9, 9)
-        painter.setBrush(QColor('#f0f6fa') if self.isEnabled() else QColor('#9aabb8'))
+        painter.setBrush(theme.surface(QColor('#f0f6fa') if self.isEnabled() else QColor('#9aabb8')))
         painter.drawEllipse(QRectF(16 if self.isChecked() else 2, 2, 14, 14))
 
 
@@ -592,14 +630,14 @@ class _AddonCard(QFrame):
         band.setLayout(QHBoxLayout())
         band.layout().setContentsMargins(9, 0, 12, 0)
         band.layout().setSpacing(0)
-        self._task_icon = QLabel()
+        self._task_icon = _IconLabel()
         self._task_icon.setProperty('class', 'addon_card_task_icon')
         self._task_text = QLabel()
         self._task_text.setProperty('class', 'addon_card_task')
         task = next((t for t in row.tasks if t in _TASK_LABELS), None)
         if task is not None:
             key, icon = _TASK_LABELS[task]
-            self._task_icon.setPixmap(_graphic(icon).pixmap(14, 14))
+            self._task_icon.set_icon(icon, 14)
             self._task_text.setText(_(key))
         elif row.tasks:
             self._task_text.setText(_humanize_task(row.tasks[0]))
@@ -628,15 +666,12 @@ class _AddonCard(QFrame):
             band.layout().addStretch()
 
         if not row.is_builtin:
-            version_text = ''
+            version = None
             if row.is_installed and row.installed_version:
-                version_text = f'v{row.installed_version}'
-                if row.has_update:
-                    version_text += f' <span style="color:#9fd3ac">→ {row.latest_version}</span>'
+                version = _VersionLabel(row.installed_version, row.latest_version if row.has_update else None)
             elif row.latest_version:
-                version_text = f'v{row.latest_version}'
-            if version_text:
-                version = QLabel(version_text)
+                version = _VersionLabel(row.latest_version)
+            if version is not None:
                 version.setProperty('class', 'addon_card_version')
                 band.layout().addWidget(version)
         if row.is_installed:
@@ -811,14 +846,14 @@ class _AddonCard(QFrame):
         shape = QPainterPath()
         shape.addRoundedRect(face, self.RADIUS, self.RADIUS)
         # the contact line, under the card
-        painter.fillPath(shape.translated(0, 1).subtracted(shape), shapes.CONTACT)
-        painter.fillPath(shape, QColor(card_colour))
-        painter.fillPath(shape.intersected(shapes.rect_path(QRectF(0, 0, self.width(), self.BAND))), QColor(band_colour))
+        painter.fillPath(shape.translated(0, 1).subtracted(shape), theme.color(shapes.CONTACT))
+        painter.fillPath(shape, theme.surface(card_colour))
+        painter.fillPath(shape.intersected(shapes.rect_path(QRectF(0, 0, self.width(), self.BAND))), theme.surface(band_colour))
         label = self._label_path().intersected(shape)
         if not label.isEmpty():
             gradient = QLinearGradient(0, 0, 0, self.LABEL)
-            gradient.setColorAt(0, self.LABEL_TOP)
-            gradient.setColorAt(1, self.LABEL_BOTTOM)
+            gradient.setColorAt(0, theme.surface(self.LABEL_TOP))
+            gradient.setColorAt(1, theme.surface(self.LABEL_BOTTOM))
             painter.fillPath(label, gradient)
 
     def set_progress(self, percent: int) -> None:
@@ -1454,12 +1489,12 @@ class _AddonsHeader(QWidget):
         around.addRect(QRectF(self.rect()))
         around.addPath(self._hole())
         painter.setClipPath(around)
-        painter.fillRect(self.rect(), self.SHADE)
+        painter.fillRect(self.rect(), theme.surface(self.SHADE))
         if self.tabs_row is not None and self.tabs_row.isVisible():
             row = QRectF(self.tabs_row.geometry())
             shadow = QLinearGradient(0, row.center().y(), 0, row.bottom() + 1)
             shadow.setColorAt(0, QColor(0, 0, 0, 0))
-            shadow.setColorAt(1, self.SHADOW)
+            shadow.setColorAt(1, theme.surface(self.SHADOW))
             painter.fillRect(row, shadow)
 
 
@@ -1560,7 +1595,7 @@ class AddonsPanel(QWidget):
         self._search = QLineEdit()
         self._search.setObjectName('addons_search')
         self._search.setClearButtonEnabled(True)
-        self._search.addAction(QIcon(str(session.PATH_SUBTITLD_GRAPHICS / 'addons_search.svg')), QLineEdit.LeadingPosition)
+        self._search.addAction(theme.icon('addons_search.svg'), QLineEdit.LeadingPosition)
         self._search.textChanged.connect(self._on_search_changed)
         search_row.addWidget(self._search, 1, Qt.AlignTop)
 
@@ -1569,8 +1604,8 @@ class AddonsPanel(QWidget):
         self._filters_button.setLayout(QHBoxLayout())
         self._filters_button.layout().setContentsMargins(21, 0, 12, 1)     # the slant, and the contact line
         self._filters_button.layout().setSpacing(6)
-        filters_icon = QLabel()
-        filters_icon.setPixmap(QIcon(str(session.PATH_SUBTITLD_GRAPHICS / 'addons_filters.svg')).pixmap(14, 14))
+        filters_icon = _IconLabel()
+        filters_icon.set_icon('addons_filters.svg', 14)
         self._filters_text = QLabel()
         self._filters_text.setObjectName('addons_filters_text')
         self._filters_count = QLabel()
@@ -2000,7 +2035,7 @@ class AddonsPanel(QWidget):
         for text, clear in chosen:
             tag = QPushButton(text)
             tag.setObjectName('addons_filter_tag')
-            tag.setIcon(QIcon(str(session.PATH_SUBTITLD_GRAPHICS / 'addons_tag_clear.svg')))
+            tag.setIcon(theme.icon('addons_tag_clear.svg'))
             tag.setLayoutDirection(Qt.RightToLeft)          # the ✕ after the text
             tag.setToolTip(_('addons_dialog.filter.clear'))
             tag.clicked.connect(clear)

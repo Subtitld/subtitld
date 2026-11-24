@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- dialog_bottom_right.svg for the light look: the main action's tab in the primary buttons' gradient (#627f97 → #4a5f71), for light text. -->
+<svg width="31" height="31" version="1.1" viewBox="14 0 31 31" xmlns="http://www.w3.org/2000/svg">
+ <defs><linearGradient id="g" x1="0" x2="0" y1="1" y2="31" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#627f97"/><stop offset="1" stop-color="#4a5f71"/></linearGradient></defs>
+ <path d="M24.962 31L31.808 5.447C32.511 2.824 34.888 1.000 37.604 1.000L45 1V27Q45 31 41 31Z" fill="url(#g)"/>
+</svg>

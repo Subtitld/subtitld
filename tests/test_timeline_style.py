@@ -766,6 +766,15 @@ check('options refused: no setting, one there is not, a file, a colour by a numb
 check('and taken', option_verdict({**PERCENT, 'sets': [{'box': 'subtitle', 'key': 'fill_color', 'part': 'alpha'}]}), 'taken')
 
 
+def option_verdict_raw(raw):
+    """Why a whole theme file is refused (what comes before the reason's colon), or 'taken'."""
+    try:
+        timeline_themes.parse(json.dumps(dict(raw, id='user.raw')).encode())
+        return 'taken'
+    except timeline_themes.ThemeError as error:
+        return str(error).split(':')[0].strip()
+
+
 def option_limits(option):
     theme = copy.deepcopy(classic_file)
     theme['options'] = [option]
@@ -861,6 +870,30 @@ check('settings changed, no theme: their own look kept', (timeline_themes.use_de
       timeline_style.values()['cursor_color']), (False, None, '#ff00ff00'))
 timeline_style.reset()
 timeline_themes.forget_current()
+
+print('a theme and its counterpart for the other look')
+check('the light look from the start: Classic Light', (timeline_themes.use_default('light'), timeline_themes.current().id),
+      (True, 'subtitld.classic-light'))
+check('to the dark look: Classic, and back', (timeline_themes.follow_look('dark'), timeline_themes.current().id,
+      timeline_themes.follow_look('light'), timeline_themes.current().id),
+      (True, 'subtitld.classic', True, 'subtitld.classic-light'))
+check('the same look again: kept', (timeline_themes.follow_look('light'), timeline_themes.current().id),
+      (False, 'subtitld.classic-light'))
+timeline_themes.set_option('box_opacity', 50)
+check('options are each theme\'s own: Classic\'s untouched', (timeline_themes.follow_look('dark'),
+      timeline_themes.option_values(timeline_themes.current())['box_opacity']), (True, 90))
+timeline_style.set_value('cursor_color', '#ff00ff00')
+check('a theme changed since: kept', (timeline_themes.follow_look('light'), timeline_themes.current().id),
+      (False, 'subtitld.classic'))
+timeline_themes.apply('user.my-theme')
+check('a theme with no look: kept in either', (timeline_themes.follow_look('light'), timeline_themes.follow_look('dark'),
+      timeline_themes.current().id), (False, False, 'user.my-theme'))
+check('a look not dark or light, a counterpart with no look: refused',
+      [option_verdict_raw(dict(classic_file, look='sepia')), option_verdict_raw(dict(classic_file, look='', counterpart='x'))],
+      ["look 'sepia'", "counterpart 'x'"])
+timeline_style.reset()
+timeline_themes.forget_current()
+session.CONFIG['timeline']['theme_options'] = {}
 
 print('Classic draws the timeline as Subtitld always has')
 from PySide6.QtGui import QImage

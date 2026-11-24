@@ -2,11 +2,11 @@ from PySide6.QtWidgets import QVBoxLayout, QWidget, QLabel, QScrollArea, QTabWid
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
 
-from subtitld.interface import left_panel
+from subtitld.interface import left_panel, theme
 from subtitld.interface.subtitle_style_panel import SubtitleStylePanel
 from subtitld.interface.timeline_theme_panel import TimelineThemePanel
 from subtitld.interface.translation import _
-from subtitld.modules import session
+from subtitld.modules import session, timeline_themes
 
 
 def load(self):
@@ -217,6 +217,7 @@ def load(self):
     self.global_panel_interface_tabwidget_timeline.layout().setContentsMargins(10, 10, 10, 10)
     self.global_panel_interface_timeline_theme_panel = TimelineThemePanel()
     self.global_panel_interface_timeline_theme_panel.changed.connect(lambda: refresh_timeline(self))
+    theme.notifier.changed.connect(lambda name: timeline_follow_look(self, name))
     self.global_panel_interface_tabwidget_timeline.layout().addWidget(self.global_panel_interface_timeline_theme_panel)
     self.global_panel_interface_tabwidget_timeline.layout().addStretch()
     self.global_panel_interface_tabwidget.addTab(self.global_panel_interface_tabwidget_timeline, '')
@@ -247,6 +248,13 @@ def refresh_preview(self):
     """Repaint the subtitle drawn over the video with the new settings."""
     if hasattr(self, 'preview_panel_player'):
         self.preview_panel_player._graphics_video_item.update()
+
+
+def timeline_follow_look(self, name):
+    """The interface's look changed: the timeline's theme to its counterpart, if it has one."""
+    if timeline_themes.follow_look(name):
+        self.global_panel_interface_timeline_theme_panel.build()
+        refresh_timeline(self)
 
 
 def refresh_timeline(self):

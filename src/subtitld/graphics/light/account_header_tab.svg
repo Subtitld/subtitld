@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- account_header_tab.svg for the light look (interface/theme.py takes graphics/light/ first): the same tab,
+     a tint of the palette's #566f84 rather than a darkening, which reads grey on a light header. -->
+<svg width="40" height="31" version="1.1" viewBox="0 0 40 31" xmlns="http://www.w3.org/2000/svg">
+ <path d="M0 0L7.12 26.55Q8.31 31 12.91 31L40 31V0Z" fill="#566f84" fill-opacity="0.22"/>
+</svg>

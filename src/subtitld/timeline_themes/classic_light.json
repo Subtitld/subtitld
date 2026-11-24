@@ -5,6 +5,8 @@
   "author": "Subtitld",
   "version": "26.11.1",
   "description": "The classic timeline for the light look: dark-blue text and lines, a pale waveform.",
+  "look": "light",
+  "counterpart": "subtitld.classic",
   "timeline": {
     "background_color": "#00000000",
     "ruler_background_color": "#00000000",
