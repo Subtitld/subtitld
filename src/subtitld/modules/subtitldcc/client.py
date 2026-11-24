@@ -106,7 +106,8 @@ class Client:
             for key, value in params.items():
                 values = value if isinstance(value, list) else [value]
                 pairs += [(key, item) for item in values if item is not None]
-            url += "?" + urllib.parse.urlencode(pairs)
+            if pairs:
+                url += "?" + urllib.parse.urlencode(pairs)
         headers = {"User-Agent": self.user_agent, "Accept": "application/json"}
         if self.language:
             headers["Accept-Language"] = self.language
@@ -206,6 +207,33 @@ class Client:
     def download(self, share_id: str, fmt: str = "usf", version: int | None = None) -> bytes:
         params = {"format": fmt, "version": version}
         return self.request("GET", f"/assets/{share_id}/download", params=params, raw=True)
+
+    # --- Timeline themes (public; no sign-in needed) -----------------------------------------------------
+
+    def themes(
+        self,
+        *,
+        look: str = "",
+        sort: str = "popular",
+        q: str = "",
+        cursor: str | None = None,
+        limit: int = 24,
+    ) -> dict:
+        """One page of public timeline themes: {results, next_cursor, total}. ``look``: dark or light;
+        ``sort``: popular, new or top. Each result's ``theme_id`` is the id its file installs under."""
+        params = {"look": look or None, "sort": sort, "q": q or None, "cursor": cursor, "limit": limit}
+        return self.request("GET", "/themes", params=params)
+
+    def theme(self, share_id: str) -> dict:
+        return self.request("GET", f"/themes/{share_id}")
+
+    def download_theme(self, share_id: str, version: int | None = None) -> bytes:
+        """The theme file, ready to import (it names itself cc.<share ID in hex>, its theme_id)."""
+        return self.request("GET", f"/themes/{share_id}/download", params={"version": version}, raw=True)
+
+    def theme_preview(self, share_id: str, version: int | None = None) -> bytes:
+        """The preview subtitld.cc drew of the theme (PNG)."""
+        return self.request("GET", f"/themes/{share_id}/preview", params={"version": version}, raw=True)
 
     # --- Publishing --------------------------------------------------------------------------------------
 

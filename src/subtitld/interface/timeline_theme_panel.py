@@ -2,6 +2,8 @@
 and the few options the theme lets its user change, under it, with a
 button to set them back to the theme's own.
 
+Browse themes… opens the themes on subtitld.cc, to install (interface/timeline_theme_browser.py).
+
 "Custom" is listed too while the look was set from no theme: a look its
 user made, kept from before themes. Built-in themes' names and their
 options' labels come from the locale files (`timeline_themes.<id>.name`,
@@ -13,14 +15,17 @@ from PySide6.QtWidgets import QComboBox, QGridLayout, QHBoxLayout, QLabel, QPush
 
 from subtitld.interface.subtitle_style_panel import _text, field_control
 from subtitld.interface.translation import _
-from subtitld.modules import timeline_themes
+from subtitld.modules import theme_store, timeline_themes
 
 COLUMNS = 2
 
 
 def theme_label(theme):
-    """A theme's name: from the locale files for one of Subtitld's, its own otherwise."""
-    return _text(f'timeline_themes.{theme.id}.name', theme.name) if theme.builtin else theme.name
+    """A theme's name: from the locale files for one of Subtitld's, its own otherwise; one installed from
+    subtitld.cc says so, as its name may be any (even a built-in one's)."""
+    if theme.builtin:
+        return _text(f'timeline_themes.{theme.id}.name', theme.name)
+    return f'{theme.name} · subtitld.cc' if theme.id.startswith(theme_store.PREFIX) else theme.name
 
 
 def option_label(theme, option):
@@ -50,8 +55,19 @@ class TimelineThemePanel(QWidget):
         self.layout().addWidget(self.label, 0, Qt.AlignLeft)
         self.picker = QComboBox()
         self.picker.setObjectName('timeline_theme_picker')
+        # As wide as its longest name: themes come and go (installed from subtitld.cc, removed).
+        self.picker.setSizeAdjustPolicy(QComboBox.AdjustToContents)
         self.picker.activated.connect(self._picked)
-        self.layout().addWidget(self.picker, 0, Qt.AlignLeft)
+        self.browse_button = QPushButton()
+        self.browse_button.setObjectName('timeline_theme_browse_button')
+        self.browse_button.clicked.connect(self.browse)
+        line = QHBoxLayout()
+        line.setContentsMargins(0, 0, 0, 0)
+        line.setSpacing(10)
+        line.addWidget(self.picker)
+        line.addWidget(self.browse_button)
+        line.addStretch()
+        self.layout().addLayout(line)
         self.options_widget = None
         self.controls = {}          # option key -> its control
         self.reset_button = None
@@ -62,6 +78,8 @@ class TimelineThemePanel(QWidget):
         the interface's language."""
         self.label.setText(_('timeline_style.theme'))
         self.picker.setAccessibleName(_('timeline_style.theme'))
+        self.browse_button.setText(_('theme_store.browse'))
+        self.browse_button.setToolTip(_('theme_store.browse_tip'))
         current = timeline_themes.current()
         self.picker.clear()
         if current is None:
@@ -128,6 +146,12 @@ class TimelineThemePanel(QWidget):
         timeline_themes.apply(theme_id)
         self.build()
         self.changed.emit()
+
+    def browse(self):
+        """Themes from subtitld.cc (interface/timeline_theme_browser.py)."""
+        from subtitld.interface import timeline_theme_browser
+
+        timeline_theme_browser.browse(self.window())
 
     def reset_options(self):
         timeline_themes.reset_options()
