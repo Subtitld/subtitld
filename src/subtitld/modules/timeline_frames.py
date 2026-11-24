@@ -39,10 +39,11 @@ after. A part that stretches or scales changes with every box, and is
 drawn from the SVG each time.
 """
 
+import math
 from xml.etree import ElementTree
 
-from PySide6.QtCore import QByteArray, QRectF, Qt
-from PySide6.QtGui import QPainter, QPixmap
+from PySide6.QtCore import QByteArray, QPointF, QRectF, Qt
+from PySide6.QtGui import QPainter, QPixmap, QTransform
 from PySide6.QtSvg import QSvgRenderer
 
 from subtitld.modules import timeline_svg
@@ -231,6 +232,9 @@ def paint(painter, frame, rect, color=None, scale=1.0, name='', speaker=None, op
     renderer = frame.renderer(color, speaker)
     colors = (color, speaker if frame.uses_speaker else None)
     base = painter.opacity()
+    # The device's pixels a pixel, and whether it is drawn turned (the
+    # vertical timeline): worked out once a frame, not once a piece.
+    device = (_device_ratio(painter), painter.transform().type().value > QTransform.TxTranslate.value)
     for part, target in layout(frame, rect):
         faded = 'current' in part.paint or ('speaker' in part.paint and not speaker)
         painter.setOpacity(base * opacity if faded else base)
@@ -238,7 +242,7 @@ def paint(painter, frame, rect, color=None, scale=1.0, name='', speaker=None, op
             # Its top and bottom kept once for the box's height (a lane's,
             # the same for every box), then its sides: three pieces a box.
             image = _stretched(frame, renderer, part, target.height(), colors, scale, name)
-            _three(painter, image, part.bounds.width(), part.slice[3], part.slice[1], target)
+            _three(painter, image, part.bounds.width(), part.slice[3], part.slice[1], target, device)
         elif part.fixed:
             image = _image(frame, renderer, part, target.width(), target.height(), colors, scale, name)
             painter.drawPixmap(target.topLeft(), image)
@@ -247,26 +251,95 @@ def paint(painter, frame, rect, color=None, scale=1.0, name='', speaker=None, op
     painter.setOpacity(base)
 
 
-def _three(painter, image, width, left, right, target):
+# A box's ends are drawn at its very place, a fraction of a pixel in, as a
+# shape's edges are: what is drawn over the box (a dub clip's band) is, and
+# a box whole pixels wide would show a sliver past it. Qt copies an image a
+# whole pixel at a time, so an end is made once for each eighth of a pixel
+# it can start at, shaded in, and copied to the whole pixel before it.
+_PHASES = 8
+
+
+def _smooth_copy(painter, target, image, source):
+    """`source` of `image` scaled into `target`, smoothed: its edges shaded
+    a fraction of a pixel in. Slow: for making images, not for each paint."""
+    painter.setRenderHint(QPainter.Antialiasing)
+    painter.setRenderHint(QPainter.SmoothPixmapTransform)
+    # Never exactly its own size: Qt copies one that is a whole pixel at a time.
+    painter.drawPixmap(QRectF(target.x(), target.y(), target.width() + 1e-6, target.height()), image, source)
+
+
+def _end(painter, image, source, left, right, y, height, ratio):
+    """The piece of `image` in `source`, laid from `left` to `right` (one of
+    them on a whole pixel, the other where the box ends), `height` tall: made
+    once for its eighths of a pixel, then copied whole. `ratio`: the device's
+    pixels a pixel."""
+    start = math.floor(left * ratio) / ratio
+    stop = math.ceil(right * ratio) / ratio
+    # Its sides from `start`, in eighths of the device's pixels: the side on
+    # a whole pixel stays exactly on it (a fraction off would shade that
+    # pixel twice, with the piece beside it: a seam).
+    low = round((left - start) * ratio * _PHASES) / _PHASES
+    high = round((right - start) * ratio * _PHASES) / _PHASES
+    key = ('end', image.cacheKey(), source.x(), source.width(), low, high, height, ratio)
+    piece = _images.get(key)
+    if piece is None:
+        piece = QPixmap(max(1, int(round((stop - start) * ratio))), max(1, int(round(height * ratio))))
+        piece.setDevicePixelRatio(ratio)
+        piece.fill(Qt.transparent)
+        p = QPainter(piece)
+        _smooth_copy(p, QRectF(low / ratio, 0, (high - low) / ratio, height), image, source)
+        p.end()
+        if len(_images) >= _IMAGES_KEPT:
+            _images.pop(next(iter(_images)))
+        _images[key] = piece
+    painter.drawPixmap(QPointF(start, y), piece)
+
+
+def _device_ratio(painter):
+    device = painter.device()
+    return device.devicePixelRatioF() if device is not None else 1.0
+
+
+def _cuts(ratio, start, end, near, far):
+    """Where pieces meet along one side of a target from `start` to `end`,
+    `near` and `far` kept at its ends: on whole pixels of the device (`ratio`
+    of its pixels a pixel; two pieces each shading the pixel they share
+    would leave a seam, a pixel neither covers fully); the target's own ends
+    where they are."""
+
+    def whole(value):
+        return round(value * ratio) / ratio
+
+    first = min(end, max(start, whole(start + near))) if near > 0 else start
+    second = max(first, min(end, whole(end - far))) if far > 0 else end
+    return start, first, second, end
+
+
+def _three(painter, image, width, left, right, target, device):
     """`image` (a part `width` wide, already as tall as `target`) laid into
     `target` in three pieces: its left and right insets kept, its middle
     stretched. The nine pieces' one row, without their loop: a box drawn
     with them is three calls."""
     left, right = min(left, width / 2.0), min(right, width / 2.0)
     fit = min(1.0, target.width() / (left + right)) if left + right else 1.0
-    t_left, t_right = left * fit, right * fit
     ratio = image.devicePixelRatio()
     pixels_high = image.height()
-    x, y, w, h = target.x(), target.y(), target.width(), target.height()
-    if t_left > 0:
-        painter.drawPixmap(QRectF(x, y, t_left, h), image, QRectF(0, 0, left * ratio, pixels_high))
-    middle = w - t_left - t_right
-    if middle > 0:
-        painter.drawPixmap(QRectF(x + t_left, y, middle, h), image,
-                           QRectF(left * ratio, 0, (width - left - right) * ratio, pixels_high))
-    if t_right > 0:
-        painter.drawPixmap(QRectF(x + w - t_right, y, t_right, h), image,
-                           QRectF((width - right) * ratio, 0, right * ratio, pixels_high))
+    y, h = target.y(), target.height()
+    device_ratio, turned = device
+    xs = _cuts(device_ratio, target.left(), target.right(), left * fit, right * fit)
+    sources = ((0.0, left), (left, width - right), (width - right, width))
+    for column in range(3):
+        into_width = xs[column + 1] - xs[column]
+        source_from, source_to = sources[column]
+        if into_width <= 0 or source_to <= source_from:
+            continue
+        source = QRectF(source_from * ratio, 0, (source_to - source_from) * ratio, pixels_high)
+        # Between two whole pixels, or drawn turned (Qt shades a turned copy's
+        # edges itself): a plain copy lands where it should.
+        if column == 1 or turned:
+            painter.drawPixmap(QRectF(xs[column], y, into_width, h), image, source)
+        else:
+            _end(painter, image, source, xs[column], xs[column + 1], y, h, device_ratio)
 
 
 def _nine(painter, image, width, height, insets, target):
@@ -278,12 +351,12 @@ def _nine(painter, image, width, height, insets, target):
     top, bottom = min(top, height / 2.0), min(bottom, height / 2.0)
     fit_x = min(1.0, target.width() / (left + right)) if left + right else 1.0
     fit_y = min(1.0, target.height() / (top + bottom)) if top + bottom else 1.0
-    t_left, t_right, t_top, t_bottom = left * fit_x, right * fit_x, top * fit_y, bottom * fit_y
     ratio = image.devicePixelRatio()
     source_x = (0.0, left, width - right, width)
     source_y = (0.0, top, height - bottom, height)
-    target_x = (target.left(), target.left() + t_left, target.right() - t_right, target.right())
-    target_y = (target.top(), target.top() + t_top, target.bottom() - t_bottom, target.bottom())
+    device_ratio = _device_ratio(painter)
+    target_x = _cuts(device_ratio, target.left(), target.right(), left * fit_x, right * fit_x)
+    target_y = _cuts(device_ratio, target.top(), target.bottom(), top * fit_y, bottom * fit_y)
     for row in range(3):
         for column in range(3):
             into = QRectF(target_x[column], target_y[row], target_x[column + 1] - target_x[column],

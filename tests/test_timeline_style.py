@@ -446,6 +446,42 @@ check('sliced: the corner as drawn, the edge straight past it', (pixel(102, 70),
 check('the middle filled', pixel(200, 115), GREEN)
 timeline_style.reset()
 
+print('a frame where its box is, to a fraction of a pixel')
+timeline_themes.apply('subtitld.classic')
+session.SUBTITLE = Subtitle({'segments': [{'start': 2.537, 'end': 4.4, 'text': '', 'speaker': 'A'}],
+                             'selected': None, 'position': 15.0})
+widget.apply_style()
+row = [pixel(x, 120) for x in range(250, 330)]
+outside, edge, inside = row[2], row[3], row[4:]
+check('the box from x = 253.7: its first pixel shaded, neither the background nor the box',
+      edge not in (outside, inside[0]), True)
+mix = QColor(edge).red()
+check('shaded about as much of it as the box covers (0.3)',
+      abs((mix - QColor(outside).red()) / (QColor(inside[0]).red() - QColor(outside).red()) - 0.3) < 0.1, True)
+check('no seam where its pieces meet: the inside one colour, give or take a level',
+      max(QColor(c).red() for c in inside) - min(QColor(c).red() for c in inside) <= 1, True)
+from PySide6.QtGui import QPainter, QPixmap
+from PySide6.QtCore import QRectF
+classic_box = timeline_style.values('subtitle')['frame_svg']
+seams = {}
+for scale in (1.25, 1.5, 2.0):
+    for left in (13.7, 14.15, 20.0, 31.33):
+        canvas = QPixmap(int(80 * scale), int(60 * scale))
+        canvas.setDevicePixelRatio(scale)
+        canvas.fill(QColor('#1a232b'))
+        painter = QPainter(canvas)
+        painter.setRenderHint(QPainter.Antialiasing)
+        timeline_frames.paint(painter, timeline_frames.get(classic_box), QRectF(left, 5, 40.3, 50), '#c8dbe9', scale,
+                              classic_box, None, 1.0)
+        painter.end()
+        image = canvas.toImage()
+        row = [image.pixelColor(x, int(30 * scale)).red() for x in range(int((left + 1) * scale), int((left + 39) * scale))]
+        seams[(scale, left)] = max(row) - min(row)
+check('at 125%, 150% and 200% screens too: no seam inside, wherever the box starts',
+      [key for key, spread in seams.items() if spread > 1], [])
+timeline_style.reset()
+timeline_themes.forget_current()
+
 print('frames only where the timeline is painted')
 from PySide6.QtCore import QRect
 session.SUBTITLE = Subtitle({'segments': [{'start': i * 0.5, 'end': i * 0.5 + 0.4, 'text': '', 'speaker': 'A'}
