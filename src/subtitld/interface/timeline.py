@@ -1997,11 +1997,20 @@ class Timeline(QWidget):
             tug_of_war_pen = QPen(theme.ink(QColor(session.CONFIG.get('timeline', {}).get('selected_subtitle_arrow_color', '#ff969696'))), 4, Qt.SolidLine, Qt.RoundCap)
             painter.setPen(tug_of_war_pen)
             xpos = int(widget.show_tug_of_war * widget.width_proportion) - 4
+            # On the line of the subtitles it pulls: with speaker tracks,
+            # their speaker's track only.
+            tug_y, tug_height = widget.subtitle_y, widget.subtitle_height
+            lane = widget.subtitle_lane()
+            tugged = session.SUBTITLE.selected if widget.tug_of_war_pressed else widget.subtitle_under_the_cursor
+            if lane is not None and tugged:
+                tug_height = widget.subtitle_height / len(session.SPEAKERS)
+                tug_y += tug_height * lane(tugged)
+            tug_dashes = max(2, min(6, int((tug_height - 8) / 8)))
             y_tug_pos = 0
-            for _tug_i in range(6):
-                painter.drawLine(xpos, int(widget.subtitle_y + 8 + y_tug_pos), int(xpos + 8), int(widget.subtitle_y + 8 + y_tug_pos))
+            for _tug_i in range(tug_dashes):
+                painter.drawLine(xpos, int(tug_y + 8 + y_tug_pos), int(xpos + 8), int(tug_y + 8 + y_tug_pos))
                 # painter.drawLine(xpos, widget.subtitle_y + 8 + y_tug_pos, xpos + 8, widget.subtitle_y + widget.subtitle_height - 8)
-                y_tug_pos += (widget.subtitle_height - 8) / 6
+                y_tug_pos += (tug_height - 8) / tug_dashes
 
         # Collaborators in a shared project: their selection, the text they type in and their playhead.
         widget._paint_collaborators(painter)
@@ -2361,8 +2370,7 @@ class Timeline(QWidget):
 
         cursor_is_out_of_view = bool((session.SUBTITLE.position or 0) * widget.width_proportion < widget.parent().parent().horizontalScrollBar().value() or (session.SUBTITLE.position or 0) * widget.width_proportion > widget.parent().parent().width() + widget.parent().parent().horizontalScrollBar().value())
         
-        cursor_time_position = event.pos().x() / widget.width_proportion
-        widget.subtitle_under_the_cursor = subtitles.subtitle_under_current_position(position=cursor_time_position)
+        widget.subtitle_under_the_cursor = widget._subtitle_at(event.pos())
 
         widget.is_cursor_pressing = True
         widget.subtitle_drag_recorded = False
@@ -2803,8 +2811,13 @@ class Timeline(QWidget):
         cursor_time_position = event.pos().x() / widget.width_proportion #(event.pos().x() / widget.width()) * session.VIDEO.get('duration', 60)
         cursor_tug_of_war_range = 10 / widget.width_proportion
 
-        widget.subtitle_under_the_cursor = subtitles.subtitle_under_current_position(position=cursor_time_position)
-        last, next = subtitles.get_adjacent_subtitles(position=cursor_time_position)
+        widget.subtitle_under_the_cursor = widget._subtitle_at(event.pos())
+        # The tug of war is between subtitles next to each other on one
+        # line: with speaker tracks, the hovered one's speaker track.
+        lane = widget.subtitle_lane()
+        last, next = subtitles.get_adjacent_subtitles(
+            position=cursor_time_position,
+            segments=subtitles.lane_segments(widget.subtitle_under_the_cursor, lane) if widget.subtitle_under_the_cursor else None)
         
         if not widget.tug_of_war_pressed:
             widget.show_tug_of_war = False
@@ -2872,9 +2885,12 @@ class Timeline(QWidget):
                         widget.is_smart_splicing['position'] = event.pos().x()
 
         if session.SUBTITLE.selected is not None and session.SUBTITLE.selected in session.SUBTITLE.segments:
-            i = session.SUBTITLE.segments.index(session.SUBTITLE.selected)
-            last = session.SUBTITLE.segments[session.SUBTITLE.segments.index(session.SUBTITLE.selected) - 1] if session.SUBTITLE.segments.index(session.SUBTITLE.selected) > 0 else {'start': 0, 'end': 0, 'text': ''}
-            nextsub = session.SUBTITLE.segments[session.SUBTITLE.segments.index(session.SUBTITLE.selected) + 1] if session.SUBTITLE.segments.index(session.SUBTITLE.selected) < len(session.SUBTITLE.segments) - 1 else {'start': session.VIDEO.get('duration', 60), 'end': 0, 'text': ''}
+            # Its neighbours on its own line: with speaker tracks, the
+            # subtitles of another speaker neither stop nor follow it.
+            lane_segments = subtitles.lane_segments(session.SUBTITLE.selected, lane)
+            i = lane_segments.index(session.SUBTITLE.selected)
+            last = lane_segments[i - 1] if i > 0 else {'start': 0, 'end': 0, 'text': ''}
+            nextsub = lane_segments[i + 1] if i < len(lane_segments) - 1 else {'start': session.VIDEO.get('duration', 60), 'end': 0, 'text': ''}
             # The video's start and end are edges to snap to as well. A
             # copy: appending to the session's own list grew it on every
             # mouse move.
@@ -2900,23 +2916,23 @@ class Timeline(QWidget):
                 end = session.SUBTITLE.selected['end']
                 if not start_position > (end - session.CONFIG.get('default_values', {}).get('minimum_subtitle_width', 1)):
                     if not (bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed) and round(last['end'] + .001, 3) == round(session.SUBTITLE.selected['start'], 3)) and session.CONFIG.get('timeline', {}).get('snap', True) and session.CONFIG.get('timeline', {}).get('snap_limits', True) and (last['end'] + session.CONFIG.get('timeline', {}).get('snap_value', .1)) > start_position:
-                        subtitles.move_start_subtitle(selected_subtitle=session.SUBTITLE.selected, absolute_time=last['end'] + 0.001, move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record)
+                        subtitles.move_start_subtitle(selected_subtitle=session.SUBTITLE.selected, absolute_time=last['end'] + 0.001, move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record, lane=lane)
                     elif session.CONFIG.get('timeline', {}).get('snap', True) and session.CONFIG.get('timeline', {}).get('snap_grid', False):
                         if session.CONFIG.get('timeline', {}).get('grid_type', False) == 'frames':
                             nearest_frame = round(start_position * session.VIDEO['framerate']) / session.VIDEO['framerate']
-                            subtitles.move_start_subtitle(selected_subtitle=session.SUBTITLE.selected, absolute_time=nearest_frame, move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record)
+                            subtitles.move_start_subtitle(selected_subtitle=session.SUBTITLE.selected, absolute_time=nearest_frame, move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record, lane=lane)
                         elif session.CONFIG.get('timeline', {}).get('grid_type', False) == 'seconds' and float(start_position) > float(float(int(start_position) + 1) - float(session.CONFIG.get('timeline', {}).get('snap_value', .1))):
-                            subtitles.move_start_subtitle(selected_subtitle=session.SUBTITLE.selected, absolute_time=float(int(start_position) + 1), move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record)
+                            subtitles.move_start_subtitle(selected_subtitle=session.SUBTITLE.selected, absolute_time=float(int(start_position) + 1), move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record, lane=lane)
                         elif session.CONFIG.get('timeline', {}).get('grid_type', False) == 'seconds' and float(start_position) < float(float(int(start_position)) + float(session.CONFIG.get('timeline', {}).get('snap_value', .1))):
-                            subtitles.move_start_subtitle(selected_subtitle=session.SUBTITLE.selected, absolute_time=float(int(start_position)), move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record)
+                            subtitles.move_start_subtitle(selected_subtitle=session.SUBTITLE.selected, absolute_time=float(int(start_position)), move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record, lane=lane)
                         elif session.CONFIG.get('timeline', {}).get('grid_type', False) == 'shot_changes' and start_position > next_cut - session.CONFIG.get('timeline', {}).get('snap_value', .1):
-                            subtitles.move_start_subtitle(selected_subtitle=session.SUBTITLE.selected, absolute_time=next_cut, move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record)
+                            subtitles.move_start_subtitle(selected_subtitle=session.SUBTITLE.selected, absolute_time=next_cut, move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record, lane=lane)
                         elif session.CONFIG.get('timeline', {}).get('grid_type', False) == 'shot_changes' and start_position < last_cut + session.CONFIG.get('timeline', {}).get('snap_value', .1):
-                            subtitles.move_start_subtitle(selected_subtitle=session.SUBTITLE.selected, absolute_time=last_cut, move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record)
+                            subtitles.move_start_subtitle(selected_subtitle=session.SUBTITLE.selected, absolute_time=last_cut, move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record, lane=lane)
                         else:
-                            subtitles.move_start_subtitle(selected_subtitle=session.SUBTITLE.selected, absolute_time=start_position, move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record)
+                            subtitles.move_start_subtitle(selected_subtitle=session.SUBTITLE.selected, absolute_time=start_position, move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record, lane=lane)
                     else:
-                        subtitles.move_start_subtitle(selected_subtitle=session.SUBTITLE.selected, absolute_time=start_position, move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record)
+                        subtitles.move_start_subtitle(selected_subtitle=session.SUBTITLE.selected, absolute_time=start_position, move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record, lane=lane)
                 if widget.tug_of_war_pressed:
                     widget.show_tug_of_war = session.SUBTITLE.selected['start']
             elif widget.subtitle_end_is_clicked:
@@ -2924,23 +2940,23 @@ class Timeline(QWidget):
                 last_cut, next_cut = cuts_around(end_position)
                 if not end_position < (session.SUBTITLE.selected['start'] + session.CONFIG.get('default_values', {}).get('minimum_subtitle_width', 1)):
                     if not (bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed) and round(end_position, 3) >= round(nextsub['start'] - 0.001, 3)) and session.CONFIG.get('timeline', {}).get('snap', True) and session.CONFIG.get('timeline', {}).get('snap_limits', True) and (nextsub['start'] - session.CONFIG.get('timeline', {}).get('snap_value', .1)) < end_position:
-                        subtitles.move_end_subtitle(selected_subtitle=session.SUBTITLE.selected, absolute_time=(nextsub['start'] - 0.001), move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record)
+                        subtitles.move_end_subtitle(selected_subtitle=session.SUBTITLE.selected, absolute_time=(nextsub['start'] - 0.001), move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record, lane=lane)
                     elif session.CONFIG.get('timeline', {}).get('snap', True) and session.CONFIG.get('timeline', {}).get('snap_grid', False):
                         if session.CONFIG.get('timeline', {}).get('grid_type', False) == 'frames':
                             nearest_frame = round(end_position * session.VIDEO['framerate']) / session.VIDEO['framerate']
-                            subtitles.move_end_subtitle(selected_subtitle=session.SUBTITLE.selected, absolute_time=nearest_frame, move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record)
+                            subtitles.move_end_subtitle(selected_subtitle=session.SUBTITLE.selected, absolute_time=nearest_frame, move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record, lane=lane)
                         elif session.CONFIG.get('timeline', {}).get('grid_type', False) == 'seconds' and float(end_position) > float(float(int(end_position) + 1) - float(session.CONFIG.get('timeline', {}).get('snap_value', .1))):
-                            subtitles.move_end_subtitle(selected_subtitle=session.SUBTITLE.selected, absolute_time=float(int(end_position) + 1), move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record)
+                            subtitles.move_end_subtitle(selected_subtitle=session.SUBTITLE.selected, absolute_time=float(int(end_position) + 1), move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record, lane=lane)
                         elif session.CONFIG.get('timeline', {}).get('grid_type', False) == 'seconds' and float(end_position) < float(float(int(end_position)) + float(session.CONFIG.get('timeline', {}).get('snap_value', .1))):
-                            subtitles.move_end_subtitle(selected_subtitle=session.SUBTITLE.selected, absolute_time=float(int(end_position)), move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record)
+                            subtitles.move_end_subtitle(selected_subtitle=session.SUBTITLE.selected, absolute_time=float(int(end_position)), move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record, lane=lane)
                         elif session.CONFIG.get('timeline', {}).get('grid_type', False) == 'shot_changes' and end_position > next_cut - session.CONFIG.get('timeline', {}).get('snap_value', .1):
-                            subtitles.move_end_subtitle(selected_subtitle=session.SUBTITLE.selected, absolute_time=next_cut, move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record)
+                            subtitles.move_end_subtitle(selected_subtitle=session.SUBTITLE.selected, absolute_time=next_cut, move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record, lane=lane)
                         elif session.CONFIG.get('timeline', {}).get('grid_type', False) == 'shot_changes' and end_position < last_cut + session.CONFIG.get('timeline', {}).get('snap_value', .1):
-                            subtitles.move_end_subtitle(selected_subtitle=session.SUBTITLE.selected, absolute_time=last_cut, move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record)
+                            subtitles.move_end_subtitle(selected_subtitle=session.SUBTITLE.selected, absolute_time=last_cut, move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record, lane=lane)
                         else:
-                            subtitles.move_end_subtitle(selected_subtitle=session.SUBTITLE.selected, absolute_time=end_position, move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record)
+                            subtitles.move_end_subtitle(selected_subtitle=session.SUBTITLE.selected, absolute_time=end_position, move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record, lane=lane)
                     else:
-                        subtitles.move_end_subtitle(selected_subtitle=session.SUBTITLE.selected, absolute_time=end_position, move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record)
+                        subtitles.move_end_subtitle(selected_subtitle=session.SUBTITLE.selected, absolute_time=end_position, move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record, lane=lane)
                 if widget.tug_of_war_pressed:
                     widget.show_tug_of_war = session.SUBTITLE.selected['end']
             elif widget.subtitle_is_clicked:
@@ -3333,6 +3349,27 @@ class Timeline(QWidget):
             if rect is not None and rect.contains(pos):
                 return (subtitle, subtitle['dubbing'][0])
         return None
+
+    def subtitle_lane(widget):
+        """What puts subtitles on one line of the timeline, as a function of
+        a subtitle: its speaker track when speakers have tracks of their
+        own; None when every subtitle is on the one line."""
+        if not (widget.show_speaker_tracks and session.SPEAKERS):
+            return None
+        speakers = list(session.SPEAKERS.keys())
+        return lambda subtitle: speakers.index(subtitle.get('speaker', 'A')) if subtitle.get('speaker', 'A') in speakers else 0
+
+    def _subtitle_at(widget, pos):
+        """The subtitle under pos: with speaker tracks, the one on the track
+        under the pointer, as subtitles of two speakers can overlap."""
+        position = pos.x() / widget.width_proportion
+        lane = widget.subtitle_lane()
+        if lane is not None and widget.subtitle_y <= pos.y() < widget.subtitle_y + widget.subtitle_height:
+            track = int((pos.y() - widget.subtitle_y) / (widget.subtitle_height / len(session.SPEAKERS)))
+            found = next((item for item in session.SUBTITLE.segments if lane(item) == track and item['start'] <= position < item['end']), False)
+            if found:
+                return found
+        return subtitles.subtitle_under_current_position(position=position)
 
     def _subclip_track_geometry(widget, subtitle):
         """Vertical geometry of the dub band for `subtitle`. Returns
