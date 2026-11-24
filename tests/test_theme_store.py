@@ -19,7 +19,6 @@ from subtitld.modules import config, session, subtitldcc_links, theme_store, tim
 from subtitld.modules import subtitldcc_service as service
 from subtitld.interface import theme as interface_theme
 from subtitld.interface import timeline_theme_browser
-from subtitld.interface.timeline_theme_panel import TimelineThemePanel
 
 fails = []
 
@@ -148,13 +147,18 @@ check('gone', (theme_store.theme_id('Night000001') in timeline_themes.available(
 check('the timeline goes back to the default theme', timeline_themes.current().id, timeline_themes.DEFAULT)
 check('and it can be installed again', theme_store.state(SITE['Night000001'][0]), 'install')
 
-print('the browser')
-panel = TimelineThemePanel()
-check('the Timeline tab has a way to it', panel.browse_button.text(), 'Browse themes…')
+print('the browser, in the Timeline tab')
 dialog = timeline_theme_browser.ThemeBrowser()
+check('nothing fetched before it is shown', dialog.cards, [])
+dialog.show()
 check('a card per theme subtitld.cc lists', [card.info['share_id'] for card in dialog.cards],
       ['Night000001', 'Day00000001', 'Alone000001'])
 check('each with what it offers', [card.state for card in dialog.cards], ['install', 'use', 'install'])
+card = dialog.cards[1]
+check('the main action is the add-on cards\' slanted tab', card.main.property('class'), 'addon_card_tab')
+check('the trash only while the pointer is on the card, the globe always',
+      (card.remove.isHidden(), card.site.isHidden()), (True, False))
+check('nothing to remove on one not installed', hasattr(dialog.cards[0], 'remove'), False)
 changes = []
 dialog.installed.connect(lambda: changes.append(1))
 downloaded.clear()
@@ -166,10 +170,13 @@ check('the Timeline tab hears of it', len(changes), 1)
 dialog.look.combobox.setCurrentIndex(dialog.look.combobox.findData('light'))
 dialog.reload()
 check('the look filter', [card.info['share_id'] for card in dialog.cards], ['Day00000001'])
-one = timeline_theme_browser.ThemeBrowser(share_id='Night000001')
-check('a theme link shows that theme and its pair', [card.info['share_id'] for card in one.cards],
+dialog.show_theme('Night000001')
+check('a theme link shows that theme and its pair', [card.info['share_id'] for card in dialog.cards],
       ['Night000001', 'Day00000001'])
-check('without the search bar', one.bar.isHidden(), True)
+check('without the search bar, with a way back', (dialog.bar.isHidden(), dialog.showing_one.isHidden()),
+      (True, False))
+dialog.show_all.click()
+check('back to the list', (dialog.bar.isHidden(), len(dialog.cards)), (False, 1))
 
 print()
 print('ALL PASS' if not fails else f'FAILED: {fails}')

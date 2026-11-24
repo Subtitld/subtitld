@@ -967,8 +967,6 @@
     "subtitle_styles.subtitld.classic.backgroundbox_border_radius": "Promień narożnika",
     "subtitle_styles.subtitld.classic.backgroundbox_color": "Kolor",
     "theme_store.title": "Motywy osi czasu z subtitld.cc",
-    "theme_store.browse": "Przeglądaj motywy…",
-    "theme_store.browse_tip": "Motywy osi czasu tworzone przez użytkowników Subtitld, z subtitld.cc",
     "theme_store.search": "Szukaj",
     "theme_store.look": "Wygląd",
     "theme_store.look_any": "Dowolny",
@@ -996,5 +994,8 @@
     "theme_store.unreachable": "Nie można połączyć się z subtitld.cc: {error}",
     "theme_store.install_failed": "Nie udało się zainstalować motywu: {error}",
     "theme_store.close": "Zamknij",
-    "theme_store.gallery": "Otwórz galerię"
+    "theme_store.gallery": "Otwórz galerię",
+    "theme_store.newer": "Nowsza: wersja {version}",
+    "theme_store.showing_one": "Motyw z linku",
+    "theme_store.show_all": "Pokaż wszystkie motywy"
 }

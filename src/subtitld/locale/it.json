@@ -967,8 +967,6 @@
     "subtitle_styles.subtitld.classic.backgroundbox_border_radius": "Raggio del bordo",
     "subtitle_styles.subtitld.classic.backgroundbox_color": "Colore",
     "theme_store.title": "Temi della timeline da subtitld.cc",
-    "theme_store.browse": "Sfoglia i temi…",
-    "theme_store.browse_tip": "Temi della timeline creati da chi usa Subtitld, da subtitld.cc",
     "theme_store.search": "Cerca",
     "theme_store.look": "Aspetto",
     "theme_store.look_any": "Tutti",
@@ -996,5 +994,8 @@
     "theme_store.unreachable": "Impossibile raggiungere subtitld.cc: {error}",
     "theme_store.install_failed": "Impossibile installare il tema: {error}",
     "theme_store.close": "Chiudi",
-    "theme_store.gallery": "Apri la galleria"
+    "theme_store.gallery": "Apri la galleria",
+    "theme_store.newer": "Più recente: versione {version}",
+    "theme_store.showing_one": "Un tema da un link",
+    "theme_store.show_all": "Mostra tutti i temi"
 }

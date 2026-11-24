@@ -1334,8 +1334,6 @@
     "export_dialog.video_ts_track": "Transport stream (.ts)",
     "export_dialog.video_avi_xsub": "AVI (.avi), legendas DivX (XSUB)",
     "theme_store.title": "Temas de linha do tempo do subtitld.cc",
-    "theme_store.browse": "Procurar temas…",
-    "theme_store.browse_tip": "Temas de linha do tempo feitos por quem usa o Subtitld, do subtitld.cc",
     "theme_store.search": "Buscar",
     "theme_store.look": "Visual",
     "theme_store.look_any": "Qualquer",
@@ -1363,5 +1361,8 @@
     "theme_store.unreachable": "Não foi possível acessar o subtitld.cc: {error}",
     "theme_store.install_failed": "Não foi possível instalar o tema: {error}",
     "theme_store.close": "Fechar",
-    "theme_store.gallery": "Abrir a galeria"
+    "theme_store.gallery": "Abrir a galeria",
+    "theme_store.newer": "Mais nova: versão {version}",
+    "theme_store.showing_one": "Um tema de um link",
+    "theme_store.show_all": "Mostrar todos os temas"
 }

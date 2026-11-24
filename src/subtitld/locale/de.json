@@ -967,8 +967,6 @@
     "subtitle_styles.subtitld.classic.backgroundbox_border_radius": "Eckenradius",
     "subtitle_styles.subtitld.classic.backgroundbox_color": "Farbe",
     "theme_store.title": "Timeline-Designs von subtitld.cc",
-    "theme_store.browse": "Designs durchsuchen…",
-    "theme_store.browse_tip": "Timeline-Designs von Subtitld-Nutzern, von subtitld.cc",
     "theme_store.search": "Suchen",
     "theme_store.look": "Erscheinungsbild",
     "theme_store.look_any": "Alle",
@@ -996,5 +994,8 @@
     "theme_store.unreachable": "subtitld.cc ist nicht erreichbar: {error}",
     "theme_store.install_failed": "Das Design konnte nicht installiert werden: {error}",
     "theme_store.close": "Schließen",
-    "theme_store.gallery": "Galerie öffnen"
+    "theme_store.gallery": "Galerie öffnen",
+    "theme_store.newer": "Neuer: Version {version}",
+    "theme_store.showing_one": "Ein Design aus einem Link",
+    "theme_store.show_all": "Alle Designs anzeigen"
 }

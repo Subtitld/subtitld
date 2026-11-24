@@ -1477,8 +1477,6 @@
     "export_dialog.video_ts_track": "Transport stream (.ts)",
     "export_dialog.video_avi_xsub": "AVI (.avi), DivX subtitles (XSUB)",
     "theme_store.title": "Timeline themes from subtitld.cc",
-    "theme_store.browse": "Browse themes…",
-    "theme_store.browse_tip": "Timeline themes made by Subtitld’s users, from subtitld.cc",
     "theme_store.search": "Search",
     "theme_store.look": "Look",
     "theme_store.look_any": "Any",
@@ -1506,5 +1504,8 @@
     "theme_store.unreachable": "Couldn’t reach subtitld.cc: {error}",
     "theme_store.install_failed": "The theme couldn’t be installed: {error}",
     "theme_store.close": "Close",
-    "theme_store.gallery": "Open the gallery"
+    "theme_store.gallery": "Open the gallery",
+    "theme_store.newer": "Newer: version {version}",
+    "theme_store.showing_one": "A theme from a link",
+    "theme_store.show_all": "Show all themes"
 }

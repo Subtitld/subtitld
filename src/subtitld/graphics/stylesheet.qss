@@ -734,18 +734,6 @@ QLabel[class='addons_empty_state'] {
     padding: 24px;
 }
 
-/* The timeline themes from subtitld.cc (timeline_theme_browser): the cards sit on the dialog's own ground;
-   each card paints its face, like an add-on card. */
-QScrollArea#theme_store_scroll,
-QWidget#theme_store_page {
-    background: transparent;
-}
-
-QFrame[class='theme_card'] {
-    background: transparent;
-    border: 0;
-}
-
 /* Add-on card (addons_dialog._AddonCard): it paints its own face (the band, the task label, the contact line), so
    the frame is transparent; these are the words and the buttons on it. */
 QFrame[class='addon_card'] {

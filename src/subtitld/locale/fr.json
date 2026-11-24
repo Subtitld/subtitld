@@ -967,8 +967,6 @@
     "subtitle_styles.subtitld.classic.backgroundbox_border_radius": "Rayon des coins",
     "subtitle_styles.subtitld.classic.backgroundbox_color": "Couleur",
     "theme_store.title": "Thèmes de timeline de subtitld.cc",
-    "theme_store.browse": "Parcourir les thèmes…",
-    "theme_store.browse_tip": "Des thèmes de timeline faits par les utilisateurs de Subtitld, sur subtitld.cc",
     "theme_store.search": "Rechercher",
     "theme_store.look": "Apparence",
     "theme_store.look_any": "Toutes",
@@ -996,5 +994,8 @@
     "theme_store.unreachable": "Impossible de joindre subtitld.cc : {error}",
     "theme_store.install_failed": "Le thème n’a pas pu être installé : {error}",
     "theme_store.close": "Fermer",
-    "theme_store.gallery": "Ouvrir la galerie"
+    "theme_store.gallery": "Ouvrir la galerie",
+    "theme_store.newer": "Plus récente : version {version}",
+    "theme_store.showing_one": "Un thème venu d’un lien",
+    "theme_store.show_all": "Afficher tous les thèmes"
 }

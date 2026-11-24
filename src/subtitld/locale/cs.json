@@ -967,8 +967,6 @@
     "subtitle_styles.subtitld.classic.backgroundbox_border_radius": "Zaoblení rohů",
     "subtitle_styles.subtitld.classic.backgroundbox_color": "Barva",
     "theme_store.title": "Motivy časové osy ze subtitld.cc",
-    "theme_store.browse": "Procházet motivy…",
-    "theme_store.browse_tip": "Motivy časové osy od uživatelů Subtitld, ze subtitld.cc",
     "theme_store.search": "Hledat",
     "theme_store.look": "Vzhled",
     "theme_store.look_any": "Jakýkoli",
@@ -996,5 +994,8 @@
     "theme_store.unreachable": "Nelze se spojit se subtitld.cc: {error}",
     "theme_store.install_failed": "Motiv se nepodařilo nainstalovat: {error}",
     "theme_store.close": "Zavřít",
-    "theme_store.gallery": "Otevřít galerii"
+    "theme_store.gallery": "Otevřít galerii",
+    "theme_store.newer": "Novější: verze {version}",
+    "theme_store.showing_one": "Motiv z odkazu",
+    "theme_store.show_all": "Zobrazit všechny motivy"
 }

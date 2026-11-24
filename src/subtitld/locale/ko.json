@@ -967,8 +967,6 @@
     "subtitle_styles.subtitld.classic.backgroundbox_border_radius": "테두리 반경",
     "subtitle_styles.subtitld.classic.backgroundbox_color": "색상",
     "theme_store.title": "subtitld.cc의 타임라인 테마",
-    "theme_store.browse": "테마 둘러보기…",
-    "theme_store.browse_tip": "Subtitld 사용자들이 만든 타임라인 테마(subtitld.cc)",
     "theme_store.search": "검색",
     "theme_store.look": "모양",
     "theme_store.look_any": "전체",
@@ -996,5 +994,8 @@
     "theme_store.unreachable": "subtitld.cc에 연결할 수 없습니다: {error}",
     "theme_store.install_failed": "테마를 설치할 수 없습니다: {error}",
     "theme_store.close": "닫기",
-    "theme_store.gallery": "갤러리 열기"
+    "theme_store.gallery": "갤러리 열기",
+    "theme_store.newer": "새 버전: {version}",
+    "theme_store.showing_one": "링크로 연 테마",
+    "theme_store.show_all": "모든 테마 보기"
 }

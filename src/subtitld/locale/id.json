@@ -967,8 +967,6 @@
     "subtitle_styles.subtitld.classic.backgroundbox_border_radius": "Radius sudut",
     "subtitle_styles.subtitld.classic.backgroundbox_color": "Warna",
     "theme_store.title": "Tema linimasa dari subtitld.cc",
-    "theme_store.browse": "Jelajahi tema…",
-    "theme_store.browse_tip": "Tema linimasa buatan pengguna Subtitld, dari subtitld.cc",
     "theme_store.search": "Cari",
     "theme_store.look": "Tampilan",
     "theme_store.look_any": "Semua",
@@ -996,5 +994,8 @@
     "theme_store.unreachable": "Tidak bisa menghubungi subtitld.cc: {error}",
     "theme_store.install_failed": "Tema tidak bisa dipasang: {error}",
     "theme_store.close": "Tutup",
-    "theme_store.gallery": "Buka galeri"
+    "theme_store.gallery": "Buka galeri",
+    "theme_store.newer": "Lebih baru: versi {version}",
+    "theme_store.showing_one": "Tema dari tautan",
+    "theme_store.show_all": "Tampilkan semua tema"
 }

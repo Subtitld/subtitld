@@ -967,8 +967,6 @@
     "subtitle_styles.subtitld.classic.backgroundbox_border_radius": "Радіус закруглення",
     "subtitle_styles.subtitld.classic.backgroundbox_color": "Колір",
     "theme_store.title": "Теми шкали часу з subtitld.cc",
-    "theme_store.browse": "Огляд тем…",
-    "theme_store.browse_tip": "Теми шкали часу від користувачів Subtitld, з subtitld.cc",
     "theme_store.search": "Пошук",
     "theme_store.look": "Оформлення",
     "theme_store.look_any": "Будь-яке",
@@ -996,5 +994,8 @@
     "theme_store.unreachable": "Не вдалося з’єднатися з subtitld.cc: {error}",
     "theme_store.install_failed": "Не вдалося установити тему: {error}",
     "theme_store.close": "Закрити",
-    "theme_store.gallery": "Відкрити галерею"
+    "theme_store.gallery": "Відкрити галерею",
+    "theme_store.newer": "Новіша: версія {version}",
+    "theme_store.showing_one": "Тема за посиланням",
+    "theme_store.show_all": "Показати всі теми"
 }

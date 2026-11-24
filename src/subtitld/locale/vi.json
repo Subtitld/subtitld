@@ -967,8 +967,6 @@
     "subtitle_styles.subtitld.classic.backgroundbox_border_radius": "Bán kính góc",
     "subtitle_styles.subtitld.classic.backgroundbox_color": "Màu",
     "theme_store.title": "Giao diện dòng thời gian từ subtitld.cc",
-    "theme_store.browse": "Duyệt giao diện…",
-    "theme_store.browse_tip": "Giao diện dòng thời gian do người dùng Subtitld tạo, từ subtitld.cc",
     "theme_store.search": "Tìm",
     "theme_store.look": "Kiểu",
     "theme_store.look_any": "Bất kỳ",
@@ -996,5 +994,8 @@
     "theme_store.unreachable": "Không kết nối được subtitld.cc: {error}",
     "theme_store.install_failed": "Không cài được giao diện: {error}",
     "theme_store.close": "Đóng",
-    "theme_store.gallery": "Mở thư viện"
+    "theme_store.gallery": "Mở thư viện",
+    "theme_store.newer": "Mới hơn: phiên bản {version}",
+    "theme_store.showing_one": "Giao diện từ một liên kết",
+    "theme_store.show_all": "Hiện tất cả giao diện"
 }

@@ -1,133 +1,220 @@
 """Timeline themes from subtitld.cc, browsed and installed in Subtitld (modules/theme_store.py).
 
-The dialog lists the public themes there (by look, popular, new or best rated, or by name), each as a card:
-the preview subtitld.cc drew, the name, who made it, its look and whether it comes with a counterpart for the
-other look. Its button installs it (with its counterpart) and puts it on the timeline, updates it when
-subtitld.cc has a newer version, or puts an installed one on the timeline; an installed one can be removed.
+A section of the Timeline tab, under the theme picker: the public themes on subtitld.cc (by look, popular,
+new or best rated, or by name), each as a card drawn like an add-on's. On its band, the look it is drawn
+for on the slanted label and its name; under it the preview subtitld.cc drew, who made it and whether it
+comes with a counterpart for the other look. In the footer, a globe to its page on subtitld.cc and, on the
+slanted tab in the corner, Install (the theme and its counterpart, and the timeline takes the one drawn
+for the interface's look), Update when subtitld.cc has a newer version, Use for an installed one; the
+trash beside the tab, shown while the pointer is on the card, removes it.
 
-A subtitld:// theme link (subtitldcc_open.open_link) opens the same dialog on that one theme.
+A subtitld:// theme link (subtitldcc_open.open_link) shows that theme and its pair here, or, with no
+editor open, in a dialog holding the same section.
 
-Everything from subtitld.cc comes in the background (subtitldcc_service.call); nothing needs signing in.
+Everything from subtitld.cc comes in the background (subtitldcc_service.call), the first time the section
+is shown; nothing needs signing in.
 """
 
-from PySide6.QtCore import QRectF, Qt, QTimer, QUrl, Signal
-from PySide6.QtGui import QColor, QDesktopServices, QPainter, QPainterPath, QPixmap
-from PySide6.QtWidgets import (QFrame, QGridLayout, QHBoxLayout, QLabel, QPushButton, QScrollArea, QSizePolicy,
-                               QVBoxLayout, QWidget)
+from PySide6.QtCore import QRectF, QSize, Qt, QTimer, QUrl, Signal
+from PySide6.QtGui import QDesktopServices, QPainter, QPixmap
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QSizePolicy, QVBoxLayout, QWidget
 
-from subtitld.interface import shapes, theme, utils
+from subtitld.interface import shapes, utils
+from subtitld.interface.addons_dialog import _AddonCard, _ElidedLabel, _graphic
 from subtitld.interface.translation import _
 from subtitld.modules import subtitldcc_service as service
 from subtitld.modules import theme_store
 
-COLUMNS = 2
-PREVIEW_WIDTH = 360                     # a card's preview, at 9:2 like the ones subtitld.cc draws
-PREVIEW_HEIGHT = 80
 LOOKS = ('', 'dark', 'light')
 SORTS = ('popular', 'new', 'top')
+PREVIEW_RATIO = 2 / 9                   # the previews subtitld.cc draws are 9:2
 _previews = {}                          # (share_id, version) -> QPixmap, for as long as Subtitld runs
 
 
-class ThemeCard(QFrame):
-    """One theme subtitld.cc lists. `act(info, action)`: 'install', 'update', 'use' or 'remove'."""
+class _Preview(QWidget):
+    """The preview, as wide as the card and 9:2."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.pixmap = None
+        policy = QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        policy.setHeightForWidth(True)
+        self.setSizePolicy(policy)
+
+    def hasHeightForWidth(self):
+        return True
+
+    def heightForWidth(self, width):
+        return round(width * PREVIEW_RATIO)
+
+    def sizeHint(self):
+        return QSize(360, self.heightForWidth(360))
+
+    def minimumSizeHint(self):
+        return QSize(90, self.heightForWidth(90))
+
+    def set_pixmap(self, pixmap):
+        self.pixmap = pixmap
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.SmoothPixmapTransform)
+        painter.setRenderHint(QPainter.Antialiasing)
+        rect = QRectF(self.rect())
+        painter.setClipPath(shapes.rect_path(rect))
+        if self.pixmap is None or self.pixmap.isNull():
+            painter.fillRect(rect, shapes.CONTACT)
+        else:
+            painter.drawPixmap(rect, self.pixmap, QRectF(self.pixmap.rect()))
+
+
+class ThemeCard(_AddonCard):
+    """One theme subtitld.cc lists, drawn as an add-on card is (its band, slanted label, contact line and
+    corner tab). `act(info, action)`: 'install', 'update', 'use' or 'remove'."""
 
     act = Signal(dict, str)
 
-    RADIUS = 4
-    COLOUR = '#2c3d4b'
-    IN_USE = '#33475a'
-
     def __init__(self, info, parent=None):
-        super().__init__(parent)
+        QFrame.__init__(self, parent)              # the add-on card's drawing, not its add-on
         self.info = info
         self.state = theme_store.state(info)
-        self.setProperty('class', 'theme_card')
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(6)
+        self.setProperty('class', 'addon_card')
+        self.setObjectName('theme_card')
+        policy = QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        policy.setHeightForWidth(True)
+        self.setSizePolicy(policy)
+        self._kind = 'available' if self.state == 'install' else 'installed'
 
-        self.preview = QLabel()
-        self.preview.setFixedSize(PREVIEW_WIDTH, PREVIEW_HEIGHT)
-        self.preview.setAlignment(Qt.AlignCenter)
-        self.preview.setAccessibleName(_('theme_store.preview_of').format(name=info['title']))
-        layout.addWidget(self.preview, 0, Qt.AlignHCenter)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 1)        # the contact line's row
+        outer.setSpacing(0)
 
-        title = QLabel(info['title'])
+        # --- The band: the look on the label, the name, a newer version ----
+        band = QWidget()
+        band.setFixedHeight(self.BAND)
+        band.setLayout(QHBoxLayout())
+        band.layout().setContentsMargins(9, 0, 12, 0)
+        band.layout().setSpacing(0)
+        self._task_text = QLabel(_(f"theme_store.look_{info['look']}"))
+        self._task_text.setProperty('class', 'addon_card_task')
+        self._task_text.setContentsMargins(0, 0, 0, self.BAND - self.LABEL)
+        band.layout().addWidget(self._task_text)
+        band.layout().addSpacing(24)                # the label's padding and its slant
+        title = _ElidedLabel(info['title'], least=60)
         title.setProperty('class', 'addon_card_title')
-        layout.addWidget(title)
-        about = [f"@{info['owner']}" if info.get('owner') else '', _(f"theme_store.look_{info['look']}")]
+        band.layout().addWidget(title, 1)
+        if self.state == 'update':
+            version = QLabel(_('theme_store.newer').format(version=info['version']))
+            version.setProperty('class', 'addon_card_version')
+            band.layout().addWidget(version)
+        outer.addWidget(band)
+
+        # --- The preview and what it is ------------------------------------
+        body = QWidget()
+        body.setLayout(QVBoxLayout())
+        body.layout().setContentsMargins(14, 12, 14, 10)
+        body.layout().setSpacing(9)
+        self.preview = _Preview()
+        self.preview.setAccessibleName(_('theme_store.preview_of').format(name=info['title']))
+        body.layout().addWidget(self.preview)
+        about = [f"@{info['owner']}" if info.get('owner') else '']
         if info.get('counterpart'):
             about.append(_('theme_store.both_looks'))
         if info.get('rating'):
             about.append(f"★ {info['rating']['average']:.1f}")
         about.append(_('theme_store.downloads').format(count=info.get('downloads', 0)))
         meta = QLabel(' · '.join(part for part in about if part))
-        meta.setProperty('class', 'addon_card_aside')
+        meta.setProperty('class', 'addon_card_summary')
         meta.setWordWrap(True)
-        layout.addWidget(meta)
+        body.layout().addWidget(meta)
+        outer.addWidget(body)
 
-        buttons = QHBoxLayout()
-        buttons.setContentsMargins(0, 2, 0, 0)
-        buttons.setSpacing(6)
-        page = QPushButton(_('theme_store.on_site'))
-        page.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(info['url'])))
-        buttons.addWidget(page)
-        buttons.addStretch()
+        # --- The footer: its page, then the trash and the tab ---------------
+        footer = QWidget()
+        footer.setFixedHeight(30)
+        footer.setLayout(QHBoxLayout())
+        footer.layout().setContentsMargins(4, 0, 0, 0)
+        footer.layout().setSpacing(0)
+        self.site = self._button('theme_card_site.svg', _('theme_store.on_site'),
+                                 lambda: QDesktopServices.openUrl(QUrl(info['url'])))
+        footer.layout().addWidget(self.site, 0, Qt.AlignVCenter)
+        footer.layout().addStretch()
+        self._hover_buttons = []
         if self.state != 'install':
-            remove = QPushButton(_('theme_store.remove'))
-            remove.setObjectName('theme_store_remove')
-            remove.clicked.connect(lambda: self.act.emit(self.info, 'remove'))
-            buttons.addWidget(remove)
+            self.remove = self._button('addon_card_remove.svg', _('theme_store.remove'),
+                                       lambda: self.act.emit(self.info, 'remove'))
+            self._hover_buttons.append(self.remove)
+            footer.layout().addWidget(self.remove, 0, Qt.AlignVCenter)
+            footer.layout().addSpacing(4)
         self.main = QPushButton(_(f'theme_store.action_{self.state}'))
         self.main.setObjectName(f'theme_store_{self.state}')
+        self.main.setProperty('class', 'addon_card_tab')
+        self.main.setFixedHeight(30)
+        if self.state == 'install':
+            self.main.setIcon(_graphic('addon_card_install.svg'))
+        elif self.state == 'update':
+            self.main.setIcon(_graphic('addon_card_update.svg'))
         self.main.setEnabled(self.state != 'in_use')
         self.main.clicked.connect(lambda: self.act.emit(self.info, self.state))
-        buttons.addWidget(self.main)
-        layout.addLayout(buttons)
+        footer.layout().addWidget(self.main)
+        outer.addWidget(footer)
+        for button in self._hover_buttons:
+            button.setVisible(False)
+
+    def _button(self, icon, text, slot):
+        button = QPushButton()
+        button.setProperty('class', 'addon_card_icon')
+        button.setIcon(_graphic(icon))
+        button.setIconSize(QSize(16, 16))
+        button.setFixedSize(26, 26)
+        button.setToolTip(text)
+        button.setAccessibleName(text)
+        button.clicked.connect(slot)
+        return button
 
     def set_busy(self, text):
         self.main.setEnabled(False)
         self.main.setText(text)
 
     def set_preview(self, pixmap):
-        if pixmap is None or pixmap.isNull():
-            return
-        ratio = self.devicePixelRatioF()
-        scaled = pixmap.scaled(int(PREVIEW_WIDTH * ratio), int(PREVIEW_HEIGHT * ratio), Qt.KeepAspectRatio,
-                               Qt.SmoothTransformation)
-        scaled.setDevicePixelRatio(ratio)
-        self.preview.setPixmap(scaled)
-
-    def paintEvent(self, event):
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
-        shape = QPainterPath()
-        shape.addRoundedRect(QRectF(0, 0, self.width(), self.height() - 1), self.RADIUS, self.RADIUS)
-        painter.fillPath(shape.translated(0, 1).subtracted(shape), theme.color(shapes.CONTACT))
-        painter.fillPath(shape, theme.surface(QColor(self.IN_USE if self.state == 'in_use' else self.COLOUR)))
+        if pixmap is not None and not pixmap.isNull():
+            self.preview.set_pixmap(pixmap)
 
 
-class ThemeBrowser(utils.SimpleDialog):
+class ThemeBrowser(QWidget):
     """The themes subtitld.cc has, to install. `installed` after the timeline's theme or the list of
-    installed themes changed. With `share_id`, only that theme (and its counterpart)."""
+    installed themes changed. Loads the first time it is shown."""
 
     installed = Signal()
 
-    def __init__(self, parent=None, share_id=None):
-        super().__init__(parent, title=_('theme_store.title'))
-        self.setObjectName('theme_store_dialog')
-        self.setMinimumSize(820, 600)
-        self.share_id = share_id
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName('theme_store')
+        self.setProperty('class', 'transparent_panel')
+        self.share_id = None            # showing one theme (a link) instead of the list
         self.cards = []
         self.next_cursor = None
         self.generation = 0             # a new search makes the answers to the old one stale
         self.calls = []
+        self.loaded = False
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
 
+        self.heading = QLabel()
+        self.heading.setProperty('class', 'widget_label')
+        layout.addWidget(self.heading)
+
+        # The search, then the look and the order under it: the panel is narrow.
+        self.bar = QWidget()
+        rows = QVBoxLayout(self.bar)
+        rows.setContentsMargins(0, 0, 0, 0)
+        rows.setSpacing(8)
         bar = QHBoxLayout()
-        bar.setSpacing(10)
+        bar.setContentsMargins(0, 0, 0, 0)
+        bar.setSpacing(8)
         self.search_field = utils.LabeledLineEdit()
-        self.search_field.setLabel(_('theme_store.search'))
         self.search = self.search_field.lineedit
         self.search.setObjectName('theme_store_search')
         self.search.setClearButtonEnabled(True)
@@ -136,60 +223,79 @@ class ThemeBrowser(utils.SimpleDialog):
         self.search_timer.setInterval(350)
         self.search_timer.timeout.connect(self.reload)
         self.search.textChanged.connect(lambda _text: self.search_timer.start())
-        bar.addWidget(self.search_field, 1)
+        rows.addWidget(self.search_field)
+        rows.addLayout(bar)
         self.look = utils.LabeledComboBox()
-        self.look.setLabel(_('theme_store.look'))
         for value in LOOKS:
-            self.look.combobox.addItem(_(f'theme_store.look_{value or "any"}'), value)
+            self.look.combobox.addItem('', value)
         self.look.combobox.activated.connect(lambda _index: self.reload())
         bar.addWidget(self.look)
         self.sort = utils.LabeledComboBox()
-        self.sort.setLabel(_('theme_store.sort'))
         for value in SORTS:
-            self.sort.combobox.addItem(_(f'theme_store.sort_{value}'), value)
+            self.sort.combobox.addItem('', value)
         self.sort.combobox.activated.connect(lambda _index: self.reload())
         bar.addWidget(self.sort)
-        self.bar = QWidget()
-        self.bar.setLayout(bar)
-        bar.setContentsMargins(0, 0, 0, 0)
-        self.content.layout().addWidget(self.bar)
+        bar.addStretch()
+        layout.addWidget(self.bar)
+
+        self.showing_one = QWidget()
+        one = QHBoxLayout(self.showing_one)
+        one.setContentsMargins(0, 0, 0, 0)
+        self.showing_one_label = QLabel()
+        self.showing_one_label.setProperty('class', 'addon_card_aside')
+        one.addWidget(self.showing_one_label, 1)
+        self.show_all = QPushButton()
+        self.show_all.setObjectName('theme_store_show_all')
+        self.show_all.clicked.connect(lambda: self.show_theme(None))
+        one.addWidget(self.show_all)
+        self.showing_one.hide()
+        layout.addWidget(self.showing_one)
 
         self.status = QLabel()
         self.status.setObjectName('theme_store_status')
         self.status.setWordWrap(True)
-        self.content.layout().addWidget(self.status)
+        layout.addWidget(self.status)
 
-        self.grid_widget = QWidget()
-        self.grid = QGridLayout(self.grid_widget)
-        self.grid.setContentsMargins(0, 0, 0, 0)
-        self.grid.setSpacing(10)
-        self.grid.setAlignment(Qt.AlignTop)
-        self.more = QPushButton(_('theme_store.more'))
+        self.list = QVBoxLayout()
+        self.list.setContentsMargins(0, 0, 0, 0)
+        self.list.setSpacing(10)
+        layout.addLayout(self.list)
+        self.more = QPushButton()
         self.more.setObjectName('theme_store_more')
         self.more.clicked.connect(self.load_more)
-        page = QWidget()
-        page.setObjectName('theme_store_page')
-        page_layout = QVBoxLayout(page)
-        page_layout.setContentsMargins(0, 0, 4, 0)
-        page_layout.addWidget(self.grid_widget)
-        page_layout.addWidget(self.more, 0, Qt.AlignHCenter)
-        page_layout.addStretch()
-        scroll = QScrollArea()
-        scroll.setObjectName('theme_store_scroll')
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.NoFrame)
-        scroll.setWidget(page)
-        scroll.viewport().setAutoFillBackground(False)
-        self.content.layout().addWidget(scroll, 1)
+        self.more.hide()
+        layout.addWidget(self.more, 0, Qt.AlignHCenter)
+        self.gallery = QPushButton()
+        self.gallery.setObjectName('theme_store_gallery')
+        self.gallery.setFlat(True)
+        self.gallery.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(service.site_url('/themes/timeline'))))
+        layout.addWidget(self.gallery, 0, Qt.AlignLeft)
+        self.translate()
 
-        self.accept_button.setText(_('theme_store.close'))
-        self.reject_button.setText(_('theme_store.gallery'))
-        self.reject_button.clicked.disconnect()
-        self.reject_button.clicked.connect(
-            lambda: QDesktopServices.openUrl(QUrl(service.site_url('/themes/timeline'))))
-        if share_id:
-            self.bar.hide()
-            self.reject_button.hide()
+    def translate(self):
+        self.heading.setText(_('theme_store.title'))
+        self.search_field.setLabel(_('theme_store.search'))
+        self.look.setLabel(_('theme_store.look'))
+        for index, value in enumerate(LOOKS):
+            self.look.combobox.setItemText(index, _(f'theme_store.look_{value or "any"}'))
+        self.sort.setLabel(_('theme_store.sort'))
+        for index, value in enumerate(SORTS):
+            self.sort.combobox.setItemText(index, _(f'theme_store.sort_{value}'))
+        self.showing_one_label.setText(_('theme_store.showing_one'))
+        self.show_all.setText(_('theme_store.show_all'))
+        self.more.setText(_('theme_store.more'))
+        self.gallery.setText(_('theme_store.gallery'))
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if not self.loaded:
+            self.reload()
+
+    def show_theme(self, share_id):
+        """Only that theme and its pair (a link), or, with None, the list again."""
+        self.share_id = share_id
+        self.bar.setVisible(share_id is None)
+        self.showing_one.setVisible(share_id is not None)
         self.reload()
 
     # --- Loading --------------------------------------------------------------------------------------
@@ -207,12 +313,17 @@ class ThemeBrowser(utils.SimpleDialog):
 
         self.calls.append(service.call(function, succeeded, failed))
 
-    def reload(self):
-        self.generation += 1
+    def _clear(self):
         for card in self.cards:
+            self.list.removeWidget(card)
             card.setParent(None)
             card.deleteLater()
         self.cards = []
+
+    def reload(self):
+        self.loaded = True
+        self.generation += 1
+        self._clear()
         self.next_cursor = None
         self.more.hide()
         self.status.setText(_('theme_store.loading'))
@@ -266,8 +377,7 @@ class ThemeBrowser(utils.SimpleDialog):
         for info in infos:
             card = ThemeCard(info)
             card.act.connect(self._act)
-            index = len(self.cards)
-            self.grid.addWidget(card, index // COLUMNS, index % COLUMNS)
+            self.list.addWidget(card)
             self.cards.append(card)
             key = (info['share_id'], info['version'])
             if key in _previews:
@@ -317,32 +427,41 @@ class ThemeBrowser(utils.SimpleDialog):
         """Every card's button follows (one theme's install may change its pair's, and which is in use)."""
         self.installed.emit()
         infos = [card.info for card in self.cards]
-        for card in self.cards:
-            card.setParent(None)
-            card.deleteLater()
-        self.cards = []
-        generation_cursor = self.next_cursor
+        self._clear()
         self._add(infos)
-        self.next_cursor = generation_cursor
 
 
-def browse(window, share_id=None):
-    """Open the browser; the Timeline tab and the timeline follow what it installs."""
+def follow(window):
+    """The Timeline tab and the timeline after the browser changed the theme or the installed ones."""
     from subtitld.interface import left_panel_interface
 
-    dialog = ThemeBrowser(window, share_id=share_id)
-
-    def follow():
-        panel = getattr(window, 'global_panel_interface_timeline_theme_panel', None)
-        if panel is not None:
-            panel.build()
-        if getattr(window, 'timeline_widget', None) is not None:
-            left_panel_interface.refresh_timeline(window)
-
-    dialog.installed.connect(follow)
-    dialog.exec()
+    panel = getattr(window, 'global_panel_interface_timeline_theme_panel', None)
+    if panel is not None:
+        panel.build()
+    if getattr(window, 'timeline_widget', None) is not None:
+        left_panel_interface.refresh_timeline(window)
 
 
 def open_link(window, share_id):
-    """A subtitld:// theme link: that theme, to install."""
-    browse(window, share_id)
+    """A subtitld:// theme link: that theme, to install, in the Timeline tab; in a dialog holding the same
+    section while no editor is open (the start screen)."""
+    from subtitld.interface import left_panel, subtitldcc_open
+
+    browser = getattr(window, 'global_panel_interface_theme_browser', None)
+    if subtitldcc_open.editor_shown(window) and browser is not None:
+        left_panel.show_panel(window, 'interface')
+        window.global_panel_interface_tabwidget.setCurrentWidget(window.global_panel_interface_tabwidget_timeline)
+        browser.show_theme(share_id)
+        return
+    dialog = utils.SimpleDialog(window, title=_('theme_store.title'))
+    dialog.setMinimumSize(520, 560)
+    section = ThemeBrowser()
+    section.heading.hide()
+    section.gallery.hide()
+    section.installed.connect(lambda: follow(window))
+    dialog.content.layout().addWidget(section)
+    dialog.content.layout().addStretch()
+    dialog.accept_button.setText(_('theme_store.close'))
+    dialog.reject_button.hide()
+    section.show_theme(share_id)
+    dialog.exec()

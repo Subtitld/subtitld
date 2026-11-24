@@ -967,8 +967,6 @@
     "subtitle_styles.subtitld.classic.backgroundbox_border_radius": "Hoekradius",
     "subtitle_styles.subtitld.classic.backgroundbox_color": "Kleur",
     "theme_store.title": "Tijdlijnthema’s van subtitld.cc",
-    "theme_store.browse": "Thema’s bekijken…",
-    "theme_store.browse_tip": "Tijdlijnthema’s gemaakt door gebruikers van Subtitld, van subtitld.cc",
     "theme_store.search": "Zoeken",
     "theme_store.look": "Weergave",
     "theme_store.look_any": "Alle",
@@ -996,5 +994,8 @@
     "theme_store.unreachable": "subtitld.cc is niet bereikbaar: {error}",
     "theme_store.install_failed": "Het thema kon niet worden geïnstalleerd: {error}",
     "theme_store.close": "Sluiten",
-    "theme_store.gallery": "Galerij openen"
+    "theme_store.gallery": "Galerij openen",
+    "theme_store.newer": "Nieuwer: versie {version}",
+    "theme_store.showing_one": "Een thema uit een link",
+    "theme_store.show_all": "Alle thema’s tonen"
 }

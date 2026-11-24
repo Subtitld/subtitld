@@ -967,8 +967,6 @@
     "subtitle_styles.subtitld.classic.backgroundbox_border_radius": "角の丸み",
     "subtitle_styles.subtitld.classic.backgroundbox_color": "色",
     "theme_store.title": "subtitld.cc のタイムラインテーマ",
-    "theme_store.browse": "テーマを探す…",
-    "theme_store.browse_tip": "Subtitld のユーザーが作ったタイムラインテーマ（subtitld.cc）",
     "theme_store.search": "検索",
     "theme_store.look": "外観",
     "theme_store.look_any": "すべて",
@@ -996,5 +994,8 @@
     "theme_store.unreachable": "subtitld.cc に接続できません: {error}",
     "theme_store.install_failed": "テーマをインストールできませんでした: {error}",
     "theme_store.close": "閉じる",
-    "theme_store.gallery": "ギャラリーを開く"
+    "theme_store.gallery": "ギャラリーを開く",
+    "theme_store.newer": "新しいバージョン: {version}",
+    "theme_store.showing_one": "リンクから開いたテーマ",
+    "theme_store.show_all": "すべてのテーマを表示"
 }

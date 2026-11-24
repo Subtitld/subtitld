@@ -967,8 +967,6 @@
     "subtitle_styles.subtitld.classic.backgroundbox_border_radius": "Kenar yarıçapı",
     "subtitle_styles.subtitld.classic.backgroundbox_color": "Renk",
     "theme_store.title": "subtitld.cc’den zaman çizelgesi temaları",
-    "theme_store.browse": "Temalara göz at…",
-    "theme_store.browse_tip": "Subtitld kullanıcılarının yaptığı zaman çizelgesi temaları, subtitld.cc’den",
     "theme_store.search": "Ara",
     "theme_store.look": "Görünüm",
     "theme_store.look_any": "Tümü",
@@ -996,5 +994,8 @@
     "theme_store.unreachable": "subtitld.cc’ye ulaşılamadı: {error}",
     "theme_store.install_failed": "Tema yüklenemedi: {error}",
     "theme_store.close": "Kapat",
-    "theme_store.gallery": "Galeriyi aç"
+    "theme_store.gallery": "Galeriyi aç",
+    "theme_store.newer": "Daha yeni: sürüm {version}",
+    "theme_store.showing_one": "Bağlantıdan bir tema",
+    "theme_store.show_all": "Tüm temaları göster"
 }

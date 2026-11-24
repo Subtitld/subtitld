@@ -967,8 +967,6 @@
     "subtitle_styles.subtitld.classic.backgroundbox_border_radius": "Radio del borde",
     "subtitle_styles.subtitld.classic.backgroundbox_color": "Color",
     "theme_store.title": "Temas de línea de tiempo de subtitld.cc",
-    "theme_store.browse": "Explorar temas…",
-    "theme_store.browse_tip": "Temas de línea de tiempo hechos por quienes usan Subtitld, de subtitld.cc",
     "theme_store.search": "Buscar",
     "theme_store.look": "Aspecto",
     "theme_store.look_any": "Cualquiera",
@@ -996,5 +994,8 @@
     "theme_store.unreachable": "No se pudo acceder a subtitld.cc: {error}",
     "theme_store.install_failed": "No se pudo instalar el tema: {error}",
     "theme_store.close": "Cerrar",
-    "theme_store.gallery": "Abrir la galería"
+    "theme_store.gallery": "Abrir la galería",
+    "theme_store.newer": "Más reciente: versión {version}",
+    "theme_store.showing_one": "Un tema de un enlace",
+    "theme_store.show_all": "Mostrar todos los temas"
 }

@@ -967,8 +967,6 @@
     "subtitle_styles.subtitld.classic.backgroundbox_border_radius": "Радиус скругления",
     "subtitle_styles.subtitld.classic.backgroundbox_color": "Цвет",
     "theme_store.title": "Темы шкалы времени с subtitld.cc",
-    "theme_store.browse": "Обзор тем…",
-    "theme_store.browse_tip": "Темы шкалы времени от пользователей Subtitld, с subtitld.cc",
     "theme_store.search": "Поиск",
     "theme_store.look": "Оформление",
     "theme_store.look_any": "Любое",
@@ -996,5 +994,8 @@
     "theme_store.unreachable": "Не удалось связаться с subtitld.cc: {error}",
     "theme_store.install_failed": "Не удалось установить тему: {error}",
     "theme_store.close": "Закрыть",
-    "theme_store.gallery": "Открыть галерею"
+    "theme_store.gallery": "Открыть галерею",
+    "theme_store.newer": "Новее: версия {version}",
+    "theme_store.showing_one": "Тема по ссылке",
+    "theme_store.show_all": "Показать все темы"
 }
