@@ -119,6 +119,7 @@ LIST_OF_SUPPORTED_VIDEO_EXTENSIONS = {
     'WEBM': {'description': 'WebM Video format', 'extensions': ['webm']},
     'OGV': {'description': 'Ogg Video format', 'extensions': ['ogv']},
     'M4V': {'description': 'MPEG-4 Video format', 'extensions': ['m4v']},
+    'AVI': {'description': 'AVI Video format', 'extensions': ['avi']},
 }
 
 LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS = {

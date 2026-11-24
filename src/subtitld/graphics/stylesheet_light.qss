@@ -88,16 +88,19 @@ QPushButton[class="primary"]:pressed {
 }
 
 /* The start screen's Open: the main action, as a primary button. */
-#start_screen_open_button {
+#start_screen_open_button,
+#start_screen_open_link_button {
     background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #627f97, stop:1 #4a5f71);
     color: #ffffff;
 }
 
-#start_screen_open_button:hover {
+#start_screen_open_button:hover,
+#start_screen_open_link_button:hover {
     background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #7892a8, stop:1 #59738a);
 }
 
-#start_screen_open_button:pressed {
+#start_screen_open_button:pressed,
+#start_screen_open_link_button:pressed {
     background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #4a5f71, stop:1 #566f84);
 }
 

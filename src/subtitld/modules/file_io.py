@@ -3,6 +3,7 @@ import contextlib
 import codecs
 import copy
 import math
+import locale
 import re
 import hashlib
 import shutil
@@ -2128,31 +2129,14 @@ def import_file(filename=False, subtitle_format=False):  # , fit_to_length=False
     if filename:
         if filename.lower().endswith(('.txt')):
             subtitle_format = 'TXT'
-            with open(filename) as txt_file:
-                # clean("some input",
-                #     fix_unicode=True,               # fix various unicode errors
-                #     to_ascii=True,                  # transliterate to closest ASCII representation
-                #     lower=True,                     # lowercase text
-                #     no_line_breaks=False,           # fully strip line breaks as opposed to only normalizing them
-                #     no_urls=False,                  # replace all URLs with a special token
-                #     no_emails=False,                # replace all email addresses with a special token
-                #     no_phone_numbers=False,         # replace all phone numbers with a special token
-                #     no_numbers=False,               # replace all numbers with a special token
-                #     no_digits=False,                # replace all digits with a special token
-                #     no_currency_symbols=False,      # replace all currency symbols with a special token
-                #     no_punct=False,                 # fully remove punctuation
-                #     replace_with_url="<URL>",
-                #     replace_with_email="<EMAIL>",
-                #     replace_with_phone_number="<PHONE>",
-                #     replace_with_number="<NUMBER>",
-                # replace_with_digit="0",
-                # replace_with_currency_symbol="<CUR>",
-                # lang="en"                       # set to 'de' for German special handling
-                # )
-
-                # txt_content = clean(txt_file.read())
-                txt_content = txt_file.read()
-                session.SUBTITLE.segments += _plain_text_segments(txt_content)
+            with open(filename, 'rb') as txt_file:
+                data = txt_file.read()
+            try:
+                txt_content = data.decode('utf-8-sig')
+            except UnicodeDecodeError:
+                # not UTF-8: an older file in the system's own code page
+                txt_content = data.decode(locale.getpreferredencoding(False), errors='replace')
+            session.SUBTITLE.segments += _plain_text_segments(txt_content)
 
         elif filename.lower().endswith(('.srt')):
             subtitle_format = 'SRT'
@@ -3174,6 +3158,7 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                     'mov': 'video/quicktime',
                     'webm': 'video/webm',
                     'ogv': 'video/ogg',
+                    'avi': 'video/x-msvideo',
                     'npy': 'application/octet-stream',
                 }.get(ext, 'application/octet-stream')
 

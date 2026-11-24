@@ -70,8 +70,15 @@ a = Analysis(
 # first ("CXXABI_1.3.15 not found"). The bundle needs no more than Ubuntu
 # 22.04's (GLIBCXX_3.4.29, CXXABI_1.3.13), and glibc 2.35, which it needs as
 # well, came after them: any system that runs it has a libstdc++ new enough.
+#
+# libasound too, as the AppImage tool's excludelist has it: ALSA loads the
+# system's own plugins into the app, PipeWire's and PulseAudio's among them,
+# and those need the system's libasound. Against the build machine's (Ubuntu
+# 22.04's 1.2.6) they fail to load, the sound has no "default" output, and
+# PortAudio plays it to the first free card: an HDMI port, on a desktop with
+# PipeWire (issue #59). Every Linux desktop has a libasound.
 a.binaries = [entry for entry in a.binaries
-              if os.path.basename(entry[0]) not in ('libstdc++.so.6', 'libgcc_s.so.1')]
+              if os.path.basename(entry[0]) not in ('libstdc++.so.6', 'libgcc_s.so.1', 'libasound.so.2')]
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 

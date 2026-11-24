@@ -15,6 +15,8 @@ from subtitld.interface import utils
 from subtitld.interface import top_bar
 from subtitld.interface import playercontrols
 from subtitld.interface import recent_cards
+from subtitld.interface import open_url
+from subtitld.interface import theme
 
 from subtitld.interface.translation import _
 
@@ -89,11 +91,31 @@ def load(self):
     self.start_screen_open_label.setObjectName('start_screen_open_label')
     self.start_screen_bottom_open_file_column.layout().addWidget(self.start_screen_open_label)
 
+    # Open, as two buttons side by side: a file on this computer, and a link (a video from the internet).
+    self.start_screen_open_buttons = QWidget()
+    self.start_screen_open_buttons.setObjectName('start_screen_open_buttons')
+    self.start_screen_open_buttons.setLayout(QHBoxLayout())
+    self.start_screen_open_buttons.layout().setContentsMargins(0, 0, 0, 40)
+    self.start_screen_open_buttons.layout().setSpacing(0)
+
     self.start_screen_open_button = QPushButton()
     self.start_screen_open_button.setObjectName('start_screen_open_button')
+    self.start_screen_open_button.setProperty('position', 'first')
+    self.start_screen_open_button.setLayoutDirection(Qt.RightToLeft)          # the icon after the text
+    self.start_screen_open_button.setIcon(theme.icon('start_screen_open_file.svg'))
+    self.start_screen_open_button.setIconSize(QSize(18, 14))           # the drawing leaves room after the text
     self.start_screen_open_button.clicked.connect(lambda: start_screen_open_button_clicked(self))
-    self.start_screen_open_button.setProperty('class', 'button_dark')
-    self.start_screen_bottom_open_file_column.layout().addWidget(self.start_screen_open_button, 0, Qt.AlignRight)
+    self.start_screen_open_buttons.layout().addWidget(self.start_screen_open_button)
+
+    self.start_screen_open_link_button = QPushButton()
+    self.start_screen_open_link_button.setObjectName('start_screen_open_link_button')
+    self.start_screen_open_link_button.setProperty('position', 'last')
+    self.start_screen_open_link_button.setIcon(theme.icon('start_screen_open_link.svg'))
+    self.start_screen_open_link_button.setIconSize(QSize(14, 14))
+    self.start_screen_open_link_button.clicked.connect(lambda: open_url.show(self))
+    self.start_screen_open_buttons.layout().addWidget(self.start_screen_open_link_button)
+
+    self.start_screen_bottom_open_file_column.layout().addWidget(self.start_screen_open_buttons, 0, Qt.AlignRight)
 
     self.start_screen_bottom_open_file_column.layout().addStretch()
 
@@ -143,6 +165,7 @@ def load(self):
     # A project shared on subtitld.cc, opened from a link (no file of it here).
     from subtitld.interface import subtitldcc_open
     subtitldcc_open.load(self)
+    open_url.load(self)
 
     self.central_widget.layout().addWidget(self.start_screen)
 
@@ -381,10 +404,13 @@ def translate(self):
     self.start_screen_open_label.setText(_('startscreen.open_subtitle_or_video'))
     self.start_screen_open_button.setText(_('startscreen.open'))
     self.start_screen_open_button.setToolTip(_('startscreen.open_tooltip'))
+    self.start_screen_open_link_button.setAccessibleName(_('startscreen.open_link'))
+    self.start_screen_open_link_button.setToolTip(_('startscreen.open_link_tooltip'))
     self.start_screen_recent_label.setText(_('startscreen.recent_subtitles'))
     self.start_screen_adver_label.setText((_('startscreen.version_number').format(__version__)))
     self.start_screen_adver_label_details.setText(_('startscreen.visit_website'))
     self.open_link_card.retranslate()
+    self.open_url_card.retranslate()
     for card in self.start_screen_recent_listwidget.findChildren(recent_cards.RecentCard):
         card.retranslate()
 

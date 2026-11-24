@@ -81,9 +81,10 @@ def _duration():
     return max([60.0] + [segment['end'] + 10.0 for segment in segments])
 
 
-def _neighbours(subtitle):
-    """The subtitles before and after this one in the list, or None."""
-    segments = session.SUBTITLE.segments
+def _neighbours(subtitle, lane=None):
+    """The subtitles before and after this one on its lane (its speaker's
+    column, with speaker tracks; see subtitles.speaker_lane), or None."""
+    segments = subtitles.lane_segments(subtitle, lane)
     try:
         index = segments.index(subtitle)
     except ValueError:
@@ -131,10 +132,10 @@ def _snap_to_grid(position, cfg):
     return position
 
 
-def limit_start(subtitle, position, push=None):
+def limit_start(subtitle, position, push=None, lane=None):
     """How far toward `position` the subtitle's start may go: on the video,
     the subtitle no shorter than its minimum, nor a neighbour it pushes."""
-    previous, _following = _neighbours(subtitle)
+    previous, _following = _neighbours(subtitle, lane)
     position = max(0.0, min(position, subtitle['end'] - _shortest(subtitle)))
     if _pushes(push) and previous is not None and _glued(previous, subtitle):
         # The previous one gives way, down to its own minimum.
@@ -142,26 +143,26 @@ def limit_start(subtitle, position, push=None):
     return position
 
 
-def limit_end(subtitle, position, push=None):
+def limit_end(subtitle, position, push=None, lane=None):
     """How far toward `position` the subtitle's end may go, as for a start."""
-    _previous, following = _neighbours(subtitle)
+    _previous, following = _neighbours(subtitle, lane)
     position = max(subtitle['start'] + _shortest(subtitle), min(position, _duration()))
     if _pushes(push) and following is not None and _glued(subtitle, following):
         position = min(position, following['end'] - _shortest(following) - .001)
     return position
 
 
-def limit_move(subtitle, position):
+def limit_move(subtitle, position, lane=None):
     """How far toward starting at `position` the whole subtitle may go: on the video."""
     return max(0.0, min(position, _duration() - (subtitle['end'] - subtitle['start'])))
 
 
-def snap_start(subtitle, position, push=None):
+def snap_start(subtitle, position, push=None, lane=None):
     """Where dragging the subtitle's start to `position` puts it."""
     cfg = _timeline_config()
-    previous, _following = _neighbours(subtitle)
+    previous, _following = _neighbours(subtitle, lane)
     pushing = _pushes(push) and previous is not None and _glued(previous, subtitle)
-    position = limit_start(subtitle, position, push)
+    position = limit_start(subtitle, position, push, lane)
     if not cfg.get('snap', True):
         return position
     value = float(cfg.get('snap_value', .1) or .1)
@@ -172,12 +173,12 @@ def snap_start(subtitle, position, push=None):
     return position
 
 
-def snap_end(subtitle, position, push=None):
+def snap_end(subtitle, position, push=None, lane=None):
     """Where dragging the subtitle's end to `position` puts it."""
     cfg = _timeline_config()
-    _previous, following = _neighbours(subtitle)
+    _previous, following = _neighbours(subtitle, lane)
     pushing = _pushes(push) and following is not None and _glued(subtitle, following)
-    position = limit_end(subtitle, position, push)
+    position = limit_end(subtitle, position, push, lane)
     if not cfg.get('snap', True):
         return position
     value = float(cfg.get('snap_value', .1) or .1)
@@ -188,14 +189,14 @@ def snap_end(subtitle, position, push=None):
     return position
 
 
-def snap_move(subtitle, position):
+def snap_move(subtitle, position, lane=None):
     """Where dragging the whole subtitle to start at `position` puts it."""
     cfg = _timeline_config()
     length = subtitle['end'] - subtitle['start']
     position = limit_move(subtitle, position)
     if not cfg.get('snap', True):
         return position
-    previous, following = _neighbours(subtitle)
+    previous, following = _neighbours(subtitle, lane)
     value = float(cfg.get('snap_value', .1) or .1)
     if cfg.get('snap_moving', True):
         if following is not None and position + length > following['start'] - value:
@@ -207,7 +208,7 @@ def snap_move(subtitle, position):
     return position
 
 
-def _move(mode, subtitle, position, record, push=None):
+def _move(mode, subtitle, position, record, push=None, lane=None):
     """Apply a drag through the subtitle helpers, as the timeline does —
     they also carry locked dubs along and push a touching neighbour."""
     push = _pushes(push)
@@ -215,9 +216,9 @@ def _move(mode, subtitle, position, record, push=None):
         delta = position - subtitle['start']
         subtitles.move_subtitle(selected_subtitle=subtitle, amount=delta, record=record)
     elif mode == 'start':
-        subtitles.move_start_subtitle(selected_subtitle=subtitle, absolute_time=position, move_nereast=push, record=record)
+        subtitles.move_start_subtitle(selected_subtitle=subtitle, absolute_time=position, move_nereast=push, record=record, lane=lane)
     elif mode == 'end':
-        subtitles.move_end_subtitle(selected_subtitle=subtitle, absolute_time=position, move_nereast=push, record=record)
+        subtitles.move_end_subtitle(selected_subtitle=subtitle, absolute_time=position, move_nereast=push, record=record, lane=lane)
 
 
 def _arrow_cursor(direction):
@@ -353,6 +354,11 @@ class VerticalTimeline(QWidget):
         width = (right - left) / len(names)
         return {name: (left + width * i, left + width * (i + 1)) for i, name in enumerate(names)}
 
+    def lane(self):
+        """What puts subtitles in one column, as on the timeline: their
+        speaker with speaker tracks; None when all are in one."""
+        return subtitles.speaker_lane(self.option('show_speaker_tracks'))
+
     def block_rect(self, subtitle, columns=None):
         _ruler, _waveform, (left, right) = self.lanes()
         if columns:
@@ -444,7 +450,14 @@ class VerticalTimeline(QWidget):
         reach = TUG_REACH / self.pps
         columns = self.speaker_columns()
         shown = self.visible_segments(seconds - reach - .01, seconds + reach + .01)
-        for earlier, later in zip(shown, shown[1:]):
+        # Next to each other in one column: with speaker tracks, one
+        # speaker's subtitles only.
+        lane = self.lane()
+        pairs = []
+        for key in dict.fromkeys(map(lane, shown)) if lane else [None]:
+            column = [item for item in shown if lane(item) == key] if lane else shown
+            pairs += zip(column, column[1:])
+        for earlier, later in pairs:
             if not _glued(earlier, later) or earlier.get('locked') or later.get('locked'):
                 continue
             if abs(seconds - (earlier['end'] + later['start']) / 2) > reach:
@@ -1096,7 +1109,7 @@ class VerticalTimeline(QWidget):
         if self.mode is None:
             return self.tug
         if self.push and self.grabbed is not None and self.mode in ('start', 'end'):
-            previous, following = _neighbours(self.grabbed)
+            previous, following = _neighbours(self.grabbed, self.lane())
             return (previous, self.grabbed) if self.mode == 'start' else (self.grabbed, following)
         return None
 
@@ -1259,17 +1272,18 @@ class VerticalTimeline(QWidget):
         subtitle = self.grabbed
         if subtitle is None or self.mode not in ('start', 'end', 'body'):
             return
+        lane = self.lane()
         if self.mode == 'start':
-            target = snap_start(subtitle, self.time_at(y - self.grab_offset), self.push)
+            target = snap_start(subtitle, self.time_at(y - self.grab_offset), self.push, lane)
             current = subtitle['start']
         elif self.mode == 'end':
-            target = snap_end(subtitle, self.time_at(y + self.grab_offset), self.push)
+            target = snap_end(subtitle, self.time_at(y + self.grab_offset), self.push, lane)
             current = subtitle['end']
         else:
-            target, current = snap_move(subtitle, self.time_at(y) - self.grab_offset), subtitle['start']
+            target, current = snap_move(subtitle, self.time_at(y) - self.grab_offset, lane), subtitle['start']
         if abs(target - current) < 1e-6:
             return
-        _move(self.mode, subtitle, target, record=not self.recorded, push=self.push)
+        _move(self.mode, subtitle, target, record=not self.recorded, push=self.push, lane=lane)
         self.recorded = True
         self.moved = True
         self.update()
@@ -1347,12 +1361,13 @@ class VerticalTimeline(QWidget):
         limit = {'body': limit_move, 'start': limit_start, 'end': limit_end}[part]
         # A step this way, or what the drags' limits leave of one. Unlike a
         # drag it does not snap: it is a step, as the nudge keys take.
-        moved = min(step, (limit(subtitle, current + direction * step) - current) * direction)
+        lane = self.lane()
+        moved = min(step, (limit(subtitle, current + direction * step, lane=lane) - current) * direction)
         if moved > 1e-6:
             position = current + direction * moved
             # One undo step a press: the key's repeats add to it.
             playercontrols.nudge(self.window_ref, lambda selected_subtitle, record:
-                                 _move(part, selected_subtitle, position, record))
+                                 _move(part, selected_subtitle, position, record, lane=lane))
             self.nudged = True
             self.scroll.ensure_time_visible(subtitle['start'], subtitle['end'])
             self.update()

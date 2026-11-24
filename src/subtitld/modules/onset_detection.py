@@ -55,17 +55,22 @@ def detect_onsets(
     window = np.hanning(frame_size).astype(np.float32)
     n_bins = frame_size // 2 + 1
 
-    # Cap memory at ~64 MB for the magnitude matrix (float32, n_bins).
-    max_frames_per_chunk = max(64, int(64 * 1024 * 1024 / (n_bins * 4)))
+    # Cap a chunk's working arrays at ~64 MB. A frame costs its windowed
+    # samples (float32), its spectrum (complex64, or complex128 before
+    # numpy 2), the magnitudes (float64 from abs, then float32) and their
+    # diff: about frame_size * 4 + n_bins * 32 bytes. Sizing by the
+    # float32 magnitudes alone, with an int64 index matrix besides, let a
+    # chunk reach ~1 GB (issue #59).
+    max_frames_per_chunk = max(64, int(64 * 1024 * 1024 / (frame_size * 4 + n_bins * 32)))
+    # The frames as views into `samples`: no (frames, frame_size) index matrix.
+    all_frames = np.lib.stride_tricks.sliding_window_view(samples, frame_size)[::hop]
 
     novelty = np.zeros(n_frames, dtype=np.float32)
     prev_last_mag: np.ndarray | None = None
 
     for cs in range(0, n_frames, max_frames_per_chunk):
         ce = min(n_frames, cs + max_frames_per_chunk)
-        offsets = np.arange(cs, ce) * hop
-        idx = np.arange(frame_size)[None, :] + offsets[:, None]
-        frames = samples[idx] * window
+        frames = all_frames[cs:ce] * window
         mag = np.abs(np.fft.rfft(frames, axis=1)).astype(np.float32)
 
         # Bridge the chunk boundary: the first diff in this chunk

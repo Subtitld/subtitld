@@ -37,8 +37,11 @@ class PlayerWidget(QWidget):
         widget._media_player = QMediaPlayer()
         console.quiet_video_player()
 
-        widget._audio_output = QAudioOutput()
+        # Parented, so that Qt deletes it (see `hand_sound_to_engine`).
+        widget._audio_output = QAudioOutput(widget)
         widget._media_player.setAudioOutput(widget._audio_output)
+        # Direct: the seek must come before the new pipeline shows a frame.
+        widget._media_player.audioOutputChanged.connect(widget._sound_handed_over, Qt.DirectConnection)
         # widget._media_player.setAudioOutput(QAudioOutput())
         
         widget._audio_device = audioengine.SoundDeviceAudioEngine()
@@ -502,11 +505,27 @@ class PlayerWidget(QWidget):
         those packets and shows the next keyframe instead of the frame under
         the playhead. Paused, seek to where the player is. Playing, the new
         demuxer starts from where the picture is, past 0, and seeks itself."""
-        player = widget._media_player
-        if player.audioOutput() is None:
+        output = widget._audio_output
+        if output is None:
             return
-        player.setAudioOutput(None)
         widget._audio_output = None
+        # Deleted by the event loop, not dropped with setAudioOutput(None).
+        # The output is a Python object, so the player's audio thread takes
+        # the GIL as it lets go of it, and does so holding a lock that
+        # setAudioOutput waits on: called from Python, with the GIL held,
+        # the two waited on each other for ever (opening a recent project,
+        # whose sound is in the cache, now and then hung there). The event
+        # loop runs the output's destructor without the GIL; the destructor
+        # takes the output off the player, which says so in
+        # audioOutputChanged (`_sound_handed_over`, which seeks at once, as
+        # this did right after setAudioOutput: a tick later, the new
+        # demuxer had already shown the next keyframe).
+        output.deleteLater()
+
+    def _sound_handed_over(widget):
+        player = widget._media_player
+        if player.audioOutput() is not None:
+            return
         if (player.playbackState() == QMediaPlayer.PausedState
                 and player.mediaStatus() in (QMediaPlayer.LoadedMedia, QMediaPlayer.BufferedMedia,
                                              QMediaPlayer.BufferingMedia)):

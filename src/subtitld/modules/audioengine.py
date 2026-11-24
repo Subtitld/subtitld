@@ -83,6 +83,11 @@ class AudioSource:
             # Ensure stereo output
             if data.shape[1] == 1:
                 data = np.tile(data, (1, 2))
+            elif data.shape[1] > 2:
+                # More channels, as a 5.1 film's sidecar from before the
+                # decode mixed it down (interface/playercontrols.py): their
+                # mean into both sides, rather than a mix that can't fit.
+                data = np.tile(data.mean(axis=1, dtype=np.float32, keepdims=True), (1, 2))
             return data
 
 
@@ -867,6 +872,7 @@ class _MixerThread(threading.Thread):
         # Scratch buffer reused across iterations — the audio callback
         # no longer touches the buffer pool, so we own this exclusively.
         scratch = np.zeros((block_size, 2), dtype=np.float32)
+        failed = False  # logged once, not every block
 
         while True:
             # Wait until we should mix: not paused, ring has room, and
@@ -890,7 +896,16 @@ class _MixerThread(threading.Thread):
             # the iteration — same pattern the old callback used.
             scratch.fill(0.0)
             for track in tuple(engine.tracks):
-                td = track.read(ph, block_size, sr, engine.buffer_pool)
+                # A track that fails is silent for this block. Raised out
+                # of here it ended the mixer, and every sound after it,
+                # until the app was started again (issue #59).
+                try:
+                    td = track.read(ph, block_size, sr, engine.buffer_pool)
+                except Exception:
+                    if not failed:
+                        failed = True
+                        log.exception('a track failed to mix; it stays silent')
+                    continue
                 scratch += td
                 engine.buffer_pool.release(td)
             np.clip(scratch, -1.0, 1.0, out=scratch)

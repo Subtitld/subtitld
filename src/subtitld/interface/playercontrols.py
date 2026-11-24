@@ -168,8 +168,9 @@ class _ChildResizeWatcher(QObject):
 
 
 class _OriginalDecodeThread(QThread):
-    """Decodes the source media to a 48 kHz mono FLAC sidecar at
-    `<cache>/audioseparation/<hash>_original.flac`. Used as the playback
+    """Decodes the source media to a 48 kHz FLAC sidecar at
+    `<cache>/audioseparation/<hash>_original.flac`, mono or stereo as the
+    source is, more channels mixed down to stereo. Used as the playback
     track until vocals/background separation finishes — and as the
     fallback audio source for ASR/clone-ref when separation hasn't been
     requested yet. Cheap (a straight ffmpeg copy/decode), so we always
@@ -190,6 +191,10 @@ class _OriginalDecodeThread(QThread):
                 "-hide_banner", "-loglevel", "error",
                 "-i", self.filename,
                 "-vn",
+                # The sound engine plays mono and stereo: a 5.1 film's six
+                # channels stopped its mixer, and the sound with it, seconds
+                # into playback (issue #59). ffmpeg picks the closer of the two.
+                "-af", "aformat=channel_layouts=mono|stereo",
                 "-ar", '48000', '-y',
                 self.output_path,
             ]
@@ -2353,7 +2358,7 @@ def move_start_back_subtitle_clicked(self):
     """Function to move starting position of selected subtitle backward"""
     if session.SUBTITLE.selected is not None:
         amount = step_amount(self)
-        nudge(self, subtitles.move_start_subtitle, amount=-amount, move_nereast=bool(session.CONFIG['timeline'].get('snap_move_nereast', False)))
+        nudge(self, subtitles.move_start_subtitle, amount=-amount, move_nereast=bool(session.CONFIG['timeline'].get('snap_move_nereast', False)), lane=subtitles.speaker_lane(getattr(self.timeline_widget, 'show_speaker_tracks', False)))
         timeline.update(self)
         left_panel.update(self)
         self.timeline_widget.setFocus(Qt.TabFocusReason)
@@ -2365,7 +2370,7 @@ def move_start_forward_subtitle_clicked(self):
     """Function to move starting position of selected subtitle forward"""
     if session.SUBTITLE.selected is not None:
         amount = step_amount(self)
-        nudge(self, subtitles.move_start_subtitle, amount=amount, move_nereast=bool(session.CONFIG['timeline'].get('snap_move_nereast', False)))
+        nudge(self, subtitles.move_start_subtitle, amount=amount, move_nereast=bool(session.CONFIG['timeline'].get('snap_move_nereast', False)), lane=subtitles.speaker_lane(getattr(self.timeline_widget, 'show_speaker_tracks', False)))
         timeline.update(self)
         left_panel.update(self)
         self.timeline_widget.setFocus(Qt.TabFocusReason)

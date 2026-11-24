@@ -30,6 +30,7 @@ from subtitld.modules.addons import registry
 from subtitld.modules.addons.addon_provider import (
     AddonASRProvider,
     AddonAudioSeparatorProvider,
+    AddonMediaDownloadProvider,
     AddonOCRProvider,
     AddonTranslationProvider,
     AddonTTSProvider,
@@ -43,6 +44,7 @@ from subtitld.modules.addons.provider import (
     TASK_ASR_ALIGN,
     TASK_ASR_TRANSCRIBE,
     TASK_AUDIO_SEPARATE,
+    TASK_MEDIA_DOWNLOAD,
     TASK_OCR_RECOGNIZE,
     TASK_TRANSLATE,
     TASK_TTS_SYNTHESIZE,
@@ -72,6 +74,7 @@ ADDON_PROVIDER_CLASSES = {
     TASK_AUDIO_SEPARATE: AddonAudioSeparatorProvider,
     TASK_VIDEO_LIPSYNC: AddonVideoLipsyncProvider,
     TASK_OCR_RECOGNIZE: AddonOCRProvider,
+    TASK_MEDIA_DOWNLOAD: AddonMediaDownloadProvider,
 }
 
 

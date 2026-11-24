@@ -33,6 +33,7 @@ TASK_OCR_RECOGNIZE = 'ocr.recognize'
 # transcribing audio: never a default engine, nor one for recording.
 SOURCE_ENGINES = frozenset({'import', 'captions', 'subtitles'})
 TASK_VIDEO_LIPSYNC = 'video.lipsync'
+TASK_MEDIA_DOWNLOAD = 'media.download'
 
 
 class Provider(QObject):
@@ -443,3 +444,38 @@ class VideoLipsyncProvider(Provider):
 
     def cancel(self, request_id: str | None = None) -> None:
         """Best-effort cancellation. Default is a no-op."""
+
+
+class MediaDownloadProvider(Provider):
+    """Getting the video a web page shows: a link to a page on YouTube or
+    another video website, opened from the start screen (interface/open_url.py).
+    A link straight to a video file needs none: Subtitld downloads it itself
+    (modules/media_links.py).
+
+    Signals
+    -------
+    progress(value: float, message: str)
+        0..1 (negative while the size isn't known yet), with a free-form
+        message.
+    finished(path: str, info: dict)
+        The video is at `path`; `info` may say its `title`. Exactly once.
+    error(code: str, message: str)
+        Terminal failure; no `finished` follows. `code` is one of
+        protocol.ErrorCode ('unsupported_url' for a page with no video it
+        can get, 'cancelled' once cancelled).
+    """
+
+    progress = Signal(float, str)
+    finished = Signal(str, dict)
+    error = Signal(str, str)
+
+    @property
+    def tasks(self) -> list[str]:
+        return [TASK_MEDIA_DOWNLOAD]
+
+    def download(self, url: str, output_dir: str, options: dict | None = None) -> None:
+        """Get the video `url` shows into the folder `output_dir`."""
+        raise NotImplementedError
+
+    def cancel(self) -> None:
+        """Best-effort cancellation; `error` with code 'cancelled' follows."""

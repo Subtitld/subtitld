@@ -1613,9 +1613,25 @@ QGroupBox::title {
     text-transform: uppercase;
 }
 
-#start_screen_open_button {
-    padding: 10px 40px;
-    margin-bottom: 40px;
+/* Open, a pair: a file (its icon after the word) and a link (the icon alone),
+   one button cut in two by a dark seam. */
+QPushButton#start_screen_open_button,
+QPushButton#start_screen_open_link_button {
+    padding: 10px 0;
+    min-height: 14px;
+}
+
+QPushButton#start_screen_open_button[position="first"] {
+    padding: 10px 12px;      /* right to left (the icon after the text): left and right swap */
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+}
+
+QPushButton#start_screen_open_link_button[position="last"] {
+    padding: 10px 6px;
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+    border-left: 1px solid rgba(0, 0, 0, 70);
 }
 
 #start_screen_recentfiles_background {

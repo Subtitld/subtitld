@@ -239,20 +239,46 @@ def move_subtitle(selected_subtitle=False, amount=0.0, absolute_time=None, recor
         _shift_locked_dubs(selected_subtitle, selected_subtitle['start'] - old_start)
 
 
-def move_start_subtitle(selected_subtitle=False, amount=0.0, absolute_time=None, move_nereast=False, record=True):
-    """Function to move the start a subtitle in the main subtitle list"""
+def speaker_lane(tracks_shown):
+    """A subtitle's lane when speakers have tracks of their own, as a
+    function of the subtitle: its speaker's track (the first for a speaker
+    not listed). None when every subtitle is on the one line."""
+    if not (tracks_shown and session.SPEAKERS):
+        return None
+    speakers = list(session.SPEAKERS.keys())
+
+    def lane(subtitle):
+        speaker = subtitle.get('speaker', 'A')
+        return speakers.index(speaker) if speaker in speakers else 0
+    return lane
+
+
+def lane_segments(subtitle, lane=None):
+    """The subtitles on the same lane as `subtitle`, in order. `lane` maps a
+    subtitle to its lane (the timeline's speaker tracks); without one every
+    subtitle shares a single lane."""
+    if lane is None:
+        return session.SUBTITLE.segments
+    key = lane(subtitle)
+    return [item for item in session.SUBTITLE.segments if lane(item) == key]
+
+
+def move_start_subtitle(selected_subtitle=False, amount=0.0, absolute_time=None, move_nereast=False, record=True, lane=None):
+    """Function to move the start a subtitle in the main subtitle list.
+    With `move_nereast`, the touching subtitle before it on its lane gives way."""
     if selected_subtitle:
         if record:
             history.history_append(session.SUBTITLE.segments)
         old_start = selected_subtitle['start']
         if move_nereast:
-            subt = [item['end'] for item in session.SUBTITLE.segments]
+            segments = lane_segments(selected_subtitle, lane)
+            subt = [item['end'] for item in segments]
             nearest = bisect(subt, selected_subtitle['start']) - 1
-            if nearest >= 0 and round(session.SUBTITLE.segments[nearest]['end'], 3) == round(selected_subtitle['start'] - .001, 3):
+            if nearest >= 0 and round(segments[nearest]['end'], 3) == round(selected_subtitle['start'] - .001, 3):
                 if absolute_time is not None:
-                    session.SUBTITLE.segments[nearest]['end'] = absolute_time - 0.001
+                    segments[nearest]['end'] = absolute_time - 0.001
                 else:
-                    session.SUBTITLE.segments[nearest]['end'] += amount
+                    segments[nearest]['end'] += amount
         if absolute_time is not None:
             selected_subtitle['start'] = absolute_time
         else:
@@ -260,19 +286,21 @@ def move_start_subtitle(selected_subtitle=False, amount=0.0, absolute_time=None,
         _shift_locked_dubs(selected_subtitle, selected_subtitle['start'] - old_start)
 
 
-def move_end_subtitle(selected_subtitle=False, amount=0.0, absolute_time=None, move_nereast=False, record=True):
-    """Function to move the end of a subtitle in the main subtitle list"""
+def move_end_subtitle(selected_subtitle=False, amount=0.0, absolute_time=None, move_nereast=False, record=True, lane=None):
+    """Function to move the end of a subtitle in the main subtitle list.
+    With `move_nereast`, the touching subtitle after it on its lane gives way."""
     if selected_subtitle:
         if record:
             history.history_append(session.SUBTITLE.segments)
         if move_nereast:
-            subt = [item['start'] for item in session.SUBTITLE.segments]
+            segments = lane_segments(selected_subtitle, lane)
+            subt = [item['start'] for item in segments]
             nearest = bisect(subt, selected_subtitle['end'])
-            if nearest < len(subt) and round(session.SUBTITLE.segments[nearest]['start'], 3) == round(selected_subtitle['end'] + .001, 3):
+            if nearest < len(subt) and round(segments[nearest]['start'], 3) == round(selected_subtitle['end'] + .001, 3):
                 if absolute_time is not None:
-                    session.SUBTITLE.segments[nearest]['start'] = absolute_time + 0.001
+                    segments[nearest]['start'] = absolute_time + 0.001
                 else:
-                    session.SUBTITLE.segments[nearest]['start'] += amount
+                    segments[nearest]['start'] += amount
         if absolute_time is not None:
             selected_subtitle['end'] = absolute_time
         else:
@@ -333,18 +361,22 @@ def subtitle_under_current_position(position=False):
     # return current_subtitle
 
 
-def get_adjacent_subtitles(position=False, subtitle=False):
+def get_adjacent_subtitles(position=False, subtitle=False, segments=None):
+    """The subtitles either side of the one at `position`, among `segments`
+    (one lane of the timeline) or all of them."""
     if subtitle:
         position = subtitle['start']
 
     if not position:
         position = session.SUBTITLE.position or 0.0
 
+    if segments is None:
+        segments = session.SUBTITLE.segments
     # The most efficient way to get the adjacent subtitles is to use binary search
-    subt = [item['start'] for item in session.SUBTITLE.segments]
+    subt = [item['start'] for item in segments]
     index = bisect(subt, position)
 
-    return session.SUBTITLE.segments[index - 2] if index > 1 else False, session.SUBTITLE.segments[index] if index < len(subt) else False
+    return segments[index - 2] if index > 1 else False, segments[index] if index < len(subt) else False
     
     
 

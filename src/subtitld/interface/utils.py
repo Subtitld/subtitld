@@ -271,6 +271,170 @@ class _ResizeEdge(QWidget):
         self._start = None
 
 
+def build_dialog_chrome(host, title, on_close):
+    """A dialog's look on `host` (a widget with an empty vertical layout): the gradient frame, the title with the
+    close notch, the content area and the footer with Cancel and the default button's tab. Sets on `host`:
+    frame, title_line, content, bottom_line, bottom_left, bottom_right, accept_button, reject_button. SimpleDialog
+    is built on it; a widget that looks like a dialog without being one (the start screen's link card) too."""
+    # Everything lives inside one frame so the dialog's background can be
+    # a single gradient spanning title, content and buttons. A QDialog
+    # will not paint a stylesheet background itself (verified: neither a
+    # type nor an objectName selector reaches it, even with
+    # WA_StyledBackground), and styling the three sections separately
+    # would restart the gradient three times instead of running it once
+    # top to bottom. The frame also carries the corner radius, which the
+    # translucent window lets show through.
+    host.frame = QWidget()
+    host.frame.setObjectName('dialog_frame')
+    host.frame.setAttribute(Qt.WA_StyledBackground, True)
+    host.frame.setLayout(QVBoxLayout())
+    # Vertical only. The 1px reserves the frame's top and bottom border
+    # (QSS border-width does not inset a plain QWidget's contents rect),
+    # but the sides stay at 0 so the title bar and footer run edge to
+    # edge — inset horizontally, their artwork's rounded corners sat 1px
+    # inside the dialog's own radius and the two corners fought.
+    host.frame.layout().setContentsMargins(0, 1, 0, 1)
+    host.frame.layout().setSpacing(0)
+    host.layout().addWidget(host.frame)
+
+    # The title sits directly on the dialog gradient. Only the top-right
+    # corner has chrome: a notch (dialog_title_close_background.svg, drawn
+    # like the main window's version tab) behind the close button. Label, spacer and notch are separate widgets so the notch
+    # can carry its own border-image slices without affecting the rest.
+    host.title_line = QWidget()
+    host.title_line.setObjectName('dialog_title')
+    # Fixed 32px. The title bar otherwise absorbs the frame layout's spare
+    # vertical space, which was invisible against a flat background but
+    # stretches the tab artwork now the bar is drawn from an SVG.
+    host.title_line.setFixedHeight(32)
+    host.title_line.setLayout(QHBoxLayout())
+    host.title_line.layout().setContentsMargins(0, 0, 0, 0)
+    host.title_line.layout().setSpacing(0)
+
+    host.title_line.label = QLabel(title)
+    host.title_line.label.setObjectName('dialog_title_label')
+    host.title_line.label.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Preferred)
+    host.title_line.layout().addWidget(host.title_line.label, 0)
+
+    # Spans whatever the label leaves. Kept as its own widget (rather than
+    # a bare stretch) so callers have somewhere to put extra title-bar
+    # controls later, left of the notch.
+    host.title_line.right = QWidget()
+    host.title_line.right.setObjectName('dialog_title_right')
+    # Expanding across, but NOT down: a plain QWidget defaults to
+    # Preferred vertically and would soak up the frame layout's slack,
+    # stretching the title bar to twice its height.
+    host.title_line.right.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
+    host.title_line.right.setLayout(QHBoxLayout())
+    host.title_line.right.layout().setContentsMargins(0, 0, 0, 0)
+    host.title_line.right.layout().setSpacing(0)
+    host.title_line.right.layout().addStretch()
+    host.title_line.layout().addWidget(host.title_line.right, 1)
+
+    # The notch. Its artwork is sliced 0/1/1/36: the left 36px carry the
+    # slanted edge at 1:1 and the rest stretches. QSS border widths do not
+    # inset a plain widget's contents, so the layout margins place the
+    # close button explicitly. It starts 17px in, inside the slant slice:
+    # the slant runs down-right, and at the icon's height the notch body
+    # already begins left of it, so the icon stays clear of the edge
+    # while the notch stays narrow (17 + 30 + 1 = 48px). Only the icon is
+    # drawn; the hover fill is the notch's own artwork, not the button.
+    host.title_line.notch = QWidget()
+    host.title_line.notch.setObjectName('dialog_title_notch')
+    host.title_line.notch.setAttribute(Qt.WA_StyledBackground, True)
+    host.title_line.notch.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Maximum)
+    host.title_line.notch.setLayout(QHBoxLayout())
+    host.title_line.notch.layout().setContentsMargins(17, 0, 1, 1)
+    host.title_line.notch.layout().setSpacing(0)
+    host.title_line.layout().addWidget(host.title_line.notch, 0)
+
+    close_button = QPushButton()
+    # 31 tall, not 32: the notch's bottom hairline takes the last row, and
+    # a 32px button would paint over it on hover.
+    close_button.setFixedSize(QSize(30, 31))
+    close_button.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Maximum)
+    close_button.setObjectName('dialog_close_button')
+    close_button.clicked.connect(lambda: on_close())
+    host.title_line.notch.layout().addWidget(close_button)
+    host._close_hover = _HoverMirror(host.title_line.notch, close_button)
+    close_button.installEventFilter(host._close_hover)
+
+    host.frame.layout().addWidget(host.title_line)
+
+    host.content = QWidget()
+    host.content.setObjectName('dialog_content')
+    host.content.setLayout(QVBoxLayout())
+    # 14px sides + the content row's 1px inset: body content starts on
+    # the dialogs' 15px text edge, with the title and Cancel.
+    host.content.layout().setContentsMargins(14, 10, 14, 10)
+    # The content sits in a 1px-inset row so the frame's side border stays
+    # visible beside it. The title bar and footer are deliberately NOT
+    # inset — they run edge to edge so their tab artwork lands in the
+    # dialog's corners — but a full-bleed content area would let an
+    # opaque child paint over the border (ExportDialog's sidebar does
+    # exactly that, since it zeroes the content margins).
+    content_row = QWidget()
+    content_row.setLayout(QHBoxLayout())
+    content_row.layout().setContentsMargins(1, 0, 1, 0)
+    content_row.layout().setSpacing(0)
+    content_row.layout().addWidget(host.content)
+    host.frame.layout().addWidget(content_row)
+
+    # The bottom bar mirrors the title bar: a plain stretch on the left
+    # carrying Cancel, and a tab on the right — dialog_bottom.svg is
+    # dialog_bottom.svg — holding the default button.
+    # Exposed as `host.bottom_line` (and `bottom_left` / `bottom_right`)
+    # because dialogs used to reach it through `accept_button.parent()`,
+    # which silently pointed at the wrong widget the moment the buttons
+    # moved into the tab.
+    host.bottom_line = QWidget()
+    host.bottom_line.setObjectName('dialog_bottom')
+    # Hug the buttons. Like the title bar, this row otherwise soaks up the
+    # frame layout's spare height and stretches the tab artwork. A size
+    # policy rather than setFixedHeight, so a dialog that needs a taller
+    # footer (find & replace asks for 44px in QSS) can still have one.
+    host.bottom_line.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
+    host.bottom_line.setLayout(QHBoxLayout())
+    host.bottom_line.layout().setContentsMargins(0, 0, 0, 0)
+    host.bottom_line.layout().setSpacing(0)
+
+    host.accept_button = QPushButton(_('dialog.ok'))
+    host.accept_button.setProperty('class', 'accept_button')
+
+    host.reject_button = QPushButton(_('dialog.cancel'))
+    host.reject_button.setProperty('class', 'reject_button')
+
+    host.bottom_left = QWidget()
+    host.bottom_left.setObjectName('dialog_bottom_left')
+    host.bottom_left.setAttribute(Qt.WA_StyledBackground, True)
+    host.bottom_left.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
+    host.bottom_left.setLayout(QHBoxLayout())
+    # No horizontal padding — Cancel starts at the bar's edge. The 5px
+    # left cap in the artwork needs no reservation: the button is
+    # transparent and its own 12px text padding already clears it.
+    host.bottom_left.layout().setContentsMargins(0, 0, 0, 0)
+    host.bottom_left.layout().setSpacing(0)
+    host.bottom_left.layout().addWidget(host.reject_button)
+    host.bottom_left.layout().addStretch()
+    host.bottom_line.layout().addWidget(host.bottom_left, 1)
+
+    # The tab. Extra actions go here via `add_bottom_button()`; it sizes
+    # to whatever it holds, so several buttons simply widen the tab.
+    host.bottom_right = QWidget()
+    host.bottom_right.setObjectName('dialog_bottom_right')
+    host.bottom_right.setAttribute(Qt.WA_StyledBackground, True)
+    host.bottom_right.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Maximum)
+    host.bottom_right.setLayout(QHBoxLayout())
+    # 24px clears the diagonal, 5px the rounded right cap — otherwise the
+    # buttons render underneath the artwork.
+    host.bottom_right.layout().setContentsMargins(24, 0, 5, 0)
+    host.bottom_right.layout().setSpacing(0)
+    host.bottom_right.layout().addWidget(host.accept_button)
+    host.bottom_line.layout().addWidget(host.bottom_right, 0)
+
+    host.frame.layout().addWidget(host.bottom_line)
+
+
 class SimpleDialog(QDialog):
     def __init__(self, parent=None, title='', *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
@@ -281,90 +445,7 @@ class SimpleDialog(QDialog):
         self.layout().setSpacing(0)
         self.setMinimumWidth(400)
 
-        # Everything lives inside one frame so the dialog's background can be
-        # a single gradient spanning title, content and buttons. A QDialog
-        # will not paint a stylesheet background itself (verified: neither a
-        # type nor an objectName selector reaches it, even with
-        # WA_StyledBackground), and styling the three sections separately
-        # would restart the gradient three times instead of running it once
-        # top to bottom. The frame also carries the corner radius, which the
-        # translucent window lets show through.
-        self.frame = QWidget()
-        self.frame.setObjectName('dialog_frame')
-        self.frame.setAttribute(Qt.WA_StyledBackground, True)
-        self.frame.setLayout(QVBoxLayout())
-        # Vertical only. The 1px reserves the frame's top and bottom border
-        # (QSS border-width does not inset a plain QWidget's contents rect),
-        # but the sides stay at 0 so the title bar and footer run edge to
-        # edge — inset horizontally, their artwork's rounded corners sat 1px
-        # inside the dialog's own radius and the two corners fought.
-        self.frame.layout().setContentsMargins(0, 1, 0, 1)
-        self.frame.layout().setSpacing(0)
-        self.layout().addWidget(self.frame)
-
-        # The title sits directly on the dialog gradient. Only the top-right
-        # corner has chrome: a notch (dialog_title_close_background.svg, drawn
-        # like the main window's version tab) behind the close button. Label, spacer and notch are separate widgets so the notch
-        # can carry its own border-image slices without affecting the rest.
-        self.title_line = QWidget()
-        self.title_line.setObjectName('dialog_title')
-        # Fixed 32px. The title bar otherwise absorbs the frame layout's spare
-        # vertical space, which was invisible against a flat background but
-        # stretches the tab artwork now the bar is drawn from an SVG.
-        self.title_line.setFixedHeight(32)
-        self.title_line.setLayout(QHBoxLayout())
-        self.title_line.layout().setContentsMargins(0, 0, 0, 0)
-        self.title_line.layout().setSpacing(0)
-
-        self.title_line.label = QLabel(title)
-        self.title_line.label.setObjectName('dialog_title_label')
-        self.title_line.label.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Preferred)
-        self.title_line.layout().addWidget(self.title_line.label, 0)
-
-        # Spans whatever the label leaves. Kept as its own widget (rather than
-        # a bare stretch) so callers have somewhere to put extra title-bar
-        # controls later, left of the notch.
-        self.title_line.right = QWidget()
-        self.title_line.right.setObjectName('dialog_title_right')
-        # Expanding across, but NOT down: a plain QWidget defaults to
-        # Preferred vertically and would soak up the frame layout's slack,
-        # stretching the title bar to twice its height.
-        self.title_line.right.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
-        self.title_line.right.setLayout(QHBoxLayout())
-        self.title_line.right.layout().setContentsMargins(0, 0, 0, 0)
-        self.title_line.right.layout().setSpacing(0)
-        self.title_line.right.layout().addStretch()
-        self.title_line.layout().addWidget(self.title_line.right, 1)
-
-        # The notch. Its artwork is sliced 0/1/1/36: the left 36px carry the
-        # slanted edge at 1:1 and the rest stretches. QSS border widths do not
-        # inset a plain widget's contents, so the layout margins place the
-        # close button explicitly. It starts 17px in, inside the slant slice:
-        # the slant runs down-right, and at the icon's height the notch body
-        # already begins left of it, so the icon stays clear of the edge
-        # while the notch stays narrow (17 + 30 + 1 = 48px). Only the icon is
-        # drawn; the hover fill is the notch's own artwork, not the button.
-        self.title_line.notch = QWidget()
-        self.title_line.notch.setObjectName('dialog_title_notch')
-        self.title_line.notch.setAttribute(Qt.WA_StyledBackground, True)
-        self.title_line.notch.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Maximum)
-        self.title_line.notch.setLayout(QHBoxLayout())
-        self.title_line.notch.layout().setContentsMargins(17, 0, 1, 1)
-        self.title_line.notch.layout().setSpacing(0)
-        self.title_line.layout().addWidget(self.title_line.notch, 0)
-
-        close_button = QPushButton()
-        # 31 tall, not 32: the notch's bottom hairline takes the last row, and
-        # a 32px button would paint over it on hover.
-        close_button.setFixedSize(QSize(30, 31))
-        close_button.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Maximum)
-        close_button.setObjectName('dialog_close_button')
-        close_button.clicked.connect(lambda: self.reject())
-        self.title_line.notch.layout().addWidget(close_button)
-        self._close_hover = _HoverMirror(self.title_line.notch, close_button)
-        close_button.installEventFilter(self._close_hover)
-
-        self.frame.layout().addWidget(self.title_line)
+        build_dialog_chrome(self, title, self.reject)
 
         # Enable mouse tracking for dragging functionality
         self.title_line.setMouseTracking(True)
@@ -372,81 +453,8 @@ class SimpleDialog(QDialog):
         self.title_line.mouseMoveEvent = self.title_mouse_move_event
         self.title_line.mouseReleaseEvent = self.title_mouse_release_event
 
-        self.content = QWidget()
-        self.content.setObjectName('dialog_content')
-        self.content.setLayout(QVBoxLayout())
-        # 14px sides + the content row's 1px inset: body content starts on
-        # the dialogs' 15px text edge, with the title and Cancel.
-        self.content.layout().setContentsMargins(14, 10, 14, 10)
-        # The content sits in a 1px-inset row so the frame's side border stays
-        # visible beside it. The title bar and footer are deliberately NOT
-        # inset — they run edge to edge so their tab artwork lands in the
-        # dialog's corners — but a full-bleed content area would let an
-        # opaque child paint over the border (ExportDialog's sidebar does
-        # exactly that, since it zeroes the content margins).
-        content_row = QWidget()
-        content_row.setLayout(QHBoxLayout())
-        content_row.layout().setContentsMargins(1, 0, 1, 0)
-        content_row.layout().setSpacing(0)
-        content_row.layout().addWidget(self.content)
-        self.frame.layout().addWidget(content_row)
-
-        # The bottom bar mirrors the title bar: a plain stretch on the left
-        # carrying Cancel, and a tab on the right — dialog_bottom.svg is
-        # dialog_bottom.svg — holding the default button.
-        # Exposed as `self.bottom_line` (and `bottom_left` / `bottom_right`)
-        # because dialogs used to reach it through `accept_button.parent()`,
-        # which silently pointed at the wrong widget the moment the buttons
-        # moved into the tab.
-        self.bottom_line = QWidget()
-        self.bottom_line.setObjectName('dialog_bottom')
-        # Hug the buttons. Like the title bar, this row otherwise soaks up the
-        # frame layout's spare height and stretches the tab artwork. A size
-        # policy rather than setFixedHeight, so a dialog that needs a taller
-        # footer (find & replace asks for 44px in QSS) can still have one.
-        self.bottom_line.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
-        self.bottom_line.setLayout(QHBoxLayout())
-        self.bottom_line.layout().setContentsMargins(0, 0, 0, 0)
-        self.bottom_line.layout().setSpacing(0)
-
-        self.accept_button = QPushButton(_('dialog.ok'))
-        self.accept_button.setProperty('class', 'accept_button')
-
-        self.reject_button = QPushButton(_('dialog.cancel'))
-        self.reject_button.setProperty('class', 'reject_button')
-
-        self.bottom_left = QWidget()
-        self.bottom_left.setObjectName('dialog_bottom_left')
-        self.bottom_left.setAttribute(Qt.WA_StyledBackground, True)
-        self.bottom_left.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
-        self.bottom_left.setLayout(QHBoxLayout())
-        # No horizontal padding — Cancel starts at the bar's edge. The 5px
-        # left cap in the artwork needs no reservation: the button is
-        # transparent and its own 12px text padding already clears it.
-        self.bottom_left.layout().setContentsMargins(0, 0, 0, 0)
-        self.bottom_left.layout().setSpacing(0)
-        self.bottom_left.layout().addWidget(self.reject_button)
-        self.bottom_left.layout().addStretch()
-        self.bottom_line.layout().addWidget(self.bottom_left, 1)
-
-        # The tab. Extra actions go here via `add_bottom_button()`; it sizes
-        # to whatever it holds, so several buttons simply widen the tab.
-        self.bottom_right = QWidget()
-        self.bottom_right.setObjectName('dialog_bottom_right')
-        self.bottom_right.setAttribute(Qt.WA_StyledBackground, True)
-        self.bottom_right.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Maximum)
-        self.bottom_right.setLayout(QHBoxLayout())
-        # 24px clears the diagonal, 5px the rounded right cap — otherwise the
-        # buttons render underneath the artwork.
-        self.bottom_right.layout().setContentsMargins(24, 0, 5, 0)
-        self.bottom_right.layout().setSpacing(0)
-        self.bottom_right.layout().addWidget(self.accept_button)
-        self.bottom_line.layout().addWidget(self.bottom_right, 0)
-
         self.accept_button.clicked.connect(self.accept)
         self.reject_button.clicked.connect(self.reject)
-
-        self.frame.layout().addWidget(self.bottom_line)
 
     # A plain message dialog gets roomier vertical padding and wrapped text;
     # its sides stay on the 15px text edge. Applied centrally rather than at

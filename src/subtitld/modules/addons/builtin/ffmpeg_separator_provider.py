@@ -71,6 +71,8 @@ class _FfmpegSeparationThread(QThread):
                     '-hide_banner', '-loglevel', 'error',
                     '-i', self.input_path,
                     '-vn',
+                    # Mono or stereo, as the player's sidecar (interface/playercontrols.py).
+                    '-af', 'aformat=channel_layouts=mono|stereo',
                     '-ar', str(_OUTPUT_SAMPLE_RATE), '-y',
                     self.original_path,
                 ]

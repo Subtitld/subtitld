@@ -84,6 +84,10 @@ class TimelineScroll(QScrollArea):
         event.accept()
 
 
+# How much of ffmpeg's raw output is read at a time: 4 MB, about 22 seconds of mono float32 at 48 kHz.
+_PCM_READ_BYTES = 4 * 1024 * 1024
+
+
 class AudioLoaderThread(QThread):
     """
     Thread that loads audio samples and normalizes them for waveform visualization.
@@ -110,6 +114,12 @@ class AudioLoaderThread(QThread):
 
 
     def _load_audio(self, filepath, samplerate=48000):
+        """The file's sound as int16, its loudest sample at full scale: what WaveformManager keeps.
+
+        Read from ffmpeg a piece at a time and turned into int16 a piece at a time. Taking the whole
+        float32 decode at once (communicate, then a copy, then a scaled copy, then the int16) held
+        four full-length copies: 1.8 GB at the peak for a 40-minute video, enough to have the app
+        killed on an 8 GB machine (issue #59). This way the peak is the float32 decode once."""
         cmd = [
             session.FFMPEG_EXECUTABLE,
             "-v", "error",
@@ -123,24 +133,39 @@ class AudioLoaderThread(QThread):
         self.proc = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
             startupinfo=session.STARTUPINFO
         )
 
+        pieces, peak = [], 0.0
         try:
-            stdout, _ = self.proc.communicate()
+            while not self._cancelled:
+                data = self.proc.stdout.read(_PCM_READ_BYTES)
+                if not data:
+                    break
+                piece = np.frombuffer(data[:len(data) - len(data) % 4], dtype=np.float32)
+                if piece.size:
+                    peak = max(peak, float(np.max(np.abs(piece))))
+                    pieces.append(piece)
+            self.proc.wait()
         except Exception:
             if self.proc:
                 self.proc.kill()
             raise
 
         if self._cancelled or self.proc.returncode not in (0, None):
-            return np.array([], dtype=np.float32), samplerate
+            return np.array([], dtype=np.int16), samplerate
 
-        raw = np.frombuffer(stdout, dtype=np.float32).copy()
-        if raw.size > 0:
-            raw /= np.max(np.abs(raw))
-        return raw, samplerate
+        samples = np.empty(sum(piece.size for piece in pieces), dtype=np.int16)
+        scale = np.float32(32767.0 / peak) if peak > 0 else np.float32(0.0)
+        start = 0
+        pieces.reverse()
+        while pieces:
+            piece = pieces.pop() * scale  # each float32 piece is let go as soon as it's written
+            np.clip(piece, -32767.0, 32767.0, out=piece)
+            samples[start:start + piece.size] = piece
+            start += piece.size
+        return samples, samplerate
 
     def cancel(self):
         """Terminate ffmpeg process if running and mark as cancelled."""
@@ -283,11 +308,10 @@ class WaveformManager:
     def set_samples(self, samples):
         # Compact storage: int16 instead of float32 cuts the RAM cost of
         # the raw waveform in half. For a 1-hour project at 48 kHz mono
-        # that's 691 MB → 345 MB. The waveform is normalized to
-        # [-1.0, 1.0] upstream (AudioLoaderThread divides by max abs), so
-        # we can pack it into int16 by multiplying by 32767 and clipping
-        # before cast. The worker handles both dtypes for backwards
-        # compatibility with cached float32 samples on disk.
+        # that's 691 MB → 345 MB. AudioLoaderThread hands it over as int16
+        # already; float32 in [-1.0, 1.0] is packed here by multiplying by
+        # 32767 and clipping before cast. The worker handles both dtypes
+        # for backwards compatibility with cached float32 samples on disk.
         arr = np.asarray(samples)
         if arr.dtype == np.int16:
             self.samples = arr
@@ -429,6 +453,10 @@ class OnsetDetectionThread(QThread):
                 sr = ONSET_DETECTION_SAMPLERATE
             else:
                 sr = self.samplerate
+            # The waveform's int16, turned to float only once it's a third
+            # of the length: not the whole 48 kHz track as float32 on top.
+            if getattr(samples, 'dtype', None) == np.int16:
+                samples = samples.astype(np.float32) / np.float32(32768.0)
             onsets = detect_onsets(samples, sr)
             if not self._cancelled:
                 self.finished.emit(onsets)
@@ -459,7 +487,8 @@ def _detect_onsets_via_ffmpeg(path):
     stdout, _ = proc.communicate()
     if proc.returncode not in (0, None):
         return None
-    samples = np.frombuffer(stdout, dtype=np.float32).copy()
+    # Read-only over ffmpeg's output, not a copy of it: detect_onsets only reads.
+    samples = np.frombuffer(stdout[:len(stdout) - len(stdout) % 4], dtype=np.float32)
     if samples.size == 0:
         return None
     from subtitld.modules.onset_detection import detect_onsets
@@ -2207,20 +2236,29 @@ class Timeline(QWidget):
                 import sys as _sys
                 traceback.print_exc(file=_sys.stderr)
 
+        # On the line of the subtitles it pulls: with speaker tracks,
+        # their speaker's track only.
+        tug_y, tug_height = widget.subtitle_y, widget.subtitle_height
+        lane = widget.subtitle_lane()
+        tugged = session.SUBTITLE.selected if widget.tug_of_war_pressed else widget.subtitle_under_the_cursor
+        if lane is not None and tugged:
+            tug_height = widget.subtitle_height / len(session.SPEAKERS)
+            tug_y += tug_height * lane(tugged)
         push_shape, push_width = timeline_shapes.natural_shape(widget, look['push_handle_svg'], look.color('selected_subtitle_arrow_color'),
-                                                widget.subtitle_height) if widget.show_tug_of_war else (None, 0.0)
+                                                tug_height) if widget.show_tug_of_war else (None, 0.0)
         if push_shape is not None:
             timeline_shapes.draw(painter, push_shape, widget.show_tug_of_war * widget.width_proportion - push_width / 2.0,
-                        widget.subtitle_y)
+                        tug_y)
         elif bool(widget.show_tug_of_war):
             tug_of_war_pen = QPen(look.color('selected_subtitle_arrow_color'), 4, Qt.SolidLine, Qt.RoundCap)
             painter.setPen(tug_of_war_pen)
             xpos = int(widget.show_tug_of_war * widget.width_proportion) - 4
+            tug_dashes = max(2, min(6, int((tug_height - 8) / 8)))
             y_tug_pos = 0
-            for _tug_i in range(6):
-                painter.drawLine(xpos, int(widget.subtitle_y + 8 + y_tug_pos), int(xpos + 8), int(widget.subtitle_y + 8 + y_tug_pos))
+            for _tug_i in range(tug_dashes):
+                painter.drawLine(xpos, int(tug_y + 8 + y_tug_pos), int(xpos + 8), int(tug_y + 8 + y_tug_pos))
                 # painter.drawLine(xpos, widget.subtitle_y + 8 + y_tug_pos, xpos + 8, widget.subtitle_y + widget.subtitle_height - 8)
-                y_tug_pos += (widget.subtitle_height - 8) / 6
+                y_tug_pos += (tug_height - 8) / tug_dashes
 
         # Collaborators in a shared project: their selection, the text they type in and their playhead.
         widget._paint_collaborators(painter)
@@ -2568,8 +2606,7 @@ class Timeline(QWidget):
 
         cursor_is_out_of_view = bool((session.SUBTITLE.position or 0) * widget.width_proportion < widget.parent().parent().horizontalScrollBar().value() or (session.SUBTITLE.position or 0) * widget.width_proportion > widget.parent().parent().width() + widget.parent().parent().horizontalScrollBar().value())
         
-        cursor_time_position = event.pos().x() / widget.width_proportion
-        widget.subtitle_under_the_cursor = subtitles.subtitle_under_current_position(position=cursor_time_position)
+        widget.subtitle_under_the_cursor = widget._subtitle_at(event.pos())
 
         widget.is_cursor_pressing = True
         widget.subtitle_drag_recorded = False
@@ -3014,12 +3051,17 @@ class Timeline(QWidget):
         cursor_time_position = event.pos().x() / widget.width_proportion #(event.pos().x() / widget.width()) * session.VIDEO.get('duration', 60)
         cursor_tug_of_war_range = 10 / widget.width_proportion
 
-        under = subtitles.subtitle_under_current_position(position=cursor_time_position)
+        under = widget._subtitle_at(event.pos())
         if under is not widget.subtitle_under_the_cursor and any(
                 timeline_style.current().box(kind)['frame_hover_svg'] for kind in timeline_style.KINDS):
             widget.update()     # a box's hover frame on, another's off
         widget.subtitle_under_the_cursor = under
-        last, next = subtitles.get_adjacent_subtitles(position=cursor_time_position)
+        # The tug of war is between subtitles next to each other on one
+        # line: with speaker tracks, the hovered one's speaker track.
+        lane = widget.subtitle_lane()
+        last, next = subtitles.get_adjacent_subtitles(
+            position=cursor_time_position,
+            segments=subtitles.lane_segments(widget.subtitle_under_the_cursor, lane) if widget.subtitle_under_the_cursor else None)
         
         if not widget.tug_of_war_pressed:
             widget.show_tug_of_war = False
@@ -3088,9 +3130,12 @@ class Timeline(QWidget):
                         widget.is_smart_splicing['position'] = event.pos().x()
 
         if session.SUBTITLE.selected is not None and session.SUBTITLE.selected in session.SUBTITLE.segments:
-            i = session.SUBTITLE.segments.index(session.SUBTITLE.selected)
-            last = session.SUBTITLE.segments[session.SUBTITLE.segments.index(session.SUBTITLE.selected) - 1] if session.SUBTITLE.segments.index(session.SUBTITLE.selected) > 0 else {'start': 0, 'end': 0, 'text': ''}
-            nextsub = session.SUBTITLE.segments[session.SUBTITLE.segments.index(session.SUBTITLE.selected) + 1] if session.SUBTITLE.segments.index(session.SUBTITLE.selected) < len(session.SUBTITLE.segments) - 1 else {'start': session.VIDEO.get('duration', 60), 'end': 0, 'text': ''}
+            # Its neighbours on its own line: with speaker tracks, the
+            # subtitles of another speaker neither stop nor follow it.
+            lane_segments = subtitles.lane_segments(session.SUBTITLE.selected, lane)
+            i = lane_segments.index(session.SUBTITLE.selected)
+            last = lane_segments[i - 1] if i > 0 else {'start': 0, 'end': 0, 'text': ''}
+            nextsub = lane_segments[i + 1] if i < len(lane_segments) - 1 else {'start': session.VIDEO.get('duration', 60), 'end': 0, 'text': ''}
             # The video's start and end are edges to snap to as well. A
             # copy: appending to the session's own list grew it on every
             # mouse move.
@@ -3116,23 +3161,23 @@ class Timeline(QWidget):
                 end = session.SUBTITLE.selected['end']
                 if not start_position > (end - session.CONFIG.get('default_values', {}).get('minimum_subtitle_width', 1)):
                     if not (bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed) and round(last['end'] + .001, 3) == round(session.SUBTITLE.selected['start'], 3)) and session.CONFIG.get('timeline', {}).get('snap', True) and session.CONFIG.get('timeline', {}).get('snap_limits', True) and (last['end'] + session.CONFIG.get('timeline', {}).get('snap_value', .1)) > start_position:
-                        subtitles.move_start_subtitle(selected_subtitle=session.SUBTITLE.selected, absolute_time=last['end'] + 0.001, move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record)
+                        subtitles.move_start_subtitle(selected_subtitle=session.SUBTITLE.selected, absolute_time=last['end'] + 0.001, move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record, lane=lane)
                     elif session.CONFIG.get('timeline', {}).get('snap', True) and session.CONFIG.get('timeline', {}).get('snap_grid', False):
                         if session.CONFIG.get('timeline', {}).get('grid_type', False) == 'frames':
                             nearest_frame = round(start_position * session.VIDEO['framerate']) / session.VIDEO['framerate']
-                            subtitles.move_start_subtitle(selected_subtitle=session.SUBTITLE.selected, absolute_time=nearest_frame, move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record)
+                            subtitles.move_start_subtitle(selected_subtitle=session.SUBTITLE.selected, absolute_time=nearest_frame, move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record, lane=lane)
                         elif session.CONFIG.get('timeline', {}).get('grid_type', False) == 'seconds' and float(start_position) > float(float(int(start_position) + 1) - float(session.CONFIG.get('timeline', {}).get('snap_value', .1))):
-                            subtitles.move_start_subtitle(selected_subtitle=session.SUBTITLE.selected, absolute_time=float(int(start_position) + 1), move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record)
+                            subtitles.move_start_subtitle(selected_subtitle=session.SUBTITLE.selected, absolute_time=float(int(start_position) + 1), move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record, lane=lane)
                         elif session.CONFIG.get('timeline', {}).get('grid_type', False) == 'seconds' and float(start_position) < float(float(int(start_position)) + float(session.CONFIG.get('timeline', {}).get('snap_value', .1))):
-                            subtitles.move_start_subtitle(selected_subtitle=session.SUBTITLE.selected, absolute_time=float(int(start_position)), move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record)
+                            subtitles.move_start_subtitle(selected_subtitle=session.SUBTITLE.selected, absolute_time=float(int(start_position)), move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record, lane=lane)
                         elif session.CONFIG.get('timeline', {}).get('grid_type', False) == 'shot_changes' and start_position > next_cut - session.CONFIG.get('timeline', {}).get('snap_value', .1):
-                            subtitles.move_start_subtitle(selected_subtitle=session.SUBTITLE.selected, absolute_time=next_cut, move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record)
+                            subtitles.move_start_subtitle(selected_subtitle=session.SUBTITLE.selected, absolute_time=next_cut, move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record, lane=lane)
                         elif session.CONFIG.get('timeline', {}).get('grid_type', False) == 'shot_changes' and start_position < last_cut + session.CONFIG.get('timeline', {}).get('snap_value', .1):
-                            subtitles.move_start_subtitle(selected_subtitle=session.SUBTITLE.selected, absolute_time=last_cut, move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record)
+                            subtitles.move_start_subtitle(selected_subtitle=session.SUBTITLE.selected, absolute_time=last_cut, move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record, lane=lane)
                         else:
-                            subtitles.move_start_subtitle(selected_subtitle=session.SUBTITLE.selected, absolute_time=start_position, move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record)
+                            subtitles.move_start_subtitle(selected_subtitle=session.SUBTITLE.selected, absolute_time=start_position, move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record, lane=lane)
                     else:
-                        subtitles.move_start_subtitle(selected_subtitle=session.SUBTITLE.selected, absolute_time=start_position, move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record)
+                        subtitles.move_start_subtitle(selected_subtitle=session.SUBTITLE.selected, absolute_time=start_position, move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record, lane=lane)
                 if widget.tug_of_war_pressed:
                     widget.show_tug_of_war = session.SUBTITLE.selected['start']
             elif widget.subtitle_end_is_clicked:
@@ -3140,23 +3185,23 @@ class Timeline(QWidget):
                 last_cut, next_cut = cuts_around(end_position)
                 if not end_position < (session.SUBTITLE.selected['start'] + session.CONFIG.get('default_values', {}).get('minimum_subtitle_width', 1)):
                     if not (bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed) and round(end_position, 3) >= round(nextsub['start'] - 0.001, 3)) and session.CONFIG.get('timeline', {}).get('snap', True) and session.CONFIG.get('timeline', {}).get('snap_limits', True) and (nextsub['start'] - session.CONFIG.get('timeline', {}).get('snap_value', .1)) < end_position:
-                        subtitles.move_end_subtitle(selected_subtitle=session.SUBTITLE.selected, absolute_time=(nextsub['start'] - 0.001), move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record)
+                        subtitles.move_end_subtitle(selected_subtitle=session.SUBTITLE.selected, absolute_time=(nextsub['start'] - 0.001), move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record, lane=lane)
                     elif session.CONFIG.get('timeline', {}).get('snap', True) and session.CONFIG.get('timeline', {}).get('snap_grid', False):
                         if session.CONFIG.get('timeline', {}).get('grid_type', False) == 'frames':
                             nearest_frame = round(end_position * session.VIDEO['framerate']) / session.VIDEO['framerate']
-                            subtitles.move_end_subtitle(selected_subtitle=session.SUBTITLE.selected, absolute_time=nearest_frame, move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record)
+                            subtitles.move_end_subtitle(selected_subtitle=session.SUBTITLE.selected, absolute_time=nearest_frame, move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record, lane=lane)
                         elif session.CONFIG.get('timeline', {}).get('grid_type', False) == 'seconds' and float(end_position) > float(float(int(end_position) + 1) - float(session.CONFIG.get('timeline', {}).get('snap_value', .1))):
-                            subtitles.move_end_subtitle(selected_subtitle=session.SUBTITLE.selected, absolute_time=float(int(end_position) + 1), move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record)
+                            subtitles.move_end_subtitle(selected_subtitle=session.SUBTITLE.selected, absolute_time=float(int(end_position) + 1), move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record, lane=lane)
                         elif session.CONFIG.get('timeline', {}).get('grid_type', False) == 'seconds' and float(end_position) < float(float(int(end_position)) + float(session.CONFIG.get('timeline', {}).get('snap_value', .1))):
-                            subtitles.move_end_subtitle(selected_subtitle=session.SUBTITLE.selected, absolute_time=float(int(end_position)), move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record)
+                            subtitles.move_end_subtitle(selected_subtitle=session.SUBTITLE.selected, absolute_time=float(int(end_position)), move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record, lane=lane)
                         elif session.CONFIG.get('timeline', {}).get('grid_type', False) == 'shot_changes' and end_position > next_cut - session.CONFIG.get('timeline', {}).get('snap_value', .1):
-                            subtitles.move_end_subtitle(selected_subtitle=session.SUBTITLE.selected, absolute_time=next_cut, move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record)
+                            subtitles.move_end_subtitle(selected_subtitle=session.SUBTITLE.selected, absolute_time=next_cut, move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record, lane=lane)
                         elif session.CONFIG.get('timeline', {}).get('grid_type', False) == 'shot_changes' and end_position < last_cut + session.CONFIG.get('timeline', {}).get('snap_value', .1):
-                            subtitles.move_end_subtitle(selected_subtitle=session.SUBTITLE.selected, absolute_time=last_cut, move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record)
+                            subtitles.move_end_subtitle(selected_subtitle=session.SUBTITLE.selected, absolute_time=last_cut, move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record, lane=lane)
                         else:
-                            subtitles.move_end_subtitle(selected_subtitle=session.SUBTITLE.selected, absolute_time=end_position, move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record)
+                            subtitles.move_end_subtitle(selected_subtitle=session.SUBTITLE.selected, absolute_time=end_position, move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record, lane=lane)
                     else:
-                        subtitles.move_end_subtitle(selected_subtitle=session.SUBTITLE.selected, absolute_time=end_position, move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record)
+                        subtitles.move_end_subtitle(selected_subtitle=session.SUBTITLE.selected, absolute_time=end_position, move_nereast=bool(session.CONFIG.get('timeline', {}).get('snap_move_nereast', False) or widget.tug_of_war_pressed), record=record, lane=lane)
                 if widget.tug_of_war_pressed:
                     widget.show_tug_of_war = session.SUBTITLE.selected['end']
             elif widget.subtitle_is_clicked:
@@ -3452,15 +3497,11 @@ class Timeline(QWidget):
         sr = session.VIDEO.get('samplerate', 48000)
         if samples is None or getattr(samples, 'size', 0) == 0:
             return
-        if getattr(samples, 'dtype', None) == np.int16:
-            samples_f = samples.astype(np.float32) / 32768.0
-        else:
-            samples_f = samples
         prev = widget.background_onset_thread
         if prev is not None and prev.isRunning():
             if hasattr(prev, 'cancel'):
                 prev.cancel()
-        thread = OnsetDetectionThread(samples_f, sr, parent=widget)
+        thread = OnsetDetectionThread(samples, sr, parent=widget)
         thread.finished.connect(lambda o: widget._on_background_onsets_ready(o, source='mix'))
         widget.background_onset_thread = thread
         thread.start()
@@ -3625,6 +3666,24 @@ class Timeline(QWidget):
             if rect is not None and rect.contains(pos):
                 return (subtitle, subtitle['dubbing'][0])
         return None
+
+    def subtitle_lane(widget):
+        """What puts subtitles on one line of the timeline, as a function of
+        a subtitle: its speaker track when speakers have tracks of their
+        own; None when every subtitle is on the one line."""
+        return subtitles.speaker_lane(widget.show_speaker_tracks)
+
+    def _subtitle_at(widget, pos):
+        """The subtitle under pos: with speaker tracks, the one on the track
+        under the pointer, as subtitles of two speakers can overlap."""
+        position = pos.x() / widget.width_proportion
+        lane = widget.subtitle_lane()
+        if lane is not None and widget.subtitle_y <= pos.y() < widget.subtitle_y + widget.subtitle_height:
+            track = int((pos.y() - widget.subtitle_y) / (widget.subtitle_height / len(session.SPEAKERS)))
+            found = next((item for item in session.SUBTITLE.segments if lane(item) == track and item['start'] <= position < item['end']), False)
+            if found:
+                return found
+        return subtitles.subtitle_under_current_position(position=position)
 
     def _subclip_track_geometry(widget, subtitle):
         """Vertical geometry of the dub band for `subtitle`. Returns
@@ -4431,27 +4490,3 @@ def update(self):
 
     self.timeline_widget.update()
 
-
-def load_audio_for_timeline(filepath: str, samplerate: int = 48000):
-    """
-    Uses ffmpeg to decode audio into mono float32 PCM for waveform visualization.
-    Requires ffmpeg installed in PATH.
-    """
-    cmd = [
-        session.FFMPEG_EXECUTABLE, "-v", "error", "-i", filepath,
-        "-ac", "1",             # mono
-        "-ar", str(samplerate), # resample rate
-        "-f", "f32le", "-"      # raw 32-bit float to stdout
-    ]
-    proc = subprocess.run(
-        cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
-        check=True,
-        startupinfo=session.STARTUPINFO,
-    )
-    raw = np.frombuffer(proc.stdout, dtype=np.float32).copy()
-    # Normalize
-    if raw.size > 0:
-        raw /= np.max(np.abs(raw))
-    return raw, samplerate
