@@ -48,7 +48,7 @@ class TokenStore:
             if token:
                 return token
         try:
-            return self._file.read_text().strip() or None
+            return self._file.read_text(encoding="utf-8").strip() or None
         except FileNotFoundError:
             return None
 
@@ -63,7 +63,7 @@ class TokenStore:
                 return
         self.directory.mkdir(parents=True, exist_ok=True)
         descriptor = os.open(self._file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(descriptor, "w") as handle:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
             handle.write(token)
 
     def clear(self) -> None:
@@ -78,9 +78,9 @@ class TokenStore:
         """A random ID for this installation, created once."""
         path = self.directory / "device-id"
         try:
-            return path.read_text().strip()
+            return path.read_text(encoding="utf-8").strip()
         except FileNotFoundError:
             self.directory.mkdir(parents=True, exist_ok=True)
             value = str(uuid.uuid4())
-            path.write_text(value)
+            path.write_text(value, encoding="utf-8")
             return value

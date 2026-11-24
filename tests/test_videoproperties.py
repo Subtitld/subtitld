@@ -70,7 +70,7 @@ host = QWidget()
 host.preview_panel_player = Player()
 vp.load(host)
 # The real stylesheet: widths and folding depend on it.
-host._panel.setStyleSheet((session.PATH_SUBTITLD_GRAPHICS / 'stylesheet.qss').read_text())
+host._panel.setStyleSheet((session.PATH_SUBTITLD_GRAPHICS / 'stylesheet.qss').read_text(encoding='utf-8'))
 host._panel.resize(780, 500)
 host._panel.show()
 encodes = []

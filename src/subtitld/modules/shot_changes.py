@@ -57,7 +57,7 @@ def cached_shot_changes(filepath):
     if not path or not os.path.isfile(path):
         return None
     try:
-        with open(path) as cache_file:
+        with open(path, encoding='utf-8') as cache_file:
             return [float(time) for time in json.load(cache_file)]
     except (OSError, ValueError, TypeError):
         return None
@@ -69,7 +69,7 @@ def _save(filepath, times):
         return
     try:
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, 'w') as cache_file:
+        with open(path, 'w', encoding='utf-8') as cache_file:
             json.dump(times, cache_file)
     except OSError:
         pass

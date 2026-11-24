@@ -21,7 +21,7 @@ for f in os.listdir(session.PATH_SUBTITLD_GRAPHICS):
     if f.lower().endswith('.ttf'):
         QFontDatabase.addApplicationFont(os.path.join(session.PATH_SUBTITLD_GRAPHICS, f))
 app.setFont(QFont('Montserrat', 10))
-app.setStyleSheet((session.PATH_SUBTITLD_GRAPHICS / 'stylesheet.qss').read_text())
+app.setStyleSheet((session.PATH_SUBTITLD_GRAPHICS / 'stylesheet.qss').read_text(encoding='utf-8'))
 from subtitld.interface import utils
 
 EDGE = 15
