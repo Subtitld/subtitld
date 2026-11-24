@@ -25,7 +25,7 @@ for _f in os.listdir(session.PATH_SUBTITLD_GRAPHICS):
     if _f.lower().endswith('.ttf'):
         QFontDatabase.addApplicationFont(os.path.join(session.PATH_SUBTITLD_GRAPHICS, _f))
 app.setFont(QFont('Montserrat', 10))
-app.setStyleSheet((session.PATH_SUBTITLD_GRAPHICS / 'stylesheet.qss').read_text())
+app.setStyleSheet((session.PATH_SUBTITLD_GRAPHICS / 'stylesheet.qss').read_text(encoding='utf-8'))
 from subtitld.interface import left_panel_keyboard as lpk
 
 fails = []
