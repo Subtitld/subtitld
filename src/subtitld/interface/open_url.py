@@ -438,6 +438,7 @@ class OpenUrlCard(QWidget):
 
     def retranslate(self):
         self.title_line.label.setText(_('open_url.title'))
+        self.primary.setText(_('open_url.open'))   # render() names the action at hand; this one while there is none
         self.field.setLabel(_('open_url.field'))
         self.field.lineedit.setPlaceholderText('https://')
         self.folder_button.setText(_('open_url.change_folder'))
