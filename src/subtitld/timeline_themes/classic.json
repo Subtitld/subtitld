@@ -1,0 +1,204 @@
+{
+  "format": 1,
+  "id": "subtitld.classic",
+  "name": "Classic",
+  "author": "Subtitld",
+  "version": "26.11.1",
+  "description": "The timeline as Subtitld has always drawn it.",
+  "look": "dark",
+  "counterpart": "subtitld.classic-light",
+  "timeline": {
+    "background_color": "#00000000",
+    "ruler_background_color": "#00000000",
+    "show_ruler": true,
+    "time_text_color": "#b8b8cee0",
+    "ruler_font": "Ubuntu Mono",
+    "ruler_font_size": 8,
+    "ruler_time_format": "clock",
+    "ruler_position": "top",
+    "ruler_offset": 27,
+    "ruler_label_spacing": 75,
+    "ruler_ticks": false,
+    "ruler_tick_color": "#99b8cee0",
+    "ruler_tick_length": 8,
+    "ruler_subdivisions": 4,
+    "grid_color": "#336a7483",
+    "grid_width": 1.0,
+    "show_waveform": true,
+    "waveform_fill_color": "#cc153450",
+    "waveform_border_color": "#ff153450",
+    "waveform_border_width": 1.0,
+    "waveform_top": 45,
+    "waveform_bottom": 20,
+    "waveform_scale": 90,
+    "cursor_color": "#ccff0000",
+    "cursor_width": 2.0,
+    "cursor_line_style": "solid",
+    "cursor_glow": 0,
+    "cursor_head": "none",
+    "cursor_head_size": 10,
+    "cursor_show_time": false,
+    "cursor_time_background_color": "#ccff0000",
+    "cursor_time_text_color": "#ffffffff",
+    "cursor_badge_shape": "custom",
+    "cursor_badge_side": "left",
+    "cursor_badge_top": 25,
+    "cursor_badge_color": "#96ff0000",
+    "cursor_text_indicator": "#ffffffff",
+    "selected_subtitle_arrow_color": "#ff969696",
+    "dub_waveform_color": "#ffffffff",
+    "onset_marker_color": "#ffffd9a0",
+    "repeat_area_color": "#50ff0000",
+    "repeat_area_gradient": true,
+    "offscreen_arrow_color": "#dcff0000",
+    "cursor_badge_svg": "badge",
+    "grid_line_svg": "grid_line",
+    "onset_marker_svg": "onset_marker",
+    "offscreen_arrow_svg": "offscreen_arrow",
+    "push_handle_svg": "push_handle"
+  },
+  "boxes": {
+    "subtitle": {
+      "full_height": false,
+      "top": 55,
+      "bottom": 25,
+      "gap": 0,
+      "corner_radius": 3,
+      "border_width": 0.0,
+      "border_color": "#ff6a7483",
+      "selected_border_color": "#ffb8cee0",
+      "speaker_strip_height": 3,
+      "fill_color": "#e6c8dbe9",
+      "selected_fill_color": "#cc3e5363",
+      "fill_gradient": false,
+      "fill_gradient_color": "#ff8fa9bc",
+      "selected_fill_gradient_color": "#cc1f2a33",
+      "text_color": "#ff304251",
+      "selected_text_color": "#ffb8cee0",
+      "failed_check_text_color": "#ff9e1a1a",
+      "font": "Montserrat",
+      "font_size": 10,
+      "font_bold": false,
+      "text_vertical_alignment": "top",
+      "padding_x": 26,
+      "padding_y": 6,
+      "edge_style": "glow",
+      "edge_show": "hover",
+      "edge_handle_width": 20,
+      "edge_handle_thickness": 2.0,
+      "edge_start_color": "#ffffffff",
+      "edge_end_color": "#ffffffff",
+      "edge_grab_width": 20,
+      "frame_svg": "box",
+      "lock_svg": "padlock"
+    }
+  },
+  "shapes": {
+    "box": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 40\"><g data-slice=\"3\"><rect width=\"100\" height=\"40\" rx=\"3\" fill=\"currentColor\"/></g><g data-y=\"top\" data-slice=\"3 3 0 3\"><path d=\"M0 3 A3 3 0 0 1 3 0 H97 A3 3 0 0 1 100 3 Z\" fill=\"speakerColor\"/></g></svg>",
+    "padlock": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 10 10\"><path d=\"M2.8 3.6 A2.2 2 0 0 1 7.2 3.6\" fill=\"none\" stroke=\"#ffffff\" stroke-opacity=\"0.902\" stroke-width=\"1.2\"/><rect x=\"2\" y=\"4.2\" width=\"6\" height=\"4.6\" rx=\"1\" fill=\"#ffffff\" fill-opacity=\"0.902\"/></svg>",
+    "badge": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 40 22\"><g data-slice=\"0 0 0 6\"><path d=\"M0 0 H40 V22 H5 Z\" fill=\"currentColor\"/></g></svg>",
+    "grid_line": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 1 10\"><rect width=\"1\" height=\"10\" fill=\"currentColor\"/></svg>",
+    "onset_marker": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 32 100\"><defs><radialGradient id=\"glow\" cx=\"0\" cy=\"1\" r=\"1\" gradientTransform=\"scale(1 0.5)\"><stop offset=\"0\" stop-color=\"currentColor\" stop-opacity=\"0.11\"/><stop offset=\"1\" stop-color=\"currentColor\" stop-opacity=\"0\"/></radialGradient></defs><rect width=\"32\" height=\"100\" fill=\"url(#glow)\"/><rect width=\"1\" height=\"100\" fill=\"currentColor\" fill-opacity=\"0.333\"/></svg>",
+    "offscreen_arrow": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 6 6\"><path d=\"M0 0 L6 3 L0 6 Z\" fill=\"currentColor\"/></svg>",
+    "push_handle": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-2 0 12 120\"><line x1=\"0\" y1=\"8.00\" x2=\"8\" y2=\"8.00\" stroke=\"currentColor\" stroke-width=\"4\" stroke-linecap=\"round\"/><line x1=\"0\" y1=\"26.67\" x2=\"8\" y2=\"26.67\" stroke=\"currentColor\" stroke-width=\"4\" stroke-linecap=\"round\"/><line x1=\"0\" y1=\"45.33\" x2=\"8\" y2=\"45.33\" stroke=\"currentColor\" stroke-width=\"4\" stroke-linecap=\"round\"/><line x1=\"0\" y1=\"64.00\" x2=\"8\" y2=\"64.00\" stroke=\"currentColor\" stroke-width=\"4\" stroke-linecap=\"round\"/><line x1=\"0\" y1=\"82.67\" x2=\"8\" y2=\"82.67\" stroke=\"currentColor\" stroke-width=\"4\" stroke-linecap=\"round\"/><line x1=\"0\" y1=\"101.33\" x2=\"8\" y2=\"101.33\" stroke=\"currentColor\" stroke-width=\"4\" stroke-linecap=\"round\"/></svg>"
+  },
+  "options": [
+    {
+      "key": "box_color",
+      "type": "color",
+      "label": "Subtitle color",
+      "default": "#ffc8dbe9",
+      "sets": [
+        {
+          "box": "subtitle",
+          "key": "fill_color",
+          "part": "color"
+        }
+      ]
+    },
+    {
+      "key": "box_opacity",
+      "type": "int",
+      "label": "Subtitle opacity",
+      "unit": "%",
+      "default": 90,
+      "sets": [
+        {
+          "box": "subtitle",
+          "key": "fill_color",
+          "part": "alpha"
+        }
+      ]
+    },
+    {
+      "key": "selected_box_color",
+      "type": "color",
+      "label": "Selected subtitle color",
+      "default": "#ff3e5363",
+      "sets": [
+        {
+          "box": "subtitle",
+          "key": "selected_fill_color",
+          "part": "color"
+        }
+      ]
+    },
+    {
+      "key": "text_size",
+      "type": "int",
+      "label": "Text size",
+      "unit": "pt",
+      "default": 10,
+      "sets": [
+        {
+          "box": "subtitle",
+          "key": "font_size"
+        }
+      ]
+    },
+    {
+      "key": "playhead_color",
+      "type": "color",
+      "label": "Cursor color",
+      "default": "#ffff0000",
+      "sets": [
+        {
+          "key": "cursor_color",
+          "part": "color"
+        },
+        {
+          "key": "cursor_badge_color",
+          "part": "color"
+        },
+        {
+          "key": "cursor_time_background_color",
+          "part": "color"
+        },
+        {
+          "key": "offscreen_arrow_color",
+          "part": "color"
+        },
+        {
+          "key": "repeat_area_color",
+          "part": "color"
+        }
+      ]
+    },
+    {
+      "key": "waveform_color",
+      "type": "color",
+      "label": "Waveform color",
+      "default": "#ff153450",
+      "sets": [
+        {
+          "key": "waveform_fill_color",
+          "part": "color"
+        },
+        {
+          "key": "waveform_border_color",
+          "part": "color"
+        }
+      ]
+    }
+  ]
+}

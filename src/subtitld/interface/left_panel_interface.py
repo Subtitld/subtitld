@@ -1,11 +1,13 @@
-from PySide6.QtWidgets import QVBoxLayout, QWidget, QLabel, QScrollArea, QTabWidget, QHBoxLayout, QSpinBox, QGroupBox, QColorDialog, QPushButton
+from PySide6.QtWidgets import QVBoxLayout, QWidget, QLabel, QScrollArea, QTabWidget, QHBoxLayout, QSpinBox, QGroupBox, QColorDialog, QPushButton, QSizePolicy
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
 
-from subtitld.interface import left_panel
+from subtitld.interface import left_panel, theme
 from subtitld.interface.subtitle_style_panel import SubtitleStylePanel
+from subtitld.interface import timeline_theme_browser
+from subtitld.interface.timeline_theme_panel import TimelineThemePanel
 from subtitld.interface.translation import _
-from subtitld.modules import session
+from subtitld.modules import session, timeline_themes
 
 
 def load(self):
@@ -210,7 +212,30 @@ def load(self):
 
     self.global_panel_interface_tabwidget.addTab(self.global_panel_interface_tabwidget_videoplayer, '')
 
+    # The timeline's look: its theme.
+    self.global_panel_interface_tabwidget_timeline = QWidget()
+    self.global_panel_interface_tabwidget_timeline.setLayout(QVBoxLayout())
+    # No side margins: the subtitld.cc section's head runs from edge to edge; the cards keep their own.
+    self.global_panel_interface_tabwidget_timeline.layout().setContentsMargins(0, 10, 0, 10)
+    self.global_panel_interface_timeline_theme_panel = TimelineThemePanel()
+    self.global_panel_interface_timeline_theme_panel.changed.connect(lambda: refresh_timeline(self))
+    theme.notifier.changed.connect(lambda name: timeline_follow_look(self, name))
+    self.global_panel_interface_tabwidget_timeline.layout().addWidget(self.global_panel_interface_timeline_theme_panel)
+    # Under it, the themes on subtitld.cc, to install; fetched the first time the tab is shown.
+    self.global_panel_interface_tabwidget_timeline.layout().addSpacing(24)
+    self.global_panel_interface_theme_browser = timeline_theme_browser.ThemeBrowser()
+    self.global_panel_interface_theme_browser.installed.connect(lambda: timeline_theme_browser.follow(self))
+    # What subtitld.cc lists tells the installed themes' cards of their updates.
+    self.global_panel_interface_theme_browser.listed.connect(self.global_panel_interface_timeline_theme_panel.build)
+    self.global_panel_interface_tabwidget_timeline.layout().addWidget(self.global_panel_interface_theme_browser)
+    self.global_panel_interface_tabwidget_timeline.layout().addStretch()
+    self.global_panel_interface_tabwidget.addTab(self.global_panel_interface_tabwidget_timeline, '')
+
     self.left_panel_interface_panel_widget.layout().addWidget(self.global_panel_interface_tabwidget)
+    # Only the page shown sets the panel's width: a tab widget is as wide as its widest page, and the
+    # Video subtitles page is wider than the panel, which made the Timeline tab scroll sideways too.
+    self.global_panel_interface_tabwidget.currentChanged.connect(lambda index: fit_shown_tab(self))
+    fit_shown_tab(self)
 
 
     update(self)
@@ -236,6 +261,22 @@ def refresh_preview(self):
     """Repaint the subtitle drawn over the video with the new settings."""
     if hasattr(self, 'preview_panel_player'):
         self.preview_panel_player._graphics_video_item.update()
+
+
+def timeline_follow_look(self, name):
+    """The interface's look changed: the timeline's theme to its counterpart, if it has one."""
+    if timeline_themes.follow_look(name):
+        self.global_panel_interface_timeline_theme_panel.build()
+        refresh_timeline(self)
+
+
+def refresh_timeline(self):
+    """Paint the timelines again with the new look."""
+    if hasattr(self, 'timeline_widget'):
+        self.timeline_widget.apply_style()
+    vtimeline_panel = getattr(self, 'vtimeline_panel', None)
+    if vtimeline_panel is not None:
+        vtimeline_panel.scroll.canvas.update()
 
 
 def global_panel_interface_videoplayer_safe_margin_action_group_toggled(self):
@@ -284,12 +325,23 @@ def global_panel_interface_videoplayer_safe_margin_title_color_button_clicked(se
     update(self)
 
     
+def fit_shown_tab(self):
+    tabs = self.global_panel_interface_tabwidget
+    for index in range(tabs.count()):
+        shown = index == tabs.currentIndex()
+        tabs.widget(index).setSizePolicy(QSizePolicy.Preferred if shown else QSizePolicy.Ignored,
+                                         QSizePolicy.Preferred if shown else QSizePolicy.Ignored)
+    tabs.updateGeometry()
+
+
 def hide(self):
     pass
 
     
 def translate(self):    
     self.global_panel_interface_style_panel.build()
+    self.global_panel_interface_timeline_theme_panel.build()
+    self.global_panel_interface_theme_browser.translate()
     self.global_panel_interface_videoplayer_safe_margin_action_group.setTitle(_('interface_panel.action_safe_margin'))
     self.global_panel_interface_videoplayer_safe_margin_action_x_margin_label.setText(_('interface_panel.horizontal_margin'))
     self.global_panel_interface_videoplayer_safe_margin_action_y_margin_label.setText(_('interface_panel.vertical_margin'))
@@ -306,6 +358,7 @@ def translate(self):
     self.global_panel_interface_videoplayer_safe_margin_title_color_button.setAccessibleName(
         f"{_('interface_panel.title_safe_margin')}: {_('units.color')}")
     self.global_panel_interface_tabwidget.setTabText(0, _('interface_panel.video_player'))
+    self.global_panel_interface_tabwidget.setTabText(1, _('interface_panel.timeline'))
     self.global_panel_interface_videoplayer_safe_margin_title_x_margin_pixels_label.setText(_('units.pixels'))
 
 

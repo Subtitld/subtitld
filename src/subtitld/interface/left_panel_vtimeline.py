@@ -23,10 +23,9 @@ from PySide6.QtGui import (QBrush, QColor, QCursor, QFont, QFontMetrics, QIcon, 
                            QPainterPath, QPen, QPixmap, QPolygonF, QRadialGradient)
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QScrollArea, QVBoxLayout, QWidget
 
-from subtitld.interface import left_panel
-from subtitld.interface import theme
+from subtitld.interface import left_panel, theme, timeline_edges, timeline_shapes
 from subtitld.interface.translation import _
-from subtitld.modules import markup, quality_check, session, subtitles, utils
+from subtitld.modules import markup, quality_check, session, subtitles, timeline_frames, timeline_style, timeline_svg
 from subtitld.modules.segment import text_of
 
 
@@ -34,9 +33,11 @@ TOP = 10                # px above 0 s, so its label is not cut
 BOTTOM = 30             # px below the end
 RULER_WIDTH = 46
 WAVEFORM_WIDTH = 52
+# The waveform is drawn in tiles this tall, kept up to this many bytes.
+WAVEFORM_TILE = 512
+WAVEFORM_TILES_BYTES = 8 * 1024 * 1024
 LANE_GAP = 6
 RIGHT_MARGIN = 8
-EDGE = 20               # px from a block's top or bottom that grab that edge, as on the timeline
 EDGE_SHOWN = 40         # px a block needs before its edges light up, as on the timeline
 TUG_REACH = 5           # px either side of where two subtitles meet that grab both
 TEXT_PADDING = QMarginsF(16, 11, 14, 11)
@@ -65,7 +66,10 @@ def _config():
 
 
 def _timeline_config():
-    return session.CONFIG.get('timeline') or {}
+    """The timeline's settings, its look's among them (the look's as made
+    once, not read again from the config at each of the many calls a
+    paint makes)."""
+    return {**(session.CONFIG.get('timeline') or {}), **timeline_style.current().settings()}
 
 
 def _duration():
@@ -260,13 +264,13 @@ def _rounded_path(rect, radius=3.0, square_top_right=False, square_bottom_right=
     return path
 
 
-def _paint_padlock(painter, cx, cy, color=QColor(255, 255, 255, 230)):
+def _paint_padlock(painter, cx, cy):
     """The timeline's padlock glyph, centred on (cx, cy)."""
-    painter.setPen(QPen(color, 1.2))
+    painter.setPen(QPen(QColor(255, 255, 255, 230), 1.2))
     painter.setBrush(Qt.NoBrush)
     painter.drawArc(QRectF(cx - 2.4, cy - 4.0, 4.8, 4.4), 0, 180 * 16)
     painter.setPen(Qt.NoPen)
-    painter.setBrush(color)
+    painter.setBrush(QColor(255, 255, 255, 230))
     painter.drawRoundedRect(QRectF(cx - 3.2, cy - 0.5, 6.4, 5.0), 1.0, 1.0)
 
 
@@ -294,6 +298,9 @@ class VerticalTimeline(QWidget):
         self._ruler_label = None
         self._ruler_width = RULER_WIDTH
         self._onset_pixmap = None
+        # The waveform drawn, a tile at a time down the canvas (_waveform_tile).
+        self._waveform_tiles = timeline_shapes.TileCache(WAVEFORM_TILES_BYTES)
+        self._paint_rect = QRectF()
         self._clip_paths = {}
         self._up_cursor = _arrow_cursor('up')
         self._down_cursor = _arrow_cursor('down')
@@ -315,10 +322,11 @@ class VerticalTimeline(QWidget):
 
     def ruler_width(self):
         """Wide enough for the longest label: an hour in, they gain a field."""
-        label = utils.get_timeline_time_str(int(_duration()))
-        if label != self._ruler_label:
-            self._ruler_label = label
-            self._ruler_width = max(RULER_WIDTH, QFontMetrics(QFont('Ubuntu Mono', 8)).horizontalAdvance(label) + 18)
+        look = timeline_style.current()
+        label = _time_label(int(_duration()))
+        if (label, look) != self._ruler_label:
+            self._ruler_label = (label, look)
+            self._ruler_width = max(RULER_WIDTH, QFontMetrics(look.ruler_font).horizontalAdvance(label) + 18)
         return self._ruler_width
 
     def lanes(self):
@@ -380,10 +388,24 @@ class VerticalTimeline(QWidget):
             result.append(segment)
         return result
 
-    def edge_zone(self, rect):
+    def frame_state(self, subtitle):
+        """Which of its look's frames a block is drawn with now, as on the
+        timeline."""
+        if subtitle is session.SUBTITLE.selected:
+            return 'selected'
+        box = timeline_style.current().box(timeline_style.kind_of(subtitle))
+        if box['frame_failed_svg'] and (session.CONFIG.get('quality_check') or {}).get('enabled', False) \
+                and not quality_check.check_subtitle(subtitle)[0]:
+            return 'failed'
+        if self.hover is not None and self.hover[0] == id(subtitle):
+            return 'hover'
+        return 'locked' if subtitle.get('locked') else 'normal'
+
+    def edge_zone(self, rect, subtitle=None):
         """px from a block's top or bottom that grab that edge: the
         timeline's, leaving the middle third of a short block to move it."""
-        return min(EDGE, rect.height() / 3)
+        kind = timeline_style.kind_of(subtitle) if subtitle is not None else timeline_style.SUBTITLE
+        return min(timeline_style.current().box(kind)['edge_grab_width'], rect.height() / 3)
 
     def hit(self, pos):
         """(subtitle, zone) under a point: zone 'start' or 'end' near the
@@ -404,7 +426,15 @@ class VerticalTimeline(QWidget):
             rect = self.block_rect(subtitle, columns)
             if not (rect.left() <= x <= rect.right() and rect.top() <= y <= rect.bottom()):
                 continue
-            edge = self.edge_zone(rect)
+            box = timeline_style.current().box(timeline_style.kind_of(subtitle))
+            frame = timeline_frames.get(box.frame_name(self.frame_state(subtitle)))
+            if frame is not None and frame.has_regions:
+                # The frame's click regions, mirrored as it is drawn; outside them, nothing.
+                what = timeline_frames.hit(frame, timeline_shapes.swap(rect), QPointF(y, x))
+                if what is None:
+                    continue
+                return subtitle, what
+            edge = self.edge_zone(rect, subtitle)
             if y - rect.top() < edge:
                 return subtitle, 'start'
             if rect.bottom() - y < edge:
@@ -461,12 +491,25 @@ class VerticalTimeline(QWidget):
 
     def _paint(self, painter, rect):
         painter.setRenderHint(QPainter.Antialiasing)
+        self._paint_rect = QRectF(rect)
         cfg = _timeline_config()
         duration = _duration()
         ruler, waveform, subs = self.lanes()
         top_time = max(0.0, self.time_at(rect.top()) - 1.0)
         bottom_time = min(duration, self.time_at(rect.bottom() + 1) + 1.0)
         end_y = self.y_at(duration)
+
+        # The timeline's background, and its ruler's band: tiles run down.
+        look = timeline_style.current()
+        background = look.color('background_color')
+        if background.alpha():
+            painter.fillRect(rect, background)
+        self._tile(painter, look['background_svg'], background, QRectF(rect.left(), rect.top(), self.width(), rect.height()))
+        band = look.color('ruler_background_color')
+        band_rect = QRectF(0.0, rect.top(), ruler[1], rect.height())
+        if band.alpha():
+            painter.fillRect(band_rect, band)
+        self._tile(painter, look['ruler_background_svg'], band, band_rect)
 
         # The lanes: the waveform's well and the subtitles' track.
         painter.fillRect(QRectF(waveform[0], TOP, waveform[1] - waveform[0], end_y - TOP), theme.color(QColor(0, 0, 0, 38)))
@@ -477,10 +520,11 @@ class VerticalTimeline(QWidget):
         if session.REPEAT_DURATION_BUFFER:
             start, stop = session.REPEAT_DURATION_BUFFER[0][0], session.REPEAT_DURATION_BUFFER[0][1]
             gradient = QLinearGradient(waveform[0], 0, subs[1], 0)
-            color = QColor(cfg.get('cursor_color', '#ccff0000'))
-            color.setAlpha(80)
+            look = timeline_style.current()
+            color = look.color('repeat_area_color')
             gradient.setColorAt(0, color)
-            color.setAlpha(0)
+            if look['repeat_area_gradient']:
+                color.setAlpha(0)
             gradient.setColorAt(1, color)
             painter.fillRect(QRectF(waveform[0], self.y_at(start), subs[1] - waveform[0], (stop - start) * self.pps), gradient)
 
@@ -496,101 +540,155 @@ class VerticalTimeline(QWidget):
         self._paint_tug(painter, cfg)
         self._paint_playhead(painter, cfg)
 
+    def _tile(self, painter, name, color, rect):
+        """A look's tile repeated down `rect` (as the timeline repeats it along
+        its time), as wide as the rectangle."""
+        drawn, width = timeline_shapes.natural_shape(self, name, color, rect.width())
+        if drawn is not None:
+            with timeline_shapes.mirrored(painter):
+                timeline_shapes.tile(painter, drawn, timeline_shapes.swap(rect), width)
+
+    def _across(self, painter, drawn, width, x, y):
+        """A timeline shape standing on its time (`width` wide, centred on
+        it) drawn lying across from (x, y), centred on y."""
+        with timeline_shapes.mirrored(painter, x, y):
+            timeline_shapes.draw(painter, drawn, -width / 2.0, 0.0)
+
     def show_onsets(self, cfg):
         """The timeline's onset markers: an alignment aid, so off while the
         video plays, as there."""
         return bool(cfg.get('show_onset_markers', False)) and not _is_playing(self.window_ref)
 
     def _paint_ruler(self, painter, cfg, top_time, bottom_time, ruler, grid_span):
-        text_color = theme.color(QColor(cfg.get('time_text_color', '#b8b8cee0')))
+        text_color = QColor(cfg.get('time_text_color', '#b8b8cee0'))
         tick_color = QColor(text_color)
         tick_color.setAlphaF(min(1.0, tick_color.alphaF() * 0.8))
         step = next((s for s in LABEL_STEPS if s * self.pps >= LABEL_SPACING), LABEL_STEPS[-1])
         minor = step / 5 if step >= 5 else (step / 2 if step >= 2 else (1.0 if self.pps >= 60 else None))
         if minor is not None and minor * self.pps < 5:
             minor = None
-        painter.setFont(QFont('Ubuntu Mono', 8))
+        look = timeline_style.current()
+        painter.setFont(look.ruler_font)
         metrics = painter.fontMetrics()
         right = ruler[1] - 4
+        # The look's ticks, from the ruler's edge into it.
+        major_shape = minor_shape = None
+        if look['ruler_ticks']:
+            length = look['ruler_tick_length']
+            shape_color = look.color('ruler_tick_color')
+            for key, tick_length in (('ruler_tick_svg', length), ('ruler_subtick_svg', length / 2.0)):
+                if look[key]:
+                    width = tick_length * timeline_svg.aspect(look[key])
+                    found = (timeline_shapes.shape(self, look[key], width, tick_length, shape_color), width)
+                    if key == 'ruler_tick_svg':
+                        major_shape = found
+                    else:
+                        minor_shape = found
+
+        def tick(y, found, inner):
+            if found is not None and found[0] is not None:
+                with timeline_shapes.mirrored(painter, right, y):
+                    painter.scale(1, -1)    # pointing into the ruler, to the left
+                    timeline_shapes.draw(painter, found[0], -found[1] / 2.0, 0.0)
+            else:
+                painter.setPen(QPen(tick_color, 1))
+                painter.drawLine(QPointF(right - inner, y), QPointF(right, y))
 
         if minor:
-            painter.setPen(QPen(tick_color, 1))
             first = int(top_time / minor)
             for i in range(first, int(bottom_time / minor) + 2):
-                y = self.y_at(i * minor)
-                painter.drawLine(QPointF(right - 3, y), QPointF(right, y))
+                tick(self.y_at(i * minor), minor_shape, 3)
 
         first = int(top_time // step) * step
         seconds = first
         while seconds <= bottom_time + step:
             y = self.y_at(seconds)
-            painter.setPen(QPen(tick_color, 1))
-            painter.drawLine(QPointF(right - 7, y), QPointF(right, y))
+            tick(y, major_shape, 7)
             painter.setPen(text_color)
-            label = utils.get_timeline_time_str(seconds)
+            label = _time_label(seconds)
             painter.drawText(QRectF(0, y - metrics.height() / 2, right - 10, metrics.height()),
                              Qt.AlignRight | Qt.AlignVCenter, label)
             seconds += step
 
         if not cfg.get('show_grid', False):
             return
-        painter.setPen(QPen(theme.ink(QColor(cfg.get('grid_color', '#336a7483'))), 1))
+        painter.setPen(QPen(QColor(cfg.get('grid_color', '#336a7483')), look['grid_width']))
         left, right = grid_span
+        line, line_width = timeline_shapes.natural_shape(self, look['grid_line_svg'], look.color('grid_color'), right - left)
+
+        def grid_at(y):
+            if line is not None:
+                self._across(painter, line, line_width, left, y)
+            else:
+                painter.drawLine(QPointF(left, y), QPointF(right, y))
+
         grid_type = cfg.get('grid_type', False)
         if grid_type == 'seconds':
             for second in range(int(top_time), int(bottom_time) + 2):
-                y = self.y_at(second)
-                painter.drawLine(QPointF(left, y), QPointF(right, y))
+                grid_at(self.y_at(second))
         elif grid_type == 'frames':
             framerate = float(session.VIDEO.get('framerate') or 25)
             if self.pps / framerate >= 1.0:     # frames under a pixel apart would only fill the lane
                 for frame in range(int(top_time * framerate), int(bottom_time * framerate) + 2):
-                    y = self.y_at(frame / framerate)
-                    painter.drawLine(QPointF(left, y), QPointF(right, y))
+                    grid_at(self.y_at(frame / framerate))
         elif grid_type == 'shot_changes':
             for cut in session.VIDEO.get('shot_changes') or []:
                 if top_time <= cut <= bottom_time:
-                    y = self.y_at(cut)
-                    painter.drawLine(QPointF(left, y), QPointF(right, y))
+                    grid_at(self.y_at(cut))
 
     def _paint_waveform(self, painter, cfg, top_time, bottom_time, lane):
+        """The waveform, as the timeline draws it, down the lane: a tile at a
+        time, copied (only those in the rows being painted)."""
         manager = getattr(self.timeline(), 'waveform_manager', None)
         if manager is None or getattr(manager, 'samples', None) is None:
             return
-        rate = session.VIDEO.get('samplerate', 48000) or 48000
-        start_sample = int(top_time * rate)
-        end_sample = int(bottom_time * rate)
-        mins, maxs, per_bucket, _chosen = manager.get_level(max(1, int(rate / self.pps)), start_sample, end_sample)
-        count = len(mins)
-        if not count:
+        look = timeline_style.current()
+        if not look['show_waveform']:
             return
-        center = (lane[0] + lane[1]) / 2
-        scale = (lane[1] - lane[0]) * 0.9 / 2
-        step = (per_bucket / rate) * self.pps
-        y = self.y_at((start_sample // per_bucket) * per_bucket / rate)
-        right_side = []
-        for i in range(count):
-            right_side.append(QPointF(center + float(maxs[i]) * scale, y))
-            y += step
-        left_side = []
-        for i in range(count - 1, -1, -1):
-            y -= step
-            left_side.append(QPointF(center + float(mins[i]) * scale, y))
-        path = QPainterPath()
-        path.addPolygon(QPolygonF(right_side + left_side))
-        path.closeSubpath()
-        painter.setPen(QPen(theme.configured(cfg.get('waveform_border_color', '#ff153450')), 1))
-        painter.setBrush(theme.configured(cfg.get('waveform_fill_color', '#cc153450')))
-        painter.drawPath(path)
+        first = int(self.y_at(top_time) // WAVEFORM_TILE)
+        last = int(self.y_at(bottom_time) // WAVEFORM_TILE)
+        for index in range(max(0, first), last + 1):
+            tile = self._waveform_tile(manager, look, index, lane)
+            if tile is not None:
+                painter.drawPixmap(QPointF(lane[0], index * WAVEFORM_TILE), tile)
+
+    def _waveform_tile(self, manager, look, index, lane):
+        """The waveform over canvas rows [index, index + 1) × WAVEFORM_TILE, as
+        wide as its lane, made once for what it is drawn from (as the
+        timeline's tiles are); None while there is no level to draw."""
+        rate = session.VIDEO.get('samplerate', 48000) or 48000
+        top = index * WAVEFORM_TILE
+        start, end = self.time_at(top), self.time_at(top + WAVEFORM_TILE)
+        _mins, _maxs, per_bucket, chosen = manager.get_level(max(1, int(rate / self.pps)), max(0, int(start * rate)),
+                                                             max(0, int(end * rate)))
+        if chosen is None:
+            return None
+        level = manager.levels[chosen]
+        per_bucket = level[2]
+        first = max(0, int(start * rate) // per_bucket - 2)
+        last = min(len(level[0]), int(end * rate) // per_bucket + 3)
+        if last - first < 2:
+            return None
+        width = lane[1] - lane[0]
+        scale = self.devicePixelRatioF()
+        key = (index, self.pps, rate, chosen, id(level[0]), width, look['waveform_scale'], look['waveform_fill_color'],
+               look['waveform_border_color'], look['waveform_border_width'], scale)
+        tile = self._waveform_tiles.get(key)
+        if tile is not None:
+            return tile
+        polygon = timeline_shapes.waveform_polygon(level, first, last, per_bucket / rate * self.pps, top - TOP,
+                                                   width / 2.0, width * look['waveform_scale'] / 100.0 / 2.0,
+                                                   vertical=True)
+        return self._waveform_tiles.put(key, timeline_shapes.waveform_tile(width, WAVEFORM_TILE, scale, polygon, look))
 
     def _onset_marker(self, cfg):
         """The timeline's onset glyph, turned: a thin line across the
         canvas with a soft glow fading down from it. Kept per width."""
         width = max(1, self.width())
         color = cfg.get('onset_marker_color', '#ffd9a0')
-        if self._onset_pixmap is not None and self._onset_pixmap[1:] == (width, color, theme.current()):
+        if self._onset_pixmap is not None and self._onset_pixmap[1:] == (width, color):
             return self._onset_pixmap[0]
-        base = theme.color(QColor(color))
+        base = QColor(color)
         glow, fade, line = QColor(base), QColor(base), QColor(base)
         glow.setAlpha(28)
         fade.setAlpha(0)
@@ -610,18 +708,26 @@ class VerticalTimeline(QWidget):
         painter.restore()
         painter.fillRect(QRectF(0.0, 0.0, float(width), 1.0), line)
         painter.end()
-        self._onset_pixmap = (pixmap, width, color, theme.current())
+        self._onset_pixmap = (pixmap, width, color)
         return pixmap
 
     def _paint_onsets(self, painter, cfg, top_time, bottom_time):
         onsets = getattr(self.timeline(), 'background_onsets', None)
         if onsets is None or not len(onsets):
             return
-        pixmap = self._onset_marker(cfg)
-        first = int(np.searchsorted(onsets, top_time - pixmap.height() / self.pps, side='left'))
+        look = timeline_style.current()
+        marker, marker_width = timeline_shapes.natural_shape(self, look['onset_marker_svg'],
+                                                             look.color('onset_marker_color'), self.width())
+        reach = marker_width if marker is not None else self._onset_marker(cfg).height()
+        first = int(np.searchsorted(onsets, top_time - reach / self.pps, side='left'))
         last = int(np.searchsorted(onsets, bottom_time, side='right'))
         for i in range(first, last):
-            painter.drawPixmap(QPointF(0.0, self.y_at(float(onsets[i]))), pixmap)
+            y = self.y_at(float(onsets[i]))
+            if marker is not None:      # the look's marker, from its time down
+                with timeline_shapes.mirrored(painter, 0.0, y):
+                    timeline_shapes.draw(painter, marker, 0.0, 0.0)
+            else:
+                painter.drawPixmap(QPointF(0.0, y), self._onset_marker(cfg))
 
     def _paint_speaker_tracks(self, painter, top_time, bottom_time):
         if not self.option('show_speaker_color'):
@@ -650,23 +756,30 @@ class VerticalTimeline(QWidget):
         if alignment is None:
             alignment = {'left': Qt.AlignLeft, 'center': Qt.AlignHCenter, 'right': Qt.AlignRight}.get(
                 (session.CONFIG.get('default_values') or {}).get('subtitle_alignment', 'left'), Qt.AlignLeft)
-        selected_fill = QColor(cfg.get('selected_subtitle_fill_color', '#cc3e5363'))
-        fill = QColor(cfg.get('subtitle_fill_color', '#c8dbe9'))
-        fill.setAlphaF(0.9)
-        text_color = QColor(cfg.get('subtitle_text_color', '#304251'))
-        selected_text_color = QColor(cfg.get('selected_subtitle_text_color', '#b8cee0'))
-        failed_color = theme.color(QColor('#9e1a1a'))
-        separator = QPen(QColor(cfg.get('subtitle_text_color', '#40304251')), 1)
+        look = timeline_style.current()
+        kinds = {}      # kind -> its box look's colours, font and corner
         quality = (session.CONFIG.get('quality_check') or {}).get('enabled', False)
         dubbing = (session.CONFIG.get('dubbing') or {}).get('enabled', False)
         translation = session.CONFIG.get('translation') or {}
         options = translation.get('engine_options', {}) if isinstance(translation, dict) else {}
         show_translations = options.get('show_translations', False)
         target_language = options.get('target_language', 'en-us')
-        font = QFont('Montserrat', 10)
         columns = self.speaker_columns()
 
         for subtitle in segments:
+            # Wholly outside what is being painted (while the video plays, a
+            # strip around the playhead): none of it shows, but for a dub
+            # clip, which can reach past its block.
+            if not self.block_rect(subtitle, columns).adjusted(-2, -2, 2, 2).intersects(self._paint_rect) \
+                    and not (dubbing and subtitle.get('dubbing')):
+                continue
+            kind = timeline_style.kind_of(subtitle)
+            if kind not in kinds:
+                box = look.box(kind)
+                kinds[kind] = (box.color('selected_fill_color'), box.color('fill_color'), box.color('text_color'),
+                               box.color('selected_text_color'), box.color('failed_check_text_color'),
+                               QPen(box.color('text_color'), 1), box.font, box['corner_radius'])
+            selected_fill, fill, text_color, selected_text_color, failed_color, separator, font, radius = kinds[kind]
             rect = self.block_rect(subtitle, columns)
             is_selected = subtitle is selected
             locked = subtitle.get('locked', False)
@@ -675,13 +788,19 @@ class VerticalTimeline(QWidget):
             if locked:
                 painter.setOpacity(0.18)
             painter.setPen(Qt.NoPen)
-            painter.setBrush(selected_fill if is_selected else fill)
-            painter.drawRoundedRect(rect, 3.0, 3.0)
+            # The state's frame, as the timeline draws it, mirrored; the plain block without one.
+            box = look.box(kind)
+            frame_name = box.frame_name(self.frame_state(subtitle))
+            speaker_hex = QColor(speaker_color).name(QColor.HexRgb) if show_color and speaker_color else None
+            if not timeline_shapes.frame(self, painter, frame_name, rect, selected_fill if is_selected else fill,
+                                         speaker_hex, vertical=True):
+                painter.setBrush(selected_fill if is_selected else fill)
+                painter.drawRoundedRect(rect, radius, radius)
 
             if subtitle.get('dubbing') and dubbing:
                 self._paint_clip(painter, cfg, subtitle, rect, speaker_color, locked, onsets)
 
-            if show_color and speaker_color:
+            if show_color and speaker_color and not timeline_frames.places_speaker(box):
                 # The timeline's stripe along a block's top, here along its
                 # left side: the side it starts from across the lane.
                 stripe = QPainterPath()
@@ -719,21 +838,26 @@ class VerticalTimeline(QWidget):
                 painter.restore()
 
             if not locked:
-                self._paint_edge(painter, subtitle, rect)
+                self._paint_edge(painter, subtitle, rect, radius)
             painter.restore()
 
             if locked:      # the timeline's badge, at full strength over the faded block
-                painter.save()
-                _paint_padlock(painter, rect.right() - 9.0, rect.top() + 8.0, theme.color(QColor(255, 255, 255, 230)))
-                painter.restore()
+                lock, lock_width = timeline_shapes.natural_shape(self, look.box(kind)['lock_svg'],
+                                                                 look.box(kind).color('selected_text_color'))
+                if lock is not None:    # upright: a glyph, not a part of the timeline turned
+                    timeline_shapes.draw(painter, lock, rect.right() - lock_width - 4.0, rect.top() + 4.0)
+                else:
+                    painter.save()
+                    _paint_padlock(painter, rect.right() - 9.0, rect.top() + 8.0)
+                    painter.restore()
 
     @staticmethod
     def clip_width(rect):
         return min(CLIP_WIDTH, rect.width() / 4)
 
-    def _paint_edge(self, painter, subtitle, rect):
-        """The timeline's edge handle on the hovered (or dragged) edge: the
-        block's outline there, white at the edge and fading inwards."""
+    def _paint_edge(self, painter, subtitle, rect, radius):
+        """The edges as the timeline draws them (interface.timeline_edges):
+        the hovered (or dragged) one, or both on every block."""
         if rect.height() <= EDGE_SHOWN:
             return
         side = None
@@ -741,38 +865,10 @@ class VerticalTimeline(QWidget):
             side = self.mode
         elif self.mode is None and self.hover is not None and self.hover[0] == id(subtitle):
             side = self.hover[1]
-        if side not in ('start', 'end'):
-            return
-        reach = float(EDGE)
-        r = 3.0
-        left, right = rect.left(), rect.right()
-        path = QPainterPath()
-        if side == 'start':
-            top = rect.top()
-            path.moveTo(left, top + reach)
-            path.lineTo(left, top + r)
-            path.arcTo(left, top, 2 * r, 2 * r, 180, -90)
-            path.lineTo(right - r, top)
-            path.arcTo(right - 2 * r, top, 2 * r, 2 * r, 90, -90)
-            path.lineTo(right, top + reach)
-            gradient = QLinearGradient(0, top, 0, top + reach)
-        else:
-            bottom = rect.bottom()
-            path.moveTo(left, bottom - reach)
-            path.lineTo(left, bottom - r)
-            path.arcTo(left, bottom - 2 * r, 2 * r, 2 * r, 180, 90)
-            path.lineTo(right - r, bottom)
-            path.arcTo(right - 2 * r, bottom - 2 * r, 2 * r, 2 * r, 270, 90)
-            path.lineTo(right, bottom - reach)
-            gradient = QLinearGradient(0, bottom, 0, bottom - reach)
-        edge = theme.color(QColor(255, 255, 255, 255))
-        gradient.setColorAt(0, edge)
-        edge = QColor(edge)
-        edge.setAlpha(0)
-        gradient.setColorAt(1, edge)
-        painter.setPen(QPen(QBrush(gradient), 2))
-        painter.setBrush(Qt.NoBrush)
-        painter.drawPath(path)
+        box = timeline_style.current().box(timeline_style.kind_of(subtitle))
+        for edge in ('start', 'end'):
+            if timeline_edges.shown(box, edge == side):
+                timeline_edges.paint(painter, box, rect, edge, radius, vertical=True)
 
     def _paint_clip(self, painter, cfg, subtitle, rect, speaker_color, locked, onsets):
         """The subtitle's dub clip, as the timeline draws it along a
@@ -838,7 +934,7 @@ class VerticalTimeline(QWidget):
             reach_to = min(max(cy, rect.top()), rect.bottom())
             painter.save()
             painter.setPen(Qt.NoPen)
-            painter.setBrush(QColor(cfg.get('subtitle_border_color', '#ff6a7483')))
+            painter.setBrush(timeline_style.current().box(timeline_style.kind_of(subtitle)).color('border_color'))
             painter.drawRoundedRect(QRectF(cx - radius, min(cy, reach_to) - radius, 2 * radius,
                                            abs(cy - reach_to) + 2 * radius), radius, radius)
             _paint_padlock(painter, cx, cy)
@@ -1027,8 +1123,14 @@ class VerticalTimeline(QWidget):
         columns = self.speaker_columns()
         span = self.block_rect(later, columns)
         y = self.y_at((earlier['end'] + later['start']) / 2)
+        look = timeline_style.current()
+        handle, handle_width = timeline_shapes.natural_shape(self, look['push_handle_svg'],
+                                                             look.color('selected_subtitle_arrow_color'), span.width())
+        if handle is not None:
+            self._across(painter, handle, handle_width, span.left(), y)
+            return
         painter.save()
-        painter.setPen(QPen(theme.ink(QColor(cfg.get('selected_subtitle_arrow_color', '#ff969696'))), 4, Qt.SolidLine, Qt.RoundCap))
+        painter.setPen(QPen(QColor(cfg.get('selected_subtitle_arrow_color', '#ff969696')), 4, Qt.SolidLine, Qt.RoundCap))
         step = (span.width() - 8) / 6
         x = span.left() + 8
         for _bar in range(6):
@@ -1040,19 +1142,47 @@ class VerticalTimeline(QWidget):
         position = session.SUBTITLE.position
         if position is None:
             return
-        color = QColor(cfg.get('cursor_color', '#ccff0000'))
+        look = timeline_style.current()
+        color = look.color('cursor_color')
         y = self.y_at(float(position))
         edge = self.lanes()[0][1]
-        painter.setPen(QPen(color, 2))
-        painter.drawLine(QPointF(edge - 4, y), QPointF(self.width(), y))
-        painter.setPen(Qt.NoPen)
-        painter.setBrush(color)
-        painter.drawPolygon(QPolygonF([QPointF(edge - 10, y - 5), QPointF(edge - 3, y), QPointF(edge - 10, y + 5)]))
+        width = look['cursor_width']
+        if look['cursor_glow']:
+            halo = QColor(color)
+            halo.setAlphaF(color.alphaF() * 0.25)
+            painter.setPen(QPen(halo, width + 2 * look['cursor_glow'], Qt.SolidLine, Qt.FlatCap))
+            painter.drawLine(QPointF(edge - 4, y), QPointF(self.width(), y))
+        line = None
+        if look['cursor_line_style'] == 'custom':
+            line = timeline_shapes.shape(self, look['cursor_line_svg'], width, self.width() - edge + 4, color)
+        if line is not None:
+            self._across(painter, line, width, edge - 4, y)
+        else:
+            style = {'dashed': Qt.DashLine, 'dotted': Qt.DotLine}.get(look['cursor_line_style'], Qt.SolidLine)
+            painter.setPen(QPen(color, width, style, Qt.FlatCap))
+            painter.drawLine(QPointF(edge - 4, y), QPointF(self.width(), y))
+        # The look's own head, pointing into the lanes from the ruler's edge;
+        # the marker of before for any other.
+        head = None
+        if look['cursor_head'] == 'custom':
+            size = look['cursor_head_size']
+            head_width = size * timeline_svg.aspect(look['cursor_head_svg'])
+            head = timeline_shapes.shape(self, look['cursor_head_svg'], head_width, size, color)
+        if head is not None:
+            self._across(painter, head, head_width, edge - size, y)
+        else:
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(color)
+            painter.drawPolygon(QPolygonF([QPointF(edge - 10, y - 5), QPointF(edge - 3, y), QPointF(edge - 10, y + 5)]))
 
     def playhead_strip(self, position):
         """The rows the playhead at `position` covers."""
         y = self.y_at(position)
-        return QRectF(0, y - 7, self.width(), 14).toAlignedRect()
+        look = timeline_style.current()
+        reach = max(7.0, look['cursor_width'] / 2.0 + look['cursor_glow'] + 2)
+        if look['cursor_head'] == 'custom':
+            reach = max(reach, look['cursor_head_size'] * timeline_svg.aspect(look['cursor_head_svg']) / 2.0 + 2)
+        return QRectF(0, y - reach, self.width(), 2 * reach).toAlignedRect()
 
     # -- mouse -----------------------------------------------------------------
 
@@ -1554,6 +1684,12 @@ class VerticalTimelinePanel(QWidget):
         self.zoom_out_button.setToolTip(_('vtimeline_panel.zoom_out'))
         self.zoom_in_button.setToolTip(_('vtimeline_panel.zoom_in'))
         self.update_labels()
+
+
+def _time_label(seconds):
+    """A ruler's label, in the format the timeline's look says."""
+    return timeline_style.time_label(seconds, timeline_style.current()['ruler_time_format'],
+                                     session.VIDEO.get('framerate') or 25)
 
 
 def _clock(seconds):

@@ -3,7 +3,7 @@
 While playing, playercontrols repaints a strip about 100 px wide around the
 cursor 30 times a second (_repaint_playhead_strip). All of paintEvent's Python
 holds the GIL the audio callback needs, so Timeline._paint_body narrows its
-loops to the dirty rect: the time labels, the waveform's buckets and the onset
+loops to the dirty rect: the time labels, the waveform's tiles and the onset
 markers are walked for the strip alone. The subtitles are walked for the whole
 viewport, though, not the strip: a dub band can reach past its subtitle's start
 and end, and a band crossing the strip from a subtitle outside it would be left
@@ -93,7 +93,9 @@ class RecordingPainter(QPainter):
 
     def drawPixmap(self, *args):
         if self.recording and drawn is not None:
-            drawn.append(('pixmap', QPointF(args[0]).x()))
+            image = next((a for a in args if hasattr(a, 'deviceIndependentSize')), None)
+            width = image.deviceIndependentSize().width() if image is not None else 0
+            drawn.append(('pixmap', QPointF(args[0]).x(), width))
         return super().drawPixmap(*args)
 
 
@@ -110,7 +112,7 @@ WAVEFORM_FILL = '#ff123456'
 SCROLL = 80175          # 801.75 s, between subtitles 400 and 401
 CURSOR = 806.25         # inside the viewport, between subtitles 402 and 403
 
-session.CONFIG = {'timeline': {'show_onset_markers': True, 'waveform_fill_color': WAVEFORM_FILL},
+session.CONFIG = {'timeline': {'show_onset_markers': True, 'style': {'timeline': {'waveform_fill_color': WAVEFORM_FILL}}},
                   'default_values': {'minimum_subtitle_width': 0.5},
                   'timeline_zoom': ZOOM, 'repeat_activated': False, 'playback_speed': 1.0}
 session.VIDEO = {'duration': DURATION, 'shot_changes': [], 'samplerate': SAMPLERATE}
@@ -136,7 +138,6 @@ buckets = int(DURATION * SAMPLERATE / BUCKET) + 1
 widget.waveform_manager.samples = np.zeros(1, np.int16)
 widget.waveform_manager.levels[BUCKET] = (np.full(buckets, -0.5, np.float32),
                                           np.full(buckets, 0.5, np.float32), BUCKET)
-bucket_px = BUCKET / SAMPLERATE * wpp
 # An onset every quarter second, an eighth of a second off the beat.
 onsets = np.arange(0.125, DURATION, 0.25).astype(np.float32)
 widget.background_onsets = onsets
@@ -201,12 +202,20 @@ def seconds_labelled(got):
     return sorted(labels[rest[0]] for kind, *rest in got if kind == 'text' and rest[0] in labels)
 
 
-def waveforms(got):
-    return [rest[0] for kind, *rest in got if kind == 'path' and rest[1] == WAVEFORM_FILL]
+def waveform_tiles(got):
+    """(left, right) of the waveform's tiles copied, left to right."""
+    return sorted((rest[0], rest[0] + rest[1]) for kind, *rest in got
+                  if kind == 'pixmap' and rest[1] == timeline.WAVEFORM_TILE)
 
 
 def onset_markers(got):
-    return sum(1 for kind, *rest in got if kind == 'pixmap')
+    return sum(1 for kind, *rest in got if kind == 'pixmap' and rest[1] != timeline.WAVEFORM_TILE)
+
+
+def tiles_over(left, right):
+    """The tiles a stretch of the timeline reaches into: (left, right) each."""
+    first, last = int(left // timeline.WAVEFORM_TILE), int((right - 1) // timeline.WAVEFORM_TILE)
+    return [(i * timeline.WAVEFORM_TILE, (i + 1) * timeline.WAVEFORM_TILE) for i in range(first, last + 1)]
 
 
 def onsets_within(left, right):
@@ -235,10 +244,7 @@ check('  the event is the viewport', event_spans, [(view_left, view_right)])
 check('  draws the subtitles in it, of the 800', subtitles_drawn(got), in_view)
 secs = check_labels(got, view_left, view_right)
 print(f'    labelled {len(secs)} seconds' + (f', {secs[0]} to {secs[-1]}' if secs else ''))
-waves = waveforms(got)
-check('  draws one waveform', len(waves), 1)
-check('  across the viewport, give or take a bucket', len(waves) == 1
-      and waves[0].left() <= view_left + bucket_px and waves[0].right() >= view_right - bucket_px, True)
+check('  the waveform: the tiles over the viewport, and no more', waveform_tiles(got), tiles_over(view_left, view_right))
 check('  marks the onsets that reach into it', onset_markers(got), onsets_within(view_left, view_right))
 
 print('a repaint of the playhead strip')
@@ -251,18 +257,24 @@ check('the strip reaches into subtitles 402 and 403 alone', subtitles_within(str
 check('and the markers of 5 onsets', onsets_within(strip_left, strip_right), 5)
 got = paint(strip)
 check('  the event is the strip', event_spans, [(strip_left, strip_right)])
-# Not 402 and 403 alone: a dub band can reach past its subtitle's start and
-# end (see the comment above visible_start_sec in _paint_body).
-check('  still draws every subtitle in the viewport, and no more', subtitles_drawn(got), in_view)
+# 402 and 403 alone: the subtitles wholly outside the strip are left out,
+# all of them, box and text.
+check('  draws the subtitles in it alone', subtitles_drawn(got), [402, 403])
 secs = check_labels(got, strip_left, strip_right)
 check('  labels 805 and 806 alone', secs, [805, 806])
-waves = waveforms(got)
-check('  draws one waveform', len(waves), 1)
-check('  across the strip alone, give or take a bucket', len(waves) == 1
-      and strip_left - 2 * bucket_px <= waves[0].left() <= strip_left + bucket_px
-      and strip_right - bucket_px <= waves[0].right() <= strip_right + 2 * bucket_px, True)
+check('  the waveform: the tiles over the strip alone', waveform_tiles(got), tiles_over(strip_left, strip_right))
 check('  marks only the onsets that reach into the strip', onset_markers(got), 5)
 
 print()
+print('a dub clip outside the strip')
+# A dub band can reach past its subtitle's start and end (see the comment
+# above visible_start_sec in _paint_body): a subtitle with one is still drawn.
+session.CONFIG['dubbing'] = {'enabled': True}
+session.SUBTITLE.segments[401]['dubbing'] = [{'path': '/nowhere/dub.wav'}]
+got = paint(strip)
+check('  the dubbed subtitle drawn too', sorted(set(subtitles_drawn(got))), [401, 402, 403])
+del session.SUBTITLE.segments[401]['dubbing']
+session.CONFIG['dubbing'] = {}
+
 print('FAILED:' if fails else 'ALL PASS', fails if fails else '')
 sys.exit(1 if fails else 0)

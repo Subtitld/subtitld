@@ -309,7 +309,12 @@ plain = pixel(two['start'], middle)
 check('the hovered edge is drawn white', whiteness(lit) > whiteness(plain) + 40, True)
 QTest.mouseMove(canvas, QPoint(int(middle), int(rect.bottom() - 4)))
 check('near the bottom: the end', canvas.hover, (id(two), 'end'))
-check('grabbing 20 px of the edge, as the timeline', lpv.EDGE, 20)
+from PySide6.QtCore import QRectF as _QRectF
+check('grabbing 20 px of the edge, as the timeline', canvas.edge_zone(_QRectF(0, 0, 50, 300), two), 20)
+from subtitld.modules import timeline_style as _timeline_style
+_timeline_style.set_value('edge_grab_width', 35, 'subtitle')
+check('as wide as the look says', canvas.edge_zone(_QRectF(0, 0, 50, 300), two), 35)
+_timeline_style.reset()
 
 print('where two subtitles meet, a drag moves both (the tug of war)')
 meeting = canvas.y_at(7.25)
@@ -551,6 +556,126 @@ hold_arrow(Qt.Key_Down)
 check('a subtitle selected: the arrow steps it instead', (len(shortcut_hits), near(session.SUBTITLE.selected['start'])),
       (1, near(7.5 + FRAME)))
 host.removeAction(down_action)
+
+print('the look\'s SVG frames and parts, as on the timeline turned')
+from subtitld.modules import timeline_style, timeline_svg
+shapes = Path(tempfile.mkdtemp())
+
+
+def svg_file(name, body, view='0 0 10 10'):
+    (shapes / name).write_bytes(f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{view}">{body}</svg>'.encode())
+    return timeline_svg.import_file(shapes / name)
+
+
+FRAME = svg_file('frame.svg', '<g data-x="stretch"><rect width="100" height="40" fill="#00ff00"/></g>'
+                 '<g data-x="left" data-hit="start"><rect width="12" height="40" fill="#ff0000"/></g>'
+                 '<g data-x="right" data-hit="end"><rect x="88" width="12" height="40" fill="#0000ff"/></g>'
+                 '<g data-x="center" data-y="top" data-hit="body"><rect x="40" width="20" height="10" fill="currentColor"/></g>',
+                 '0 0 100 40')
+SPEAKER = svg_file('speaker.svg', '<g data-x="stretch"><rect width="100" height="40" fill="currentColor"/></g>'
+                   '<g data-x="stretch" data-y="top"><rect width="100" height="6" fill="speakerColor"/></g>', '0 0 100 40')
+SOLID = svg_file('solid.svg', '<rect width="10" height="10" fill="currentColor"/>')
+NARROW = svg_file('narrow.svg', '<rect width="4" height="10" fill="currentColor"/>', '0 0 4 10')
+TILE = svg_file('tile.svg', '<rect width="10" height="10" fill="#ff0000"/><rect x="10" width="10" height="10" fill="currentColor"/>',
+                '0 0 20 10')
+LOCK = svg_file('lock.svg', '<rect width="10" height="10" fill="#ff8800"/>')
+left, right = canvas.lanes()[2]
+
+
+def look(timeline=None, **box):
+    timeline_style.set_values({'timeline': timeline or {}, 'boxes': {'subtitle': box}})
+    canvas.update()
+
+
+look(frame_svg=FRAME, fill_color='#ff123456')
+check('a frame, its start cap at the block\'s top, its end at the bottom, stretched between',
+      (pixel(5.1, middle), pixel(6.0, middle), pixel(6.9, middle)), ((255, 0, 0), (0, 255, 0), (0, 0, 255)))
+check('the frame\'s top along the block\'s left: its currentColor part there', pixel(6.0, left + 5), (0x12, 0x34, 0x56))
+check('its click regions: the start', canvas.hit(point(5.1))[1], 'start')
+check('the body region', canvas.hit(QPoint(int(left + 5), int(canvas.y_at(6.0))))[1], 'body')
+check('outside them, nothing', canvas.hit(point(6.0)), (None, None))
+host.timeline_widget.show_speaker_color = True
+look(frame_svg=SPEAKER, fill_color='#ff123456')
+speaker_rgb = QColor(session.SPEAKERS['A']['color']).getRgb()[:3]
+check('speakerColor along the left, where the frame\'s top is', (pixel(6.0, left + 2), pixel(6.0, middle)),
+      (speaker_rgb, (0x12, 0x34, 0x56)))
+session.SUBTITLE.selected = next(segment for segment in session.SUBTITLE.segments if segment['start'] <= 6.0 <= segment['end'])
+look(frame_svg=SPEAKER, frame_selected_svg=FRAME, fill_color='#ff123456')
+check('selected, a frame with no speakerColor: no stripe of the timeline\'s', pixel(6.0, left + 1) != speaker_rgb, True)
+session.SUBTITLE.selected = None
+look(frame_svg=FRAME, fill_color='#ff123456')
+check('frames without it in any state: the stripe', pixel(6.0, left + 1), speaker_rgb)
+host.timeline_widget.show_speaker_color = False
+
+ROUND = svg_file('round.svg', '<g><rect width="100" height="40" rx="10" fill="#00ff00"/></g>', '0 0 100 40')
+SLICED = svg_file('sliced.svg', '<g data-slice="10"><rect width="100" height="40" rx="10" fill="#00ff00"/></g>', '0 0 100 40')
+block_top = 5.0 + 2 / 40
+look(frame_svg=ROUND)
+check('turned and stretched whole, a corner runs far across the block', pixel(block_top, left + 20) == (0, 255, 0), False)
+look(frame_svg=SLICED)
+check('sliced, it stays round and small', (pixel(block_top, left + 20), pixel(block_top, left) == (0, 255, 0)),
+      ((0, 255, 0), False))
+
+session.CONFIG['timeline'].update({'show_grid': True, 'grid_type': 'seconds'})
+look({'grid_line_svg': NARROW, 'grid_color': '#ff00ffff'})
+check('grid lines of a shape, across, centred on their second', (pixel(10.0, middle), pixel(10.0 + 4 / 40, middle) == (0, 255, 255)),
+      ((0, 255, 255), False))
+session.CONFIG['timeline'].update({'show_grid': False})
+
+session.SUBTITLE.position = 10.0
+edge = canvas.lanes()[0][1]
+look({'cursor_head': 'custom', 'cursor_head_svg': SOLID, 'cursor_head_size': 10, 'cursor_color': '#ffff00ff'})
+check('a head of a shape, pointing in from the ruler', pixel(10.0, edge - 5), (255, 0, 255))
+session.SUBTITLE.position = 0.0
+
+look({'background_svg': TILE, 'background_color': '#ff0000ff'})
+check('a background tile, repeated down', (pixel(0.3, 2), pixel(0.55, 2)), ((255, 0, 0), (0, 0, 255)))
+
+look(lock_svg=LOCK)
+check('a padlock of a shape, upright, at a locked block\'s top right', pixel(12.0 + 8 / 40, right - 9 - 1), (255, 0x88, 0))
+timeline_style.reset()
+canvas.update()
+check('without an error', canvas._last_paint_error, None)
+
+print('the waveform, a tile at a time down the lane')
+from subtitld.interface.timeline import WaveformManager
+manager = WaveformManager()
+signal = np.full(60000, 0.8, np.float32)
+manager.samples = np.zeros(1, np.int16)
+manager.levels[512] = (-signal[::512].copy(), signal[::512].copy(), 512)
+manager._start_worker_if_missing = lambda key: None
+session.VIDEO['samplerate'] = 1000
+host.timeline_widget.waveform_manager = manager
+canvas._waveform_tiles.clear()
+canvas.grab()
+made = len(canvas._waveform_tiles)
+check('tiles made for the canvas', made > 0, True)
+wave_x = (canvas.lanes()[1][0] + canvas.lanes()[1][1]) / 2
+check('drawn', whiteness(pixel(3.0, wave_x)) < 120, True)
+check('painted again: the same tiles, none made', len(canvas._waveform_tiles), made)
+host.timeline_widget.waveform_manager = None
+session.VIDEO['samplerate'] = 48000
+
+print('a playback strip: the blocks in it alone')
+from subtitld.interface import timeline_shapes
+from subtitld.modules import timeline_themes
+reset_document()
+timeline_themes.apply('subtitld.classic')
+scroll.verticalScrollBar().setValue(0)
+session.SUBTITLE.position = 6.0
+framed = []
+original_frame = timeline_shapes.frame
+timeline_shapes.frame = lambda widget, painter, name, rect, *rest, **named: (
+    framed.append(round(canvas.time_at(rect.top()), 2)), original_frame(widget, painter, name, rect, *rest, **named))[1]
+canvas.repaint()
+every = len(framed)
+framed.clear()
+canvas.repaint(canvas.playhead_strip(6.0))
+timeline_shapes.frame = original_frame
+check('a full repaint frames every block in view; the strip, the one it crosses', (every > 1, framed), (True, [5.0]))
+timeline_style.reset()
+timeline_themes.forget_current()
+canvas.update()
 
 print()
 print('FAILED:' if fails else 'ALL PASS', fails if fails else '')

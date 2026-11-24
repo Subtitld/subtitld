@@ -65,6 +65,12 @@ def open_link(window, text):
     elif not links.for_site(link, service.base_url()):
         problem = _('open_link.other_site').format(
             site=html.escape(link['site']), ours=html.escape(urllib.parse.urlsplit(service.base_url()).netloc))
+    if link is not None and not problem and 'theme' in link:
+        # A timeline theme is the same wherever Subtitld is: offered in a dialog of its own.
+        from subtitld.interface import timeline_theme_browser
+
+        timeline_theme_browser.open_link(window, link['theme'])
+        return
     if editor_shown(window):
         left_panel.show_panel(window, TAB)
         if problem:
