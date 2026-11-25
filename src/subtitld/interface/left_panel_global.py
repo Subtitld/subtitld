@@ -14,7 +14,6 @@ from subtitld.interface import theme
 from subtitld.interface import translation
 from subtitld.interface.translation import _
 from subtitld.modules import appimage_integration
-from subtitld.modules import legacy
 from subtitld.modules import session
 from subtitld.modules.config import Config
 
@@ -241,37 +240,6 @@ def load(self):
     self.global_panel_general_appimage_menu.setVisible(appimage_integration.running_appimage() is not None)
     self.global_panel_general_appimage_menu.clicked.connect(lambda: global_panel_general_appimage_menu_clicked(self))
     self.left_panel_global_tab_general.layout().addWidget(self.global_panel_general_appimage_menu, 0, Qt.AlignLeft)
-
-    self.global_panel_general_save_as_line = QVBoxLayout()
-    self.global_panel_general_save_as_line.setContentsMargins(0, 0, 0, 0)
-    self.global_panel_general_save_as_line.setSpacing(5)
-
-    self.global_subtitlesvideo_save_as_label = QLabel(parent=self.left_panel_global_tab_general)
-    self.global_subtitlesvideo_save_as_label.setProperty('class', 'widget_label')
-    self.global_panel_general_save_as_line.addWidget(self.global_subtitlesvideo_save_as_label, 0, Qt.AlignLeft)
-
-    list_of_subtitle_extensions = []
-    for extformat in session.LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS:
-        list_of_subtitle_extensions.append(extformat + ' - ' + session.LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS[extformat]['description'])
-    self.global_subtitlesvideo_save_as_combobox = QComboBox(parent=self.left_panel_global_tab_general)
-    self.global_subtitlesvideo_save_as_combobox.setProperty('class', 'button')
-    self.global_subtitlesvideo_save_as_combobox.addItems(list_of_subtitle_extensions)
-    # A line before the player-era formats: there are twenty of them, they
-    # are all dead, and nobody looking for SRT should have to read past
-    # them. The chosen format is read from the text, so a separator — which
-    # cannot be picked — changes nothing else.
-    first_legacy = next((index for index, name in enumerate(session.LIST_OF_SUPPORTED_SUBTITLE_EXTENSIONS)
-                         if name in legacy.SESSION_FORMATS), None)
-    if first_legacy is not None:
-        self.global_subtitlesvideo_save_as_combobox.insertSeparator(first_legacy)
-    self.global_subtitlesvideo_save_as_combobox.activated.connect(lambda: global_subtitlesvideo_save_as_combobox_activated(self))
-    self.global_panel_general_save_as_line.addWidget(self.global_subtitlesvideo_save_as_combobox, 0, Qt.AlignLeft)
-
-    self.global_panel_general_save_copy = QCheckBox()
-    self.global_panel_general_save_copy.stateChanged.connect(lambda: global_panel_general_save_copy_changed(self))
-    self.global_panel_general_save_as_line.addWidget(self.global_panel_general_save_copy, 0, Qt.AlignLeft)
-
-    self.left_panel_global_tab_general.layout().addLayout(self.global_panel_general_save_as_line)
 
     # Audio-separator engine picker. Lists every provider registered for
     # the `audio.separate` task — always at least the built-in
@@ -506,12 +474,6 @@ def update(self):
     theme_combobox = self.global_panel_theme_combobox.combobox
     theme_combobox.setCurrentIndex(max(0, theme_combobox.findData(theme.setting())))
 
-    for item in [self.global_subtitlesvideo_save_as_combobox.itemText(i) for i in range(self.global_subtitlesvideo_save_as_combobox.count())]:
-        if session.CONFIG['default_values'] and item.startswith(session.CONFIG['default_values'].get('subtitle_format', 'USFX')):
-            self.global_subtitlesvideo_save_as_combobox.setCurrentText(item)
-            break
-
-    self.global_panel_general_save_copy.setChecked(session.CONFIG['default_values'].get('save_automatic_copy', False))
     appimage = appimage_integration.running_appimage()
     self.global_panel_general_appimage_menu.setChecked(appimage is not None and appimage_integration.registered_path() == appimage)
 
@@ -542,10 +504,6 @@ def left_panel_global_subtitle_alignment_activated(self):
     self.timeline_widget.subtitle_alignment = {'left' : Qt.AlignLeft, 'center' : Qt.AlignCenter, 'right' : Qt.AlignRight}[session.CONFIG['default_values'].get('subtitle_alignment', 'left')]
 
 
-def global_subtitlesvideo_save_as_combobox_activated(self):
-    session.CONFIG['default_values']['subtitle_format'] = self.global_subtitlesvideo_save_as_combobox.currentText().split(' ', 1)[0]
-
-
 def global_panel_general_appimage_menu_clicked(self):
     if self.global_panel_general_appimage_menu.isChecked():
         appimage_prompt.set_choice('yes')
@@ -556,8 +514,6 @@ def global_panel_general_appimage_menu_clicked(self):
         appimage_integration.unregister()
 
 
-def global_panel_general_save_copy_changed(self):
-    session.CONFIG['default_values']['save_automatic_copy'] = self.global_panel_general_save_copy.isChecked()
 
 
 def global_panel_general_minimum_duration_spinbox_changed(self):
@@ -593,8 +549,6 @@ def translate(self):
     self.usfx_include_processed_audio_checkbox.setText(_('global_panel.usfx_include_processed_audio'))
     self.usfx_include_original_video_checkbox.setText(_('global_panel.usfx_include_original_video'))
     self.usfx_include_themes_checkbox.setText(_('global_panel.usfx_include_themes'))
-    self.global_subtitlesvideo_save_as_label.setText(_('global_panel.default_format_save'))
-    self.global_panel_general_save_copy.setText(_('global_panel.save_copy'))
     self.global_panel_general_appimage_menu.setText(_('appimage.menu_entry'))
     self.global_panel_general_minimum_duration_label.setText(_('global_panel.minimum_duration'))
     self.global_panel_general_minimum_duration_seconds_label.setText(_('units.seconds'))
