@@ -29,6 +29,7 @@ import bisect
 import copy
 import json
 import os
+import re
 
 from bs4 import BeautifulSoup, NavigableString
 
@@ -38,6 +39,11 @@ from subtitld.modules import markup
 from subtitld.modules import position as subtitld_position
 from subtitld.modules.segment import EFFECTS, LEVELS, text_of, timed_pieces
 
+
+# Karaoke timing (modules.karaoke): USF has no word for a syllable's length,
+# so the codes stay in the text as they are written, where Subtitld reads
+# them back; drawn as formatting, the rest of a subtitle's codes go.
+_KARAOKE = re.compile(r'\\(?:kf|ko|k|K)\d+')
 
 # subtitld.cc names where a file came from in its own namespace:
 # <subtitldcc:origin share-id="Xk3pQ9aZ2bT" version="3"/> inside <metadata>,
@@ -879,7 +885,8 @@ class USFWriter():
         elements, a reading as <ruby> and <rt>, line breaks as <br/>, the
         position as "alignment" and, for a subtitle placed more finely than
         the nine places, USF's margins, relative-to and rotations beside it.
-        Other override codes it starts with stay as they are written."""
+        Other override codes it starts with, and karaoke codes anywhere,
+        stay as they are written."""
         if not value:
             return
         lead, rest = markup.split_lead(str(value))
@@ -891,7 +898,7 @@ class USFWriter():
         other = markup.with_alignment(lead, 2)
         if other:
             text_tag.append(NavigableString(other))
-        for group in markup.ruby_groups(markup.spans(rest)):
+        for group in markup.ruby_groups(markup.spans(rest, keep=_KARAOKE)):
             if group[0] == 'plain':
                 self._append_runs(usf, text_tag, group[1])
                 continue
