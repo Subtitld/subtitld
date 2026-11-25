@@ -553,6 +553,70 @@ def load(self):
         setattr(self, name, key)
     self.playercontrols_widget_left_top_line.layout().addWidget(self.start_end_moving_frame, 0, Qt.AlignTop)
 
+    # The music ↔ voice balance is one painted piece; the music and voice icons at its ends are keys that nudge it.
+    self.music_voice_separation_box = player_widgets.BalanceSlider('music_voice_separation_box')
+    self.music_voice_separation_slider = self.music_voice_separation_box
+    self.music_voice_separation_slider.valueChanged.connect(lambda: music_voice_separation_slider_changed(self))
+    self.music_voice_separation_music_icon = self.music_voice_separation_box.music_key
+    self.music_voice_separation_music_icon.clicked.connect(lambda: music_voice_separation_music_icon_clicked(self))
+    self.music_voice_separation_voice_icon = self.music_voice_separation_box.voice_key
+    self.music_voice_separation_voice_icon.clicked.connect(lambda: music_voice_separation_voice_icon_clicked(self))
+
+    def music_voice_separation_thread_finished(response):
+        pending_volume = session.VIDEO.pop('music_voice_separation_volume_pending', None)
+        if pending_volume is not None:
+            try:
+                response['volume'] = float(pending_volume)
+            except (TypeError, ValueError):
+                pass
+        session.VIDEO['music_voice_separation'] = response
+        self.preview_panel_player._audio_device.original_track.enabled = False
+
+        background_source = self.preview_panel_player._audio_device.load_audio(session.VIDEO['music_voice_separation']['background'])
+        background_clip = self.preview_panel_player._audio_device.load_clip(background_source)
+        self.preview_panel_player._audio_device.background_sound = self.preview_panel_player._audio_device.generate_track()
+        self.preview_panel_player._audio_device.background_sound.add_clip(background_clip)
+        self.preview_panel_player._audio_device.add_track(self.preview_panel_player._audio_device.background_sound)
+
+        vocals_source = self.preview_panel_player._audio_device.load_audio(session.VIDEO['music_voice_separation']['vocals'])
+        vocals_clip = self.preview_panel_player._audio_device.load_clip(vocals_source)
+        self.preview_panel_player._audio_device.vocals_sound = self.preview_panel_player._audio_device.generate_track()
+        self.preview_panel_player._audio_device.vocals_sound.add_clip(vocals_clip)
+        self.preview_panel_player._audio_device.add_track(self.preview_panel_player._audio_device.vocals_sound)
+
+        # Background/vocals tracks now exist — (re)apply any background/voice
+        # audio effects to them.
+        try:
+            self.preview_panel_player._audio_device.apply_effects()
+        except Exception:
+            pass
+
+        music_voice_separation_box_update(self)
+
+        # Re-run the timeline's onset detector now that the vocals
+        # track exists — it picks up far more plosives on vocals-only
+        # audio than on the full mix. Idempotent: if a vocals-onset
+        # cache from a prior session is already loaded, this just
+        # re-reads it.
+        try:
+            self.timeline_widget.on_vocals_separation_ready()
+        except Exception:
+            pass
+
+    def music_voice_separation_thread_original_extracted(response):
+        audio_source = self.preview_panel_player._audio_device.load_audio(response)
+        clip = self.preview_panel_player._audio_device.load_clip(audio_source)
+        self.preview_panel_player._audio_device.original_track = self.preview_panel_player._audio_device.generate_track()
+        self.preview_panel_player._audio_device.original_track.add_clip(clip)
+        self.preview_panel_player._audio_device.add_track(self.preview_panel_player._audio_device.original_track)
+        self.preview_panel_player.hand_sound_to_engine()
+
+    self.music_voice_separation_thread = MusicAudioExtractorThread(parent=self)
+    self.music_voice_separation_thread.response.connect(lambda response: music_voice_separation_thread_finished(response))
+    self.music_voice_separation_thread.original.connect(lambda response: music_voice_separation_thread_original_extracted(response))   
+
+    self.playercontrols_widget_left_top_line.layout().addWidget(self.music_voice_separation_box, 0, Qt.AlignTop)
+
     self.change_playback_speed = player_widgets.SlantFrameButton('right', 'playback_speed.svg')
     self.change_playback_speed.setObjectName('change_playback_speed')
     self.change_playback_speed.setCheckable(True)
@@ -721,70 +785,6 @@ def load(self):
 
     self.playercontrols_widget_right_top_line.layout().addWidget(self.repeat_playback, 0, Qt.AlignTop)
 
-    # The music ↔ voice balance is one painted piece; the music and voice icons at its ends are keys that nudge it.
-    self.music_voice_separation_box = player_widgets.BalanceSlider('music_voice_separation_box')
-    self.music_voice_separation_slider = self.music_voice_separation_box
-    self.music_voice_separation_slider.valueChanged.connect(lambda: music_voice_separation_slider_changed(self))
-    self.music_voice_separation_music_icon = self.music_voice_separation_box.music_key
-    self.music_voice_separation_music_icon.clicked.connect(lambda: music_voice_separation_music_icon_clicked(self))
-    self.music_voice_separation_voice_icon = self.music_voice_separation_box.voice_key
-    self.music_voice_separation_voice_icon.clicked.connect(lambda: music_voice_separation_voice_icon_clicked(self))
-
-    def music_voice_separation_thread_finished(response):
-        pending_volume = session.VIDEO.pop('music_voice_separation_volume_pending', None)
-        if pending_volume is not None:
-            try:
-                response['volume'] = float(pending_volume)
-            except (TypeError, ValueError):
-                pass
-        session.VIDEO['music_voice_separation'] = response
-        self.preview_panel_player._audio_device.original_track.enabled = False
-
-        background_source = self.preview_panel_player._audio_device.load_audio(session.VIDEO['music_voice_separation']['background'])
-        background_clip = self.preview_panel_player._audio_device.load_clip(background_source)
-        self.preview_panel_player._audio_device.background_sound = self.preview_panel_player._audio_device.generate_track()
-        self.preview_panel_player._audio_device.background_sound.add_clip(background_clip)
-        self.preview_panel_player._audio_device.add_track(self.preview_panel_player._audio_device.background_sound)
-
-        vocals_source = self.preview_panel_player._audio_device.load_audio(session.VIDEO['music_voice_separation']['vocals'])
-        vocals_clip = self.preview_panel_player._audio_device.load_clip(vocals_source)
-        self.preview_panel_player._audio_device.vocals_sound = self.preview_panel_player._audio_device.generate_track()
-        self.preview_panel_player._audio_device.vocals_sound.add_clip(vocals_clip)
-        self.preview_panel_player._audio_device.add_track(self.preview_panel_player._audio_device.vocals_sound)
-
-        # Background/vocals tracks now exist — (re)apply any background/voice
-        # audio effects to them.
-        try:
-            self.preview_panel_player._audio_device.apply_effects()
-        except Exception:
-            pass
-
-        music_voice_separation_box_update(self)
-
-        # Re-run the timeline's onset detector now that the vocals
-        # track exists — it picks up far more plosives on vocals-only
-        # audio than on the full mix. Idempotent: if a vocals-onset
-        # cache from a prior session is already loaded, this just
-        # re-reads it.
-        try:
-            self.timeline_widget.on_vocals_separation_ready()
-        except Exception:
-            pass
-
-    def music_voice_separation_thread_original_extracted(response):
-        audio_source = self.preview_panel_player._audio_device.load_audio(response)
-        clip = self.preview_panel_player._audio_device.load_clip(audio_source)
-        self.preview_panel_player._audio_device.original_track = self.preview_panel_player._audio_device.generate_track()
-        self.preview_panel_player._audio_device.original_track.add_clip(clip)
-        self.preview_panel_player._audio_device.add_track(self.preview_panel_player._audio_device.original_track)
-        self.preview_panel_player.hand_sound_to_engine()
-
-    self.music_voice_separation_thread = MusicAudioExtractorThread(parent=self)
-    self.music_voice_separation_thread.response.connect(lambda response: music_voice_separation_thread_finished(response))
-    self.music_voice_separation_thread.original.connect(lambda response: music_voice_separation_thread_original_extracted(response))   
-
-    self.playercontrols_widget_right_top_line.layout().addWidget(self.music_voice_separation_box, 0, Qt.AlignTop)
-
     # Add gap · duration · remove gap: one painted piece, the duration field hanging in it as a notch.
     self.gap_subtitle_duration = QDoubleSpinBox()
     self.gap_subtitle_duration.setObjectName('gap_subtitle_duration')
@@ -797,6 +797,17 @@ def load(self):
     self.gap_remove_subtitle_button.clicked.connect(lambda: gap_remove_subtitle_button_clicked(self))
 
     self.playercontrols_widget_right_top_line.layout().addWidget(self.gap_hbox, 0, Qt.AlignTop)
+
+    # Add a mark · add a title at the playhead (modules.cue_kinds), as the M and T keys on the timeline do.
+    self.add_mark_title_frame = player_widgets.ActionStrip('add_mark_title_frame', [
+        ('add_mark_button', 'add_mark_icon.svg', None),
+        ('add_title_button', 'add_title_icon.svg', None),
+    ])
+    self.add_mark_button = self.add_mark_title_frame.key('add_mark_button')
+    self.add_mark_button.clicked.connect(lambda: add_mark(self, session.SUBTITLE.position or 0))
+    self.add_title_button = self.add_mark_title_frame.key('add_title_button')
+    self.add_title_button.clicked.connect(lambda: add_title(self, session.SUBTITLE.position or 0))
+    self.playercontrols_widget_right_top_line.layout().addWidget(self.add_mark_title_frame, 0, Qt.AlignTop)
 
     self.add_remove_subtitle_frame = QWidget()
     self.add_remove_subtitle_frame.setLayout(QHBoxLayout())
@@ -2969,6 +2980,8 @@ def translate(self):
     self.playercontrols_play_from_last_start_button.setToolTip(_('playercontrols.play_from_last_start'))
     self.playercontrols_play_from_next_start_button.setToolTip(_('playercontrols.play_from_next_start'))
     self.repeat_playback.setToolTip(_('playercontrols.repeat_playback'))
+    self.add_mark_button.setToolTip(_('shortcuts.add_mark_to_current_position'))
+    self.add_title_button.setToolTip(_('shortcuts.add_title_to_current_position'))
     self.gap_add_subtitle_button.setToolTip(_('playercontrols.gap_add_subtitle'))
     self.gap_remove_subtitle_button.setToolTip(_('playercontrols.gap_remove_subtitle'))
     self.add_subtitle_button.setToolTip(_('playercontrols.add_subtitle'))
