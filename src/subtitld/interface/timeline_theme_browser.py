@@ -29,6 +29,8 @@ from subtitld.modules import theme_store
 LOOKS = ('', 'dark', 'light')
 SORTS = ('popular', 'new', 'top')
 PREVIEW_RATIO = 2 / 9                   # the pictures Subtitld draws of a theme are 9:2
+CHECK = 8                               # the squares under a transparent picture, and their colours
+CHECK_COLORS = (QColor('#6b6f75'), QColor('#55595e'))
 _previews = {}                          # (share_id, version) -> QPixmap, for as long as Subtitld runs
 remote = {}                             # share_id -> what subtitld.cc said of it last
 
@@ -67,6 +69,12 @@ class _Preview(QWidget):
         painter.setRenderHint(QPainter.SmoothPixmapTransform)
         rect = QRectF(self.rect())
         if self.pixmap is not None and not self.pixmap.isNull():
+            if self.pixmap.hasAlphaChannel():
+                # A subtitle or title theme's picture is the theme alone: what is transparent shows the
+                # checkerboard image editors use for transparency (subtitld.cc's pages do the same).
+                for row, y in enumerate(range(0, self.height(), CHECK)):
+                    for column, x in enumerate(range(0, self.width(), CHECK)):
+                        painter.fillRect(x, y, CHECK, CHECK, CHECK_COLORS[(row + column) % 2])
             painter.drawPixmap(rect, self.pixmap, QRectF(self.pixmap.rect()))
         elif self.colors:
             ground, *rest = self.colors
