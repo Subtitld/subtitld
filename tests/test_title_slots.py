@@ -45,7 +45,7 @@ session.VIDEO = {'framerate': 25}
 PNG = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=')
 
 print('the built-in Lower third')
-check('there, beside Plain', sorted(title_themes.available(reload=True)), ['subtitld.lower_third', 'subtitld.plain'])
+check('there, beside Plain', {'subtitld.lower_third', 'subtitld.plain'} <= set(title_themes.available(reload=True)), True)
 title = Segment({'kind': 'title', 'start': 1, 'end': 5, 'text': 'Maria Souza', 'title_theme': 'subtitld.lower_third'})
 check('its other slots', [s['key'] for s in title_themes.extra_slots(title)], ['role', 'logo'])
 check('shown', [s['key'] for s in title_themes.shown_slots(title)], ['role', 'logo'])

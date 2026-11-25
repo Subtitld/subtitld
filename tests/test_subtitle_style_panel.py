@@ -59,9 +59,10 @@ def labels():
 
 
 print('Classic, as its manifest lists it')
+listed = [panel.picker.itemData(i) for i in range(panel.picker.count())]
 check('the picker: every style, the current one picked',
-      ([panel.picker.itemData(i) for i in range(panel.picker.count())], panel.picker.currentData()),
-      (['subtitld.classic', 'test.neon'], 'subtitld.classic'))
+      (listed == list(styles.available()), listed[-1], panel.picker.currentData()),
+      (True, 'test.neon', 'subtitld.classic'))
 check('a control for each field', sorted(panel.controls), sorted(f['key'] for f in styles.get().fields))
 check('the fonts: a list', type(control('font_family')).__name__, 'QComboBox')
 check('the size: whole numbers in its range', (type(control('font_size')).__name__, control('font_size').minimum(),

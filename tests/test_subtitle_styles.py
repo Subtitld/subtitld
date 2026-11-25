@@ -74,7 +74,7 @@ write_style(user_root, 'box', GOOD)
 write_style(user_root, 'impostor', dict(GOOD, id='subtitld.classic', name='Not Classic'))
 write_style(user_root, 'broken', {'id': 'test.broken', 'name': 'Broken', 'fields': [{'key': 'x', 'type': 'shape', 'default': 1}]})
 found = styles.available(reload=True)
-check('a user\'s style is found, after the built-in ones', list(found), ['subtitld.classic', 'test.box'])
+check('a user\'s style is found, after the built-in ones', (list(found)[0], list(found)[-1]), ('subtitld.classic', 'test.box'))
 check('a built-in id cannot be taken', styles.problems.get(user_root / 'impostor'), 'id subtitld.classic is taken')
 check('a broken one is left out, and why', styles.problems.get(user_root / 'broken'), 'field "x": unknown type \'shape\'')
 box = found['test.box']

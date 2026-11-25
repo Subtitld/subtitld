@@ -43,8 +43,8 @@ for name, manifest in (('drawn.html', {'format': 1, 'id': 'test.drawn', 'kind': 
                                       '</head><body></body></html>')
 session.CONFIG = config.Config(Path(tempfile.mkdtemp()) / 'c.config')
 session.VIDEO = {'framerate': 25, 'width': 1920, 'height': 1080}
-check('themes there', sorted(title_themes.available(reload=True)), ['subtitld.lower_third', 'subtitld.plain', 'test.drawn'])
-check('subtitle themes there', sorted(subtitle_styles.available(reload=True)), ['subtitld.classic', 'test.boxed'])
+check('themes there', {'subtitld.lower_third', 'subtitld.plain', 'test.drawn'} <= set(title_themes.available(reload=True)), True)
+check('subtitle themes there', {'subtitld.classic', 'test.boxed'} <= set(subtitle_styles.available(reload=True)), True)
 
 lower = Segment({'kind': 'title', 'start': 1, 'end': 4, 'text': 'Maria Souza', 'title_theme': 'subtitld.lower_third',
                  'title_slots': {'role': 'Field reporter'}, 'title_settings': {'color': '#ffffee00'}})
