@@ -243,6 +243,15 @@
     const outro = job.outro ? job.duration - job.outro : Infinity;
     if (job.offset >= outro) {
       root.classList.add('theme-out');
+      // An intro the outro takes the place of (its element no longer names it) goes. Paused and seeked
+      // by hand above, Chromium keeps it running over the outro's: one whose keyframes give an end value
+      // (a `to`) would hold that value for the whole outro.
+      for (const animation of intro) {
+        const target = animation.effect && animation.effect.target;
+        if (!animation.animationName || !target) continue;
+        const names = getComputedStyle(target, animation.effect.pseudoElement || null).animationName.split(',');
+        if (!names.map(name => name.trim()).includes(animation.animationName)) animation.cancel();
+      }
       const before = new Set(intro);
       for (const animation of document.getAnimations()) {
         if (before.has(animation)) continue;
