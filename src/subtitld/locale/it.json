@@ -651,6 +651,8 @@
     "addons_dialog.installed_title": "Installato",
     "addons_dialog.installed_text": "{addon} installato.",
     "addons_dialog.install_error": "Installazione non riuscita",
+    "addons_dialog.packages_title": "Pacchetti necessari",
+    "addons_dialog.packages_text": "{addon} ha bisogno di questi pacchetti Haiku:\n\n{packages}\n\nInstallarli ora? Provengono da HaikuPorts o dal repository di Subtitld (hpkg.subtitld.org).",
     "addons_dialog.confirm_remove": "Rimuovi componente aggiuntivo",
     "addons_dialog.confirm_remove_text": "Rimuovere {addon} e i suoi dati?",
     "addons_dialog.empty.loading": "Caricamento…",

@@ -651,6 +651,8 @@
     "addons_dialog.installed_title": "Đã cài",
     "addons_dialog.installed_text": "Đã cài {addon}.",
     "addons_dialog.install_error": "Cài đặt thất bại",
+    "addons_dialog.packages_title": "Cần các gói",
+    "addons_dialog.packages_text": "{addon} cần các gói Haiku sau:\n\n{packages}\n\nCài đặt ngay? Chúng đến từ HaikuPorts hoặc kho của Subtitld (hpkg.subtitld.org).",
     "addons_dialog.confirm_remove": "Loại bỏ tiện ích",
     "addons_dialog.confirm_remove_text": "Loại bỏ {addon} cùng dữ liệu của nó?",
     "addons_dialog.empty.loading": "Đang tải…",

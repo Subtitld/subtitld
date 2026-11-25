@@ -651,6 +651,8 @@
     "addons_dialog.installed_title": "已安装",
     "addons_dialog.installed_text": "{addon} 已安装。",
     "addons_dialog.install_error": "安装失败",
+    "addons_dialog.packages_title": "需要软件包",
+    "addons_dialog.packages_text": "{addon} 需要以下 Haiku 软件包:\n\n{packages}\n\n现在安装吗?它们来自 HaikuPorts 或 Subtitld 的软件源 (hpkg.subtitld.org)。",
     "addons_dialog.confirm_remove": "移除插件",
     "addons_dialog.confirm_remove_text": "要移除 {addon} 及其数据吗？",
     "addons_dialog.empty.loading": "加载中…",

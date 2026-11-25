@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import json
 import logging
-import sys
 import threading
 from pathlib import Path
 from typing import Iterable
@@ -27,6 +26,7 @@ from PySide6.QtCore import QObject, Signal
 
 from subtitld.modules import session
 from subtitld.modules.addons import registry
+from subtitld.modules.addons.platforms import current_platform_key
 from subtitld.modules.addons.addon_provider import (
     AddonASRProvider,
     AddonAudioSeparatorProvider,
@@ -55,13 +55,6 @@ from subtitld.modules.addons.provider import (
 
 log = logging.getLogger(__name__)
 
-_PLATFORM_KEYS = {
-    'linux': 'linux',
-    'darwin': 'macos',
-    'win32': 'windows',
-}
-
-
 # The provider class for an add-on, by its primary task (`tasks[0]`). An
 # add-on whose primary task is not here is skipped; the add-ons dialog and
 # the installer read this too, so they don't offer what would be skipped.
@@ -78,10 +71,6 @@ ADDON_PROVIDER_CLASSES = {
 }
 
 
-def _current_platform_key() -> str:
-    return _PLATFORM_KEYS.get(sys.platform, sys.platform)
-
-
 def _resolve_executable(entry, exe_rel: str):
     """The add-on's executable, or None if it is not there.
 
@@ -92,7 +81,7 @@ def _resolve_executable(entry, exe_rel: str):
     exe_path = entry / exe_rel
     if exe_path.is_file():
         return exe_path
-    if _current_platform_key() == 'windows' and not exe_path.suffix.lower() == '.exe':
+    if current_platform_key() == 'windows' and not exe_path.suffix.lower() == '.exe':
         with_exe = exe_path.with_name(exe_path.name + '.exe')
         if with_exe.is_file():
             return with_exe
@@ -218,9 +207,9 @@ class AddonManager(QObject):
             # Verify platform support before instantiating.
             platforms = manifest.get('platforms')
             if isinstance(platforms, list) and platforms:
-                if _current_platform_key() not in platforms:
+                if current_platform_key() not in platforms:
                     log.info('AddonManager: %s declares platforms=%s — skipping on %s',
-                             addon_id, platforms, _current_platform_key())
+                             addon_id, platforms, current_platform_key())
                     continue
 
             exe_rel = manifest.get('executable')

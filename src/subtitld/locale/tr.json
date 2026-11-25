@@ -651,6 +651,8 @@
     "addons_dialog.installed_title": "Kuruldu",
     "addons_dialog.installed_text": "{addon} kuruldu.",
     "addons_dialog.install_error": "Kurulum başarısız",
+    "addons_dialog.packages_title": "Gereken paketler",
+    "addons_dialog.packages_text": "{addon} şu Haiku paketlerine ihtiyaç duyuyor:\n\n{packages}\n\nŞimdi yüklensin mi? HaikuPorts’tan veya Subtitld deposundan (hpkg.subtitld.org) gelirler.",
     "addons_dialog.confirm_remove": "Eklentiyi kaldır",
     "addons_dialog.confirm_remove_text": "{addon} eklentisi ve verileri kaldırılsın mı?",
     "addons_dialog.empty.loading": "Yükleniyor…",

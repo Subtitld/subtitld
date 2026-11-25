@@ -651,6 +651,8 @@
     "addons_dialog.installed_title": "インストール済み",
     "addons_dialog.installed_text": "{addon} をインストールしました。",
     "addons_dialog.install_error": "インストールに失敗しました",
+    "addons_dialog.packages_title": "必要なパッケージ",
+    "addons_dialog.packages_text": "{addon} には次の Haiku パッケージが必要です:\n\n{packages}\n\n今すぐインストールしますか? HaikuPorts または Subtitld のリポジトリ (hpkg.subtitld.org) から取得します。",
     "addons_dialog.confirm_remove": "アドオンを削除",
     "addons_dialog.confirm_remove_text": "{addon} とそのデータを削除しますか？",
     "addons_dialog.empty.loading": "読み込み中…",

@@ -651,6 +651,8 @@
     "addons_dialog.installed_title": "Установлено",
     "addons_dialog.installed_text": "{addon} установлено.",
     "addons_dialog.install_error": "Не удалось установить",
+    "addons_dialog.packages_title": "Нужны пакеты",
+    "addons_dialog.packages_text": "{addon} нужны эти пакеты Haiku:\n\n{packages}\n\nУстановить их сейчас? Они берутся из HaikuPorts или из репозитория Subtitld (hpkg.subtitld.org).",
     "addons_dialog.confirm_remove": "Удалить дополнение",
     "addons_dialog.confirm_remove_text": "Удалить {addon} и его данные?",
     "addons_dialog.empty.loading": "Загрузка…",
