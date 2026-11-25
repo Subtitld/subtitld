@@ -369,10 +369,6 @@ class Editor(QPlainTextEdit):
         self.updateRequest.connect(self._update_gutter)
         self.cursorPositionChanged.connect(self.refresh_selections)
         self.set_appearance(DEFAULT_FONT, DEFAULT_SIZE, DEFAULT_THEME)
-        theme.notifier.changed.connect(self._look_changed)
-
-    def _look_changed(self, _name):
-        self.set_appearance(*self.appearance)
 
     def set_appearance(self, family, size, theme_name):
         """Font and colour theme, as chosen in the tab's options."""
@@ -989,8 +985,11 @@ class PlainTextPanel(QWidget):
             self.editor.centerCursor()
 
     def _look_changed(self, _name):
+        # The editor re-coloured here, where it is not taken for an edit: an
+        # edit of a text never loaded (the tab not opened yet) would empty
+        # the subtitles.
+        self.apply_appearance()
         self.options_chip.setIcon(_options_icon())
-        self._fill_issue_list()
 
     # -- problems ------------------------------------------------------------
 
