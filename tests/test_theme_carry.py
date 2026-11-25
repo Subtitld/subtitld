@@ -167,6 +167,11 @@ try:
 except theme_store.StoreError:
     check('another id refused', True, True)
 
+def QLabel_class():
+    from PySide6.QtWidgets import QLabel
+    return QLabel
+
+
 print('the dialog')
 from subtitld.interface import missing_themes_dialog
 dialog = missing_themes_dialog.MissingThemesDialog(None, ['test.gone', theme_store.theme_id('ZZZZZZZZZZZ')])
@@ -174,6 +179,42 @@ check('only subtitld.cc\'s to download', dialog.downloadable, [theme_store.theme
 check('a Download button', dialog.reject_button.isHidden(), False)
 dialog = missing_themes_dialog.MissingThemesDialog(None, ['test.gone'])
 check('none to download: only OK', dialog.reject_button.isHidden(), True)
+
+
+def spin(seconds):
+    from PySide6.QtCore import QEventLoop, QTimer
+    loop = QEventLoop()
+    QTimer.singleShot(int(seconds * 1000), loop.quit)
+    loop.exec()
+
+
+class NamingClient(FakeClient):
+    def theme(self, wanted):
+        if wanted == 'ZZZZZZZZZZw':
+            raise theme_store.service.ApiError(404, 'not_found')
+        return {'version': 3, 'owner': 'someone', 'title': 'A much longer theme name, to wrap the line it is on'}
+
+
+theme_store.service.client = lambda: NamingClient()
+kept, gone = theme_store.theme_id('AbC-_dEf010'), theme_store.theme_id('ZZZZZZZZZZw')
+dialog = missing_themes_dialog.MissingThemesDialog(None, [kept, gone])
+dialog.show()
+spin(0.3)
+before = dialog.height()
+for _ in range(30):
+    if 'someone' in dialog.lines[kept].text() and gone not in dialog.downloadable:
+        break
+    spin(0.1)
+check('named as subtitld.cc names it', dialog.lines[kept].text().startswith('A much longer theme name'), True)
+check('and by whom', '@someone' in dialog.lines[kept].text(), True)
+check('one subtitld.cc no longer has: said so, not offered', (gone in dialog.lines[gone].text(),
+      'no longer' in dialog.lines[gone].text(), dialog.downloadable), (True, True, [kept]))
+dialog.status.setText('A status line, long enough to wrap onto a second line in a dialog this wide, at least')
+dialog.status.show()
+dialog._fit()
+check('grown to its text', dialog.height() > before and all(
+      label.height() >= label.heightForWidth(label.width()) for label in dialog.findChildren(QLabel_class())), True)
+dialog.close()
 
 print()
 print('ALL PASS' if not fails else f'{len(fails)} FAILED: {fails}')

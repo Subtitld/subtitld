@@ -34,11 +34,13 @@ remote = {}                             # share_id -> what subtitld.cc said of i
 
 
 class _Preview(QWidget):
-    """The theme's picture, as wide as the card and 9:2; its key colours in bands while there is none."""
+    """The theme's picture, as wide as the card and 9:2 (or `ratio`, height to width); its key colours in
+    bands while there is none."""
 
-    def __init__(self, colors=(), parent=None):
+    def __init__(self, colors=(), parent=None, ratio=PREVIEW_RATIO):
         super().__init__(parent)
         self.pixmap = None
+        self.ratio = ratio
         self.colors = [QColor(color) for color in colors]
         policy = QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         policy.setHeightForWidth(True)
@@ -48,7 +50,7 @@ class _Preview(QWidget):
         return True
 
     def heightForWidth(self, width):
-        return round(width * PREVIEW_RATIO)
+        return round(width * self.ratio)
 
     def sizeHint(self):
         return QSize(360, self.heightForWidth(360))
@@ -99,13 +101,15 @@ class ThemeCard(_AddonCard):
 
     `info`: title, owner (or author), look, counterpart, rating, downloads, url (its page on subtitld.cc),
     and state: 'install', 'update', 'use' or 'in_use'; with `options` (it has some), `removable` and
-    `update` (subtitld.cc has a newer version of an installed one). `act(info, action)`: 'install',
-    'update', 'use', 'remove' or 'options'."""
+    `update` (subtitld.cc has a newer version of an installed one). A subtitle or title theme's has `mark`
+    (said on the slanted label in the look's place: that it is animated) and `slots` (a title's texts).
+    `ratio`: its picture's height to its width. `act(info, action)`: 'install', 'update', 'use', 'remove'
+    or 'options'."""
 
     act = Signal(dict, str)
     COLOURS = {**_AddonCard.COLOURS, 'in_use': ('#33475a', '#4a6880')}
 
-    def __init__(self, info, colors=(), parent=None):
+    def __init__(self, info, colors=(), parent=None, ratio=PREVIEW_RATIO):
         QFrame.__init__(self, parent)              # the add-on card's drawing, not its add-on
         self.info = info
         self.state = info['state']
@@ -126,11 +130,12 @@ class ThemeCard(_AddonCard):
         band.setLayout(QHBoxLayout())
         band.layout().setContentsMargins(9, 0, 12, 0)
         band.layout().setSpacing(0)
-        self._task_text = QLabel(_(f"theme_store.look_{info['look']}") if info.get('look') else '')
+        mark = info.get('mark') or (_(f"theme_store.look_{info['look']}") if info.get('look') else '')
+        self._task_text = QLabel(mark)
         self._task_text.setProperty('class', 'addon_card_task')
         self._task_text.setContentsMargins(0, 0, 0, self.BAND - self.LABEL)
         band.layout().addWidget(self._task_text)
-        band.layout().addSpacing(24 if info.get('look') else 5)   # the label's padding and its slant
+        band.layout().addSpacing(24 if mark else 5)   # the label's padding and its slant
         title = _ElidedLabel(info['title'], least=60)
         title.setProperty('class', 'addon_card_title')
         band.layout().addWidget(title, 1)
@@ -141,12 +146,14 @@ class ThemeCard(_AddonCard):
         outer.addWidget(band)
 
         # --- The picture, edge to edge, and what it is ----------------------
-        self.preview = _Preview(colors)
+        self.preview = _Preview(colors, ratio=ratio)
         self.preview.setAccessibleName(_('theme_store.preview_of').format(name=info['title']))
         outer.addWidget(self.preview)
         about = [f"@{info['owner']}" if info.get('owner') else info.get('author', '')]
         if info.get('counterpart'):
             about.append(_('theme_store.both_looks'))
+        if info.get('slots'):
+            about.append(_('html_theme_store.slots').format(slots=', '.join(info['slots'])))
         if info.get('rating'):
             about.append(f"★ {info['rating']['average']:.1f}")
         if 'downloads' in info:
@@ -266,6 +273,7 @@ class ThemeBrowser(QWidget):
 
     installed = Signal()
     listed = Signal()
+    known = remote                      # what subtitld.cc said of each theme it listed, by share ID
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -466,7 +474,7 @@ class ThemeBrowser(QWidget):
 
     def _remember(self, infos):
         for info in infos:
-            remote[info['share_id']] = info
+            self.known[info['share_id']] = info
         self.listed.emit()
 
     def _listed(self, answer):
@@ -474,7 +482,7 @@ class ThemeBrowser(QWidget):
         results = answer.get('results') or []
         self._remember(results)
         # Installed ones have their card above, with the installed themes.
-        self._add([info for info in results if theme_store.state(info) == 'install'])
+        self._add([info for info in results if self._state(info) == 'install'])
         self.more.setEnabled(True)
         self.more.setVisible(bool(self.next_cursor))
         self._say_if_empty()
@@ -485,7 +493,7 @@ class ThemeBrowser(QWidget):
             return
         searching = self.search.text().strip() or self.look.combobox.currentData()
         self.status.setText(_('theme_store.no_matches' if searching else 'theme_store.all_installed'
-                              if remote else 'theme_store.empty'))
+                              if self.known else 'theme_store.empty'))
         self.status.show()
 
     def _one(self, info):
@@ -503,9 +511,15 @@ class ThemeBrowser(QWidget):
             self.status.setText(_('theme_store.unreachable').format(error=failure_text(error)))
         self.status.show()
 
+    def _state(self, info):
+        return theme_store.state(info)
+
+    def _card(self, info):
+        return ThemeCard(remote_info(info), (info.get('colors') or {}).values())
+
     def _add(self, infos):
         for info in infos:
-            card = ThemeCard(remote_info(info), (info.get('colors') or {}).values())
+            card = self._card(info)
             card.act.connect(self._act)
             self.list.addWidget(card)
             self.cards.append(card)
@@ -545,7 +559,7 @@ class ThemeBrowser(QWidget):
     def _changed(self):
         """An install: its card goes up to the installed themes (and its pair's with it)."""
         self.installed.emit()
-        infos = [card.info for card in self.cards if theme_store.state(card.info) == 'install']
+        infos = [card.info for card in self.cards if self._state(card.info) == 'install']
         if self.share_id:
             infos = [card.info for card in self.cards]
         self._clear()
