@@ -6,14 +6,16 @@ wrapping as the text does. A click goes into one, at the letter clicked,
 and chooses it; Enter or a click away keeps what was typed, Escape leaves it
 as it was, Tab goes on to the next (Shift+Tab, back). With Ctrl held, a
 click between two letters of a piece cuts it there instead, its time shared
-by letters; a click in the gap between two joins them. Under them, the
-chosen piece's start and end, in seconds from the subtitle's start, and how
-it lights up. Each change is one undo step.
+by letters; a click in the gap between two joins them. They fill the panel
+as the text would. Under them, the chosen piece's start and end, in seconds
+from the subtitle's start, how it lights up, and buttons that join it with
+the piece before or the next. Each change is one undo step.
 """
 
 from PySide6.QtCore import QEvent, QObject, QRectF, QSize, Qt, Signal
-from PySide6.QtGui import QColor, QCursor, QFont, QFontMetricsF, QLinearGradient, QPainter, QPen
-from PySide6.QtWidgets import QApplication, QComboBox, QDoubleSpinBox, QHBoxLayout, QLabel, QLineEdit, QVBoxLayout, QWidget
+from PySide6.QtGui import QColor, QCursor, QFont, QFontMetricsF, QPainter, QPen
+from PySide6.QtWidgets import (QApplication, QComboBox, QDoubleSpinBox, QFrame, QHBoxLayout, QLabel, QLineEdit,
+                               QPushButton, QScrollArea, QSizePolicy, QVBoxLayout, QWidget)
 
 from subtitld.interface import theme
 from subtitld.interface.translation import _
@@ -24,16 +26,13 @@ _GAP = 6            # between two fields, where a click joins them
 _HEIGHT = 24        # a field, as tall as the formatting bar's buttons
 _RADIUS = 3
 
-# The fields' own look (stylesheet.qss): sunken, darker at the top.
-_FIELD = (QColor('#324350'), QColor('#445b6c'))
-_FIELD_HOVER = (QColor('#3a4a58'), QColor('#4c6173'))
+# A piece is outlined, not filled, that it reads as words and not a button:
+# its outline brighter under the pointer, brightest chosen.
+_BORDER = QColor(184, 206, 224, 70)
+_BORDER_HOVER = QColor(184, 206, 224, 150)
+_BORDER_CHOSEN = QColor(255, 255, 255, 210)
 _TEXT = QColor('#b8cee0')
 _TEXT_CHOSEN = QColor('#ffffff')
-
-
-def _field_stops(stops):
-    """A field's gradient in the current look (darker at the top in both)."""
-    return tuple(theme.surface(color) for color in stops)
 
 # How a piece lights up, as the menu lists it; '' the style's way.
 EFFECTS = ('', *segments.EFFECTS)
@@ -49,12 +48,15 @@ def _shown(text):
 
 
 class CtrlWatch(QObject):
-    """While started, tells `changed(held)` each time Ctrl is pressed or let
-    go, whichever widget has the keyboard."""
+    """While started, tells `changed(held)` each time Ctrl (or another of
+    `keys`) is pressed or let go, whichever widget has the keyboard; `key`
+    is the one it was."""
 
-    def __init__(self, changed, parent=None):
+    def __init__(self, changed, parent=None, keys=(Qt.Key_Control,)):
         super().__init__(parent)
         self.changed = changed
+        self.keys = keys
+        self.key = None
         self.on = False
 
     def start(self):
@@ -68,8 +70,9 @@ class CtrlWatch(QObject):
             self.on = False
 
     def eventFilter(self, watched, event):
-        if (event.type() in (QEvent.KeyPress, QEvent.KeyRelease) and event.key() == Qt.Key_Control
+        if (event.type() in (QEvent.KeyPress, QEvent.KeyRelease) and event.key() in self.keys
                 and not event.isAutoRepeat()):
+            self.key = event.key()
             self.changed(event.type() == QEvent.KeyPress)
         return False
 
@@ -296,13 +299,10 @@ class _Chips(QWidget):
             if number == self.editing:
                 continue
             chosen = number == self.chosen
-            lit = chosen or (self.hover is not None and self.hover[1] == number and self.hover[0] != 'gap')
-            shade = QLinearGradient(rect.topLeft(), rect.bottomLeft())
-            for stop, color in zip((0, 1), _field_stops(_FIELD_HOVER if lit else _FIELD)):
-                shade.setColorAt(stop, color)
-            painter.setPen(Qt.NoPen)
-            painter.setBrush(shade)
-            painter.drawRoundedRect(rect, _RADIUS, _RADIUS)
+            lit = self.hover is not None and self.hover[1] == number and self.hover[0] != 'gap'
+            painter.setPen(QPen(theme.ink(_BORDER_CHOSEN if chosen else _BORDER_HOVER if lit else _BORDER), 1))
+            painter.setBrush(Qt.NoBrush)
+            painter.drawRoundedRect(rect.adjusted(0.5, 0.5, -0.5, -0.5), _RADIUS, _RADIUS)
             painter.setPen(theme.ink(_TEXT_CHOSEN if chosen else _TEXT))
             text = ''.join(character for _index, character in _shown(self.pieces[number]['text']))
             painter.drawText(rect.adjusted(_PAD, 0, -_PAD + 1, 0), Qt.AlignVCenter | Qt.AlignLeft, text)
@@ -332,8 +332,10 @@ class TimedTextStrip(QWidget):
         self.chosen = 0
         self._shown = None         # the id of the subtitle shown, its first piece chosen when another is
         self._subtitle = None      # the subtitle shown, which a piece typed in keeps its words in
+        # As tall as the panel lets it be, as the text it stands for.
+        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(6, 2, 6, 6)
+        layout.setContentsMargins(0, 0, 0, 6)
         layout.setSpacing(6)
 
         self.chips = _Chips(self)
@@ -341,10 +343,23 @@ class TimedTextStrip(QWidget):
         self.chips.cut.connect(self._cut)
         self.chips.joined.connect(self._join)
         self.chips.typed.connect(self._type)
-        layout.addWidget(self.chips)
+        # The pieces from the top, scrolled when there are more than fit.
+        holder = QWidget()
+        holder.setObjectName('timed_text_chips_holder')
+        holder_layout = QVBoxLayout(holder)
+        holder_layout.setContentsMargins(8, 8, 8, 8)
+        holder_layout.addWidget(self.chips)
+        holder_layout.addStretch(1)
+        self.area = QScrollArea()
+        self.area.setObjectName('timed_text_chips_area')
+        self.area.setFrameShape(QFrame.NoFrame)
+        self.area.setWidgetResizable(True)
+        self.area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.area.setWidget(holder)
+        layout.addWidget(self.area, 1)
 
         row = QHBoxLayout()
-        row.setContentsMargins(0, 0, 0, 0)
+        row.setContentsMargins(6, 0, 6, 0)
         row.setSpacing(6)
         self.start_label, self.end_label, self.effect_label = QLabel(), QLabel(), QLabel()
         self.start_spin, self.end_spin = QDoubleSpinBox(), QDoubleSpinBox()
@@ -368,6 +383,14 @@ class TimedTextStrip(QWidget):
         self.effect_label.setBuddy(self.effect_combo)
         row.addWidget(self.effect_label)
         row.addWidget(self.effect_combo, 1)
+        row.addSpacing(6)
+        self.join_back_button, self.join_next_button = QPushButton(), QPushButton()
+        for button, icon, way in ((self.join_back_button, 'merge_back_selected_subtitle_icon.svg', -1),
+                                  (self.join_next_button, 'merge_next_selected_subtitle_icon.svg', 0)):
+            button.setProperty('class', 'subtitle_formatting_button')
+            button.setIcon(theme.icon(icon))
+            button.clicked.connect(lambda _checked=False, way=way: self._join(self.chosen + way))
+            row.addWidget(button)
         layout.addLayout(row)
 
         self.retranslate()
@@ -379,6 +402,8 @@ class TimedTextStrip(QWidget):
         self.start_spin.setToolTip(_('timed_text.start_tip'))
         self.end_spin.setToolTip(_('timed_text.end_tip'))
         self.effect_label.setText(_('timed_text.effect'))
+        self.join_back_button.setToolTip(_('timed_text.join_back'))
+        self.join_next_button.setToolTip(_('timed_text.join_next'))
         for number, effect in enumerate(EFFECTS):
             self.effect_combo.setItemText(number, _(f'timed_text.effect_{effect or "style"}'))
 
@@ -409,6 +434,8 @@ class TimedTextStrip(QWidget):
         self.effect_combo.blockSignals(True)
         self.effect_combo.setCurrentIndex(EFFECTS.index(effect) if effect in EFFECTS else 0)
         self.effect_combo.blockSignals(False)
+        self.join_back_button.setEnabled(self.chosen > 0)
+        self.join_next_button.setEnabled(self.chosen + 1 < len(pieces))
 
     def choose(self, number):
         """Make piece `number` the chosen one."""
@@ -451,8 +478,9 @@ class TimedTextStrip(QWidget):
             self._done()
 
     def _join(self, number):
+        """Piece `number` joined with the next."""
         subtitle = self.segment()
-        if subtitle is None:
+        if subtitle is None or not 0 <= number < len(segments.timed_pieces(subtitle)) - 1:
             return
         history.history_append()
         if segments.join_pieces(subtitle, number):

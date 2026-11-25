@@ -29,7 +29,13 @@ Commands come on stdin, a JSON line each:
 
     {"cmd": "template", "path": "/…/style.html"}       load a style
     {"cmd": "render", "id": 7, "size": [w, h], "page": {…}, "urgent": false}
+    {"cmd": "render", …, "template": "/…/theme.html"}  one in a template of its own
     {"cmd": "quit"}
+
+A job may name a template other than the style's (a title's theme,
+modules.title_themes): it is rendered in views of that template's, two of
+them made the first time it is asked for, one kept for its urgent jobs; a
+few such templates are kept, the one asked for longest ago given up first.
 
 Results go to stdout: a JSON line, then the pixels it announces (`bytes`
 of premultiplied ARGB32, w × h, rows w × 4 bytes long):
@@ -49,6 +55,8 @@ log = logging.getLogger(__name__)
 
 STRIP = 12                    # host.js: the strip under the stage with the job's number
 VIEWS = 3
+OTHER_VIEWS = 2               # views of a template a job names (a title theme's)
+OTHER_TEMPLATES = 3           # such templates kept at once
 NO_SANDBOX_EXIT = 75          # Chromium's sandbox cannot start here: start the helper without it
 # Qt's scaling, kept out of the helper: the sizes it gets are device pixels
 # already, and at another scale it grabs its view at that scale, the crop of
@@ -171,8 +179,8 @@ def main():
             super().__init__()
             self.roots = (os.path.realpath(session.PATH_SUBTITLD),)
 
-        def allow(self, folder):
-            self.roots = (os.path.realpath(session.PATH_SUBTITLD), os.path.realpath(folder))
+        def allow(self, *folders):
+            self.roots = (os.path.realpath(session.PATH_SUBTITLD),) + tuple(os.path.realpath(f) for f in folders)
 
         def interceptRequest(self, info):
             url = info.requestUrl()
@@ -302,20 +310,31 @@ def main():
             super().__init__()
             self.pending = []
             self.ever_ready = False
+            self.template = None            # the style's
             self.views = [View(self) for _ in range(VIEWS)]
+            self.others = {}                # another template a job named -> its views, the latest asked last
             self.command.connect(self.on_command)
+
+        def allow(self):
+            interceptor.allow(*[os.path.dirname(path) for path in [self.template, *self.others] if path])
 
         def on_command(self, message):
             if message is None or message.get('cmd') == 'quit':
                 QApplication.quit()
             elif message.get('cmd') == 'template':
                 # Jobs for the style before are of no use now.
-                self.pending.clear()
-                interceptor.allow(os.path.dirname(message['path']))
+                self.pending = [job for job in self.pending if job.get('template')]
+                self.template = message['path']
+                self.allow()
                 for view in self.views:
                     view.job = None
                     view.load(message['path'])
             elif message.get('cmd') == 'render':
+                template = message.get('template')
+                if template and template != self.template:
+                    self.views_of(template)
+                else:
+                    message.pop('template', None)
                 if message.get('urgent'):
                     # After the urgent ones already waiting, before the rest.
                     at = next((i for i, job in enumerate(self.pending) if not job.get('urgent')), len(self.pending))
@@ -324,18 +343,42 @@ def main():
                     self.pending.append(message)
                 self.schedule()
 
+        def views_of(self, template):
+            """The views of a template a job names: made and loaded the first
+            time, the template asked for longest ago given up for it."""
+            views = self.others.pop(template, None)
+            if views is None:
+                if len(self.others) >= OTHER_TEMPLATES:
+                    oldest = next(iter(self.others))
+                    for view in self.others.pop(oldest):
+                        view.view.deleteLater()
+                    self.pending = [job for job in self.pending if job.get('template') != oldest]
+                views = [View(self) for _ in range(OTHER_VIEWS)]
+                self.others[template] = views
+                self.allow()
+                for view in views:
+                    view.load(template)
+            self.others[template] = views
+            return views
+
         def schedule(self):
-            for index, view in enumerate(self.views):
-                if not self.pending:
-                    return
-                if not view.ready or view.job is not None:
-                    continue
-                if index == 0:
-                    # Kept for urgent jobs.
-                    if self.pending[0].get('urgent'):
-                        view.start(self.pending.pop(0))
-                else:
-                    view.start(self.pending.pop(0))
+            for template, views in [(None, self.views), *self.others.items()]:
+                waiting = [job for job in self.pending if job.get('template') == template]
+                for index, view in enumerate(views):
+                    if not waiting:
+                        break
+                    if not view.ready or view.job is not None:
+                        continue
+                    if index == 0:
+                        # Kept for urgent jobs.
+                        if waiting[0].get('urgent'):
+                            job = waiting.pop(0)
+                            self.pending.remove(job)
+                            view.start(job)
+                    else:
+                        job = waiting.pop(0)
+                        self.pending.remove(job)
+                        view.start(job)
 
     from PySide6.QtCore import qInstallMessageHandler
     qInstallMessageHandler(console.qt_message)

@@ -16,11 +16,14 @@ from subtitld.interface import theme
 from subtitld.interface import utils
 from subtitld.interface import left_panel
 from subtitld.interface.scope_selector import ScopeFooter
+from subtitld.interface.speaker_look_panel import SpeakerLookPanel, per_speaker_fields
 from subtitld.interface.translation import _
 
+from subtitld.modules import cue_kinds
 from subtitld.modules import session
 from subtitld.modules import subtitles
 from subtitld.modules import history
+from subtitld.modules import subtitle_styles
 from subtitld.modules.face_detection import FaceDetector, Unavailable as FaceDetectionUnavailable
 from subtitld.modules.signals import SIGNALS as _SESSION_SIGNALS
 
@@ -1105,6 +1108,15 @@ class speakers_list_item(QWidget):
         widget.dubbing_container.setProperty('is_expanded', True)
         widget.dubbing_line.set_content(widget.dubbing_container)
 
+        # Their own look, where the project's subtitle style lets a speaker
+        # have one (modules.subtitle_styles: per_speaker fields).
+        widget.look_line = CollapsibleSection(parent=widget)
+        widget.look_line.setObjectName('speaker_option_section')
+        widget.options.layout().addWidget(widget.look_line)
+        widget.look_panel = SpeakerLookPanel(widget.speaker_name)
+        widget.look_panel.changed.connect(lambda: _speaker_look_changed(widget))
+        widget.look_line.set_content(widget.look_panel)
+
         widget.update()
         widget.translate()
 
@@ -1149,6 +1161,7 @@ class speakers_list_item(QWidget):
 
     def translate(widget):
         widget.dubbing_line.set_title(_('left_panel.tab_dubbing'))
+        widget.look_line.set_title(_('left_panel_speakers.look'))
         widget.dubbing_container.combobox.setLabel(_('subtitles_panel_widget_dubbing.dubbing_engine'))
         widget.dubbing_container.combobox.combobox.setPlaceholderText(_('subtitles_panel_widget_dubbing.no_engine_selected'))
         for i in range(widget.dubbing_container.content.count()):
@@ -1160,8 +1173,8 @@ class speakers_list_item(QWidget):
         widget.header.set_color(color)
         widget.header.set_avatar(widget.speaker_data.get('image', None), color)
 
-        mine = [s for s in session.SUBTITLE.segments
-                if s.get('speaker', 'A') == widget.speaker_name]
+        spoken = cue_kinds.subtitles(session.SUBTITLE.segments)
+        mine = [s for s in spoken if s.get('speaker', 'A') == widget.speaker_name]
         widget.unused_fade.setEnabled(not mine)
         widget.setProperty('unused', not mine)
         widget.header.set_timeline(
@@ -1170,7 +1183,7 @@ class speakers_list_item(QWidget):
         )
 
         speaker_time = round(sum(s['end'] - s['start'] for s in mine), 3)
-        total_speaking_time = sum(s['end'] - s['start'] for s in session.SUBTITLE.segments)
+        total_speaking_time = sum(s['end'] - s['start'] for s in spoken)
         # `total_speaking_time` is 0 when the cue list is empty or every
         # cue is zero-duration (some providers' placeholder finish callback
         # emits a single ``start=end=0.0`` segment until real per-utterance
@@ -1186,6 +1199,10 @@ class speakers_list_item(QWidget):
             f'{_format_speaker_time(speaker_time)} <b>({percentage}%)</b>')
 
         widget.dubbing_line.setVisible(session.CONFIG['dubbing'].get('enabled', False))
+        has_look = bool(per_speaker_fields())
+        widget.look_line.setVisible(has_look)
+        if has_look:
+            widget.look_panel.build()
 
         if session.CONFIG['dubbing'].get('enabled', False):
             for i in range(widget.dubbing_container.content.count()):
@@ -1434,6 +1451,14 @@ def _repolish_card(card):
         target.update()
 
 
+def _speaker_look_changed(widget):
+    """A speaker's own look changed: their subtitles drawn again."""
+    session.set_unsaved(True)
+    window = widget.window()
+    if hasattr(window, 'preview_panel_player'):
+        window.preview_panel_player.update()
+
+
 def change_color_button_clicked(widget):
     color_dialog = QColorDialog(session.SPEAKERS[widget.speaker_name]['color'], widget)
     color = color_dialog.getColor()
@@ -1505,7 +1530,7 @@ def highlight_speaker_for_selection(window):
 
 def remove_button_clicked(widget):
     speaker_name = widget.speaker_name
-    used_segments = [s for s in session.SUBTITLE.segments if s.get('speaker', 'A') == speaker_name]
+    used_segments = [s for s in cue_kinds.subtitles(session.SUBTITLE.segments) if s.get('speaker', 'A') == speaker_name]
     other_speakers = [name for name in session.SPEAKERS.keys() if name != speaker_name]
 
     if len(session.SPEAKERS) < 2:
@@ -1573,6 +1598,7 @@ def rename_button_clicked(widget):
     history.history_append()
     old_speaker = session.SPEAKERS[widget.speaker_name]
     session.SPEAKERS[new_name] = old_speaker
+    subtitle_styles.rename_speaker(widget.speaker_name, new_name)
 
     for segment in session.SUBTITLE.segments:
         if segment.get('speaker') == widget.speaker_name:
@@ -1673,7 +1699,7 @@ def left_panel_speakers_remove_speaker_button_clicked(self):
         return
     for item in selected_items:
         speaker_name = item.text()
-        if any(subtitle.get('speaker', 'A') == speaker_name for subtitle in session.SUBTITLE.segments):
+        if any(subtitle.get('speaker', 'A') == speaker_name for subtitle in cue_kinds.subtitles(session.SUBTITLE.segments)):
             continue
 
 

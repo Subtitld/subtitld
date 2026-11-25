@@ -11,6 +11,7 @@ from subtitld.interface import subtitle_renderer
 from subtitld.interface import utils
 from subtitld.interface.translation import _
 
+from subtitld.modules import cue_kinds
 from subtitld.modules import console
 from subtitld.modules import history
 from subtitld.modules import markup
@@ -135,9 +136,18 @@ class PlayerWidget(QWidget):
                     ratio = widget.devicePixelRatioF() if widget is not None else 1.0
                     renderer.set_size(video_rect.width() * ratio, video_rect.height() * ratio)
                     at = outer._picture_time()
-                    showing = next((item for item in session.SUBTITLE.segments
+                    showing = next((item for item in cue_kinds.subtitles(session.SUBTITLE.segments)
                                     if item['start'] <= at < item['end']), None)
                     painter.setRenderHint(QPainter.SmoothPixmapTransform)
+                    # The titles showing, each as its theme draws it, under
+                    # the subtitle (modules.cue_kinds).
+                    titles = [item for item in cue_kinds.of_kind(session.SUBTITLE.segments, cue_kinds.TITLE)
+                              if item['start'] <= at < item['end']]
+                    for area, image in renderer.layers(titles, at):
+                        painter.drawImage(QRectF(video_rect.x() + area.x() * video_rect.width(),
+                                                 video_rect.y() + area.y() * video_rect.height(),
+                                                 area.width() * video_rect.width(),
+                                                 area.height() * video_rect.height()), image)
                     outer._subtitle_hit = None
                     drag, moved = outer._subtitle_drag, outer._subtitle_moved
                     for area, image in renderer.layers([showing] if showing else [], at):
@@ -352,7 +362,9 @@ class PlayerWidget(QWidget):
     def update_subtitle_layer(widget):
         session.SUBTITLE.current = subtitles.subtitle_under_current_position()
         if widget._subtitle_renderer is not None:
-            widget._subtitle_renderer.prefetch(session.SUBTITLE.segments,
+            # The subtitles and the titles ahead; not the marks, which show nothing.
+            widget._subtitle_renderer.prefetch([item for item in session.SUBTITLE.segments
+                                                if cue_kinds.kind_of(item) != cue_kinds.MARK],
                                                (session.SUBTITLE.position or 0.0))
         widget.update()
 
@@ -589,7 +601,7 @@ class PlayerWidget(QWidget):
         from subtitld.interface import project_thumbnail
         frame = widget._last_video_frame
         image = frame.toImage() if frame is not None and frame.isValid() else None
-        segments = session.SUBTITLE.segments
+        segments = cue_kinds.subtitles(session.SUBTITLE.segments)
         if (image is None or image.isNull()) and not segments:
             return None
         manager = getattr(getattr(widget.window(), 'timeline_widget', None), 'waveform_manager', None)

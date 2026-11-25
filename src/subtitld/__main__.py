@@ -16,6 +16,12 @@ if sys.argv[1:2] == ['--video-check']:
     from subtitld.modules import video_check
     sys.exit(video_check.main(sys.argv[2:]))
 
+# A theme's author checking their file (modules/theme_check): its problems,
+# or what Subtitld reads in it, and a picture of it with --preview.
+if sys.argv[1:2] == ['--check-theme']:
+    from subtitld.modules import theme_check
+    sys.exit(theme_check.main(sys.argv[2:]))
+
 from subtitld import __version__
 from subtitld.modules import subtitldcc_links
 
@@ -237,6 +243,8 @@ class Window(_MainWindowBase):
 
         # A timeline look no one picked or changed is the default theme's;
         # a theme drawn for the other look gives way to its counterpart.
+        # A theme's look kept from before it drew marks and titles takes them.
+        timeline_themes.catch_up()
         timeline_themes.use_default(theme.current()) or timeline_themes.follow_look(theme.current())
 
         self.autosave_backup_timer = QTimer(self)

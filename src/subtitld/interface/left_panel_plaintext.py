@@ -30,6 +30,7 @@ from subtitld.interface import theme
 from subtitld.interface import left_panel
 from subtitld.interface import utils
 from subtitld.interface.translation import _
+from subtitld.modules import cue_kinds
 from subtitld.modules import session
 from subtitld.modules import history
 from subtitld.modules import markup
@@ -369,10 +370,6 @@ class Editor(QPlainTextEdit):
         self.updateRequest.connect(self._update_gutter)
         self.cursorPositionChanged.connect(self.refresh_selections)
         self.set_appearance(DEFAULT_FONT, DEFAULT_SIZE, DEFAULT_THEME)
-        theme.notifier.changed.connect(self._look_changed)
-
-    def _look_changed(self, _name):
-        self.set_appearance(*self.appearance)
 
     def set_appearance(self, family, size, theme_name):
         """Font and colour theme, as chosen in the tab's options."""
@@ -851,7 +848,7 @@ class PlainTextPanel(QWidget):
             self._apply(self.result)
         if self.result.ok and not self.stale:
             self.pending = False
-            self.cue_segments = plaintext.segments_for(session.SUBTITLE.segments, self.result.cues)
+            self.cue_segments = plaintext.segments_for(cue_kinds.subtitles(session.SUBTITLE.segments), self.result.cues)
         else:
             self.cue_segments = []
         self._update_status()
@@ -862,17 +859,23 @@ class PlainTextPanel(QWidget):
             self._select_under_cursor()
 
     def _serialize(self):
-        return plaintext.serialize(session.SUBTITLE.segments, self.fmt, _LANGUAGES,
+        # The subtitles' text: marks and titles are not written (modules.cue_kinds).
+        return plaintext.serialize(cue_kinds.subtitles(session.SUBTITLE.segments), self.fmt, _LANGUAGES,
                                    session.SUBTITLE.language)
 
     def _apply(self, result):
-        segments = session.SUBTITLE.segments
+        # The text is the subtitles': they change, the marks and titles
+        # among them stay as they are.
+        segments = cue_kinds.subtitles(session.SUBTITLE.segments)
+        others = [segment for segment in session.SUBTITLE.segments if not cue_kinds.is_subtitle(segment)]
         language = result.language if result.language not in (None, session.SUBTITLE.language) else None
         if not plaintext.apply_cues(segments, result.cues, dry_run=True) and language is None:
             self._refresh_full_text()
             return
         history.history_append()
         plaintext.apply_cues(segments, result.cues)
+        session.SUBTITLE.segments[:] = sorted(segments + others, key=lambda s: float(s.get('start', 0.0) or 0.0))
+        segments = session.SUBTITLE.segments
         if language is not None:
             session.SUBTITLE.language = language
         selected = session.SUBTITLE.selected
@@ -898,7 +901,7 @@ class PlainTextPanel(QWidget):
             block = block.previous()
         if not block.isValid():
             return
-        expected = plaintext.json_text_line(session.SUBTITLE.segments)
+        expected = plaintext.json_text_line(cue_kinds.subtitles(session.SUBTITLE.segments))
         if block.text().rstrip().endswith(','):
             expected += ','
         if block.text() == expected:
@@ -989,8 +992,11 @@ class PlainTextPanel(QWidget):
             self.editor.centerCursor()
 
     def _look_changed(self, _name):
+        # The editor re-coloured here, where it is not taken for an edit: an
+        # edit of a text never loaded (the tab not opened yet) would empty
+        # the subtitles.
+        self.apply_appearance()
         self.options_chip.setIcon(_options_icon())
-        self._fill_issue_list()
 
     # -- problems ------------------------------------------------------------
 

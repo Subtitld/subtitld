@@ -147,7 +147,9 @@ check('hundreds of texts changed', sum(a != b for a, b in zip(built_in_pt, switc
 # A text the switch does not reach keeps the language the window was built
 # in. (Switching back and comparing would not show it: it never changed.)
 portuguese = {value for key, value in PT.items() if key != 'language_name'} - set(EN.values())
-check('no text left in Portuguese', [text for text in switched if text[2] in portuguese], [])
+# A keycap shows a key's name, the same in every language ("T" is also
+# Portuguese's letter for strikeout).
+check('no text left in Portuguese', [text for text in switched if text[2] in portuguese and text[1] != '_Keycap'], [])
 
 pick(window, '')
 check('back to the system\'s: nothing saved', session.CONFIG['interface_language'], '')

@@ -358,27 +358,42 @@ class CaptionsThread(QThread):
 
 
 def write_captioned_video(video, output, container, options, segments, info, language=''):
+    """`_write_captioned_video`, and then, where asked, the chapter marks
+    as the file's chapters (modules.chapters)."""
+    _write_captioned_video(video, output, container, options, segments, info, language)
+    if (options or {}).get('chapters'):
+        from subtitld.modules import chapters
+        chapters.embed(output, segments, duration=float(info.get('duration') or 0) or None,
+                       ffmpeg=session.FFMPEG_EXECUTABLE, startupinfo=session.STARTUPINFO)
+
+
+def _write_captioned_video(video, output, container, options, segments, info, language=''):
     """Write `video` out as `output` with `segments` in it: as closed
     captions, or (soft_subtitles) as a track of their own. `info` is what
     is known of the video (session.VIDEO's 'framerate', 'duration', 'width'
     and 'height'); `language`, what the subtitles are in. The export runs
     it on the whole video, and the export dialog's preview on a few seconds
     of it."""
-    from subtitld.modules import burned_video, embedded_captions, export_options, soft_subtitles
+    from subtitld.modules import burned_video, cue_kinds, embedded_captions, export_options, soft_subtitles
     options = dict(options or {})
     if burned_video.is_burned(container):
+        # Titles are burned in with the subtitles; marks show nothing
+        # (modules.cue_kinds).
+        segments = [segment for segment in segments or [] if cue_kinds.kind_of(segment) != cue_kinds.MARK]
         # The subtitles in the picture, drawn in a style: over the video, or
         # alone on a clear picture the video's size (or the size asked for).
         alpha = burned_video.is_alpha(container)
         size = (options.get('width'), options.get('height')) if alpha and options.get('width') else \
             (info.get('width'), info.get('height')) if info.get('width') else None
-        prepared = export_options.prepare(segments, options)
+        prepared = export_options.prepare(segments, options, clamp=False)
         duration = float(info.get('duration') or 0) or None
         burned_video.write_video(output, container, prepared, video=video, size=size,
                                  fps=(options.get('fps') if alpha else None) or info.get('framerate'),
                                  duration=duration, quality=options.get('quality'), style_id=options.get('style'),
                                  codec=options.get('video_codec'))
         return
+    # A track of subtitles, or captions: the subtitles alone.
+    segments = cue_kinds.subtitles(segments)
     if soft_subtitles.is_soft(container):
         _write_tracks(video, output, container, options, segments, info, language)
         return

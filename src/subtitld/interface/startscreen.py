@@ -5,6 +5,7 @@ from PySide6.QtWidgets import QPushButton, QLabel, QListWidget, QVBoxLayout, QWi
 from PySide6.QtCore import QPropertyAnimation, Qt, QEasingCurve, QTimer, QSize
 from PySide6.QtGui import QIcon, QPixmap
 
+from subtitld.modules import cue_kinds
 from subtitld.modules import collab_state
 from subtitld.modules import file_io
 from subtitld.modules import session
@@ -17,6 +18,7 @@ from subtitld.interface import playercontrols
 from subtitld.interface import recent_cards
 from subtitld.interface import open_url
 from subtitld.interface import theme
+from subtitld.interface import missing_themes_dialog
 
 from subtitld.interface.translation import _
 
@@ -306,7 +308,7 @@ def load_productionscreen(self, collab=None):
             session.SUBTITLE.segments = []
             session.VIDEO = {}
             return
-        for name in {segment.get('speaker', 'A') for segment in session.SUBTITLE.segments}:
+        for name in {segment.get('speaker', 'A') for segment in cue_kinds.subtitles(session.SUBTITLE.segments)}:
             session.SPEAKERS.setdefault(name, {})
     session.document_loaded()
 
@@ -379,7 +381,20 @@ def load_productionscreen(self, collab=None):
         from subtitld.interface import left_panel_subtitldcc
         left_panel_subtitldcc.video_opened(self)
 
+        # Themes it draws with that are not here: said, and offered from subtitld.cc.
+        QTimer.singleShot(400, lambda: missing_themes_dialog.offer(self, lambda: themes_installed(self)))
+
     QTimer.singleShot(0, _post_show_setup)
+
+
+def themes_installed(self):
+    """Themes a project draws with were installed: its subtitles and titles drawn with them now."""
+    from subtitld.interface import left_panel_interface, left_panel_subtitleslist
+    left_panel_interface.update(self)
+    left_panel_subtitleslist.update(self)
+    self.timeline_widget.update()
+    if hasattr(self, 'preview_panel_player'):
+        self.preview_panel_player._graphics_video_item.update()
 
 def start_screen_recent_listwidget_item_clicked(self, item):
     # Previously this handler did `process_subtitles_file`,

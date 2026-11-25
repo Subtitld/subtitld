@@ -36,6 +36,7 @@ from subtitld.interface import theme
 from subtitld.interface import timeline, left_panel, player_widgets, subtitle_text_editor
 from subtitld.interface.translation import _
 
+from subtitld.modules import cue_kinds
 from subtitld.modules import subtitles
 from subtitld.modules import config
 from subtitld.modules import session
@@ -890,6 +891,24 @@ def load(self):
 
     self.playercontrols_widget_left_bottom_line.layout().addWidget(self.timeline_speaker_container)
 
+    # Whether the timeline shows the marks and the titles (modules.cue_kinds).
+    self.timeline_kinds_container = QWidget()
+    self.timeline_kinds_container.setObjectName('timeline_kinds_container')
+    self.timeline_kinds_container.setLayout(QHBoxLayout())
+    self.timeline_kinds_container.layout().setContentsMargins(0, 0, 0, 0)
+    self.timeline_kinds_container.layout().setSpacing(0)
+    for kind in (cue_kinds.MARK, cue_kinds.TITLE):
+        button = QPushButton()
+        button.setObjectName(f'timeline_show_{kind}s_button')
+        button.setCheckable(True)
+        button.setIconSize(QSize(16, 16))
+        button.setFixedWidth(28)
+        button.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum))
+        button.clicked.connect(lambda checked, kind=kind: timeline_show_kind_button_clicked(self, kind, checked))
+        setattr(self, f'timeline_show_{kind}s_button', button)
+        self.timeline_kinds_container.layout().addWidget(button)
+    self.playercontrols_widget_left_bottom_line.layout().addWidget(self.timeline_kinds_container)
+
     self.timelinescrolling_container = QWidget()
     self.timelinescrolling_container.setObjectName('timelinescrolling_container')
     self.timelinescrolling_container.setLayout(QHBoxLayout())
@@ -1722,6 +1741,8 @@ def update(self):
     self.add_subtitle_to_next_start.setChecked(session.CONFIG.get('new_subtitle_to_next_start', False))
     self.timeline_show_speaker_tracks_button.setChecked(session.CONFIG['timeline'].get('show_speaker_tracks', False))
     self.timeline_show_speaker_color_button.setChecked(session.CONFIG['timeline'].get('show_speaker_color', False))
+    self.timeline_show_marks_button.setChecked(cue_kinds.shown(cue_kinds.MARK))
+    self.timeline_show_titles_button.setChecked(cue_kinds.shown(cue_kinds.TITLE))
     timelinescrolling_type_update(self)
     update_snap_buttons(self)
     update_grid_buttons(self)
@@ -2111,8 +2132,11 @@ def update_onset_button(self):
 
 def playercontrols_play_from_last_start_button_clicked(self):
     """Function to call when stop button is clicked"""
-    subt = [item['start'] for item in session.SUBTITLE.segments]
-    last_subtitle = session.SUBTITLE.segments[bisect(subt, (session.SUBTITLE.position or 0)) - 1]
+    segments = cue_kinds.subtitles(session.SUBTITLE.segments)
+    if not segments:
+        return
+    subt = [item['start'] for item in segments]
+    last_subtitle = segments[bisect(subt, (session.SUBTITLE.position or 0)) - 1]
     self.preview_panel_player.seek(last_subtitle['start'])
     self.preview_panel_player.play()
     self.timeline_widget.setFocus(Qt.TabFocusReason)
@@ -2121,14 +2145,58 @@ def playercontrols_play_from_last_start_button_clicked(self):
 
 def playercontrols_play_from_next_start_button_clicked(self):
     """Function to call when play from next subtitle button is clicked"""
-    subt = [item['start'] for item in session.SUBTITLE.segments]
+    segments = cue_kinds.subtitles(session.SUBTITLE.segments)
+    subt = [item['start'] for item in segments]
     i = bisect(subt, (session.SUBTITLE.position or 0))
-    if i < len(session.SUBTITLE.segments):
-        next_subtitle = session.SUBTITLE.segments[i]
+    if i < len(segments):
+        next_subtitle = segments[i]
         self.preview_panel_player.seek(next_subtitle['start'])
         self.preview_panel_player.play()
         self.timeline_widget.setFocus(Qt.TabFocusReason)
     update_playercontrols_playpause_button(self)
+
+
+@shortcut('add_mark_to_current_position', 'shortcuts.add_mark_to_current_position', ['M'])
+def add_mark_command(self):
+    if self.focusWidget() is not self.timeline_widget:
+        return
+    add_mark(self, session.SUBTITLE.position or 0)
+
+
+@shortcut('add_title_to_current_position', 'shortcuts.add_title_to_current_position', ['T'])
+def add_title_command(self):
+    if self.focusWidget() is not self.timeline_widget:
+        return
+    add_title(self, session.SUBTITLE.position or 0)
+
+
+def add_mark(self, position, category=None):
+    """A mark at `position`, selected, its text to be typed (modules.cue_kinds)."""
+    if not cue_kinds.shown(cue_kinds.MARK):
+        cue_kinds.set_shown(cue_kinds.MARK, True)
+        self.timeline_show_marks_button.setChecked(True)
+        self.timeline_widget._apply_geometry()
+    session.SUBTITLE.selected = subtitles.add_mark(position=position, category=category)
+    _added_cue(self)
+
+
+def add_title(self, position):
+    """A title from `position`, selected, its text to be typed."""
+    if not cue_kinds.shown(cue_kinds.TITLE):
+        cue_kinds.set_shown(cue_kinds.TITLE, True)
+        self.timeline_show_titles_button.setChecked(True)
+        self.timeline_widget._apply_geometry()
+    session.SUBTITLE.selected = subtitles.add_title(position=position,
+                                                    duration=session.CONFIG['default_new_subtitle_duration'] or 3.0)
+    _added_cue(self)
+
+
+def _added_cue(self):
+    left_panel.update(self)
+    timeline.update(self)
+    self.timeline_widget.update()
+    self.left_panel_subtitleslist_textedit.setFocus(Qt.TabFocusReason)
+    session.set_unsaved()
 
 
 @shortcut('add_new_subtitle_to_current_position', 'shortcuts.add_new_subtitle_to_current_position', ['Enter'])
@@ -2855,6 +2923,17 @@ def timeline_show_speaker_tracks_button_clicked(self):
     self.timeline_widget.update()
 
 
+def timeline_show_kind_button_clicked(self, kind, checked):
+    """Show or hide a kind of cue on the timeline: its band and its cues,
+    which the mouse no longer takes while hidden."""
+    cue_kinds.set_shown(kind, checked)
+    selected = session.SUBTITLE.selected
+    if not checked and isinstance(selected, dict) and cue_kinds.kind_of(selected) == kind:
+        session.SUBTITLE.selected = None
+    self.timeline_widget._apply_geometry()
+    self.timeline_widget.update()
+
+
 @shortcut('timeline_escape_action', 'shortcuts.timeline_escape_action', ['Escape'])
 def escape_actions(self):
     if self.timeline_widget.is_smart_splicing:
@@ -2925,6 +3004,8 @@ def translate(self):
     self.zoomout_button.setToolTip(_('playercontrols.zoom_out'))
     self.timeline_show_speaker_color_button.setToolTip(_('playercontrols.timeline_show_speaker_color'))
     self.timeline_show_speaker_tracks_button.setToolTip(_('playercontrols.timeline_show_speaker_tracks'))
+    self.timeline_show_marks_button.setToolTip(_('playercontrols.timeline_show_marks'))
+    self.timeline_show_titles_button.setToolTip(_('playercontrols.timeline_show_titles'))
     self.playercontrols_record_button.setToolTip(_('record_button.tooltip'))
     # The transcript switch's tooltip depends on whether an engine is installed.
     _update_record_mode_buttons(self)

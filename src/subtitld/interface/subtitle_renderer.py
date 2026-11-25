@@ -9,6 +9,19 @@ cropped to the subtitle, kept here as a layer. The preview draws the layer in
 the video item's paint(), with the very frame it belongs with, so the two
 never drift apart.
 
+A title (modules.cue_kinds) is drawn by its title theme (modules.title_themes)
+with its own settings: its jobs name the theme's template, which the
+helper renders in views of its own.
+
+A subtitle may be drawn with a style of its own (segment['theme']): its
+job names that style's template, as a title's does. A speaker's own values
+of a style's per-speaker fields make their subtitles' layers their own.
+
+A style or title theme that is a theme file (modules.themes) is loaded from
+the copy themes.served() keeps, its Content Security Policy in it; its jobs
+say what host.js needs for it: what goes in its slots, whether it places
+itself, how far its text is cut, and where its outro starts.
+
 A layer is kept by a key of everything that changes its pixels: the style,
 its template, its settings, the text, the size, the title-safe area and, for
 an animated style, the subtitle's duration and the moment. Change any of them
@@ -50,7 +63,7 @@ from PySide6.QtCore import QObject, QProcess, QProcessEnvironment, QRectF, QTime
 from PySide6.QtGui import QImage
 
 from subtitld.interface.subtitle_render_worker import SCALING_VARIABLES
-from subtitld.modules import look as subtitld_look, markup, position, session, subtitle_styles
+from subtitld.modules import cue_kinds, look as subtitld_look, markup, position, session, subtitle_styles, themes, title_themes
 from subtitld.modules.segment import EFFECTS, text_of, timed_pieces
 
 log = logging.getLogger(__name__)
@@ -136,6 +149,45 @@ def karaoke_moment(pieces, at, fps, default_effect='fill'):
     return ('started', len(started)), max(moment, last + 1)
 
 
+def theme_page(theme, segment=None):
+    """What a job's page says for a theme file `theme` (modules.themes; None
+    for a style that is not one): the slots besides "main" (a title's own,
+    `segment`'s), their types, whether it places itself, how far its text is
+    cut, how long its outro is."""
+    if theme is None:
+        return {'slots': None, 'slot_types': None, 'free': False, 'slice': 'none', 'outro': 0}
+    slots, types = {}, {}
+    is_title = isinstance(segment, dict) and theme.kind == 'title'
+    settings = title_themes.values(segment) if is_title else {}
+    for slot in theme.slots:
+        key = slot['key']
+        types[key] = slot['type']
+        if key == 'main':
+            continue
+        # What the title has in it (modules.title_themes: fitted to the
+        # slot, its default otherwise); nothing where a setting hides it.
+        value = title_themes.slot_value(segment, key) if is_title else slot.get('default')
+        if slot.get('visible_if') and not settings.get(slot['visible_if']):
+            value = None
+        if slot['type'] == 'image':
+            value = value if isinstance(value, str) and value.startswith('data:image/') else None
+        elif slot['type'] == 'list':
+            value = [markup.to_html(item) for item in value if isinstance(item, str)] if isinstance(value, list) else None
+        else:
+            value = markup.to_html(value) if isinstance(value, str) and value.strip() else None
+        slots[key] = value
+    return {'slots': slots, 'slot_types': types, 'free': theme.ignores_position, 'slice': theme.slice,
+            'outro': (theme.timing or {}).get('outro', 0)}
+
+
+def template_of(style):
+    """The file the helper loads for a style or title theme: a theme
+    file's served copy, else the template in its folder."""
+    if getattr(style, 'file', None) is not None:
+        return themes.served(style.file)
+    return style.path / style.template
+
+
 def _digest(*parts):
     return hashlib.sha1(json.dumps(parts, sort_keys=True, default=str).encode()).hexdigest()[:24]
 
@@ -198,6 +250,8 @@ class SubtitleRenderer(QObject):
         self.next_id = 1
         self.size = None                # (width, height) in device pixels layers are rendered at
         self.style_id = None            # the style drawn with: the current one when None (an export may ask another)
+        self.fps = None                 # frames a second animations are drawn at: the video's when None
+        self.one_style = False          # style_id for every subtitle, its own theme or not (an export's choice)
         self.pending_size = None
         self.size_timer = QTimer(self)
         self.size_timer.setSingleShot(True)
@@ -208,6 +262,7 @@ class SubtitleRenderer(QObject):
         self.gaps = []                  # ms subtitles on screen waited for their layer
         self._style_key = None
         self._template = None
+        self._templates = {}            # a title theme's template -> (mtime, digest)
         self.process = None
         self.no_sandbox = False         # Chromium's sandbox could not start here
         self.helper_ready = False       # the helper ever had a page ready
@@ -369,7 +424,7 @@ class SubtitleRenderer(QObject):
         """The current style and the part of every key it gives; the helper
         is told when the template is another."""
         style = subtitle_styles.get(self.style_id)
-        template = style.path / style.template
+        template = template_of(style)
         settings = subtitle_styles.values(style.id)
         variables = subtitle_styles.css_variables(style.id, settings)
         attributes = subtitle_styles.html_attributes(style.id, settings)
@@ -391,6 +446,11 @@ class SubtitleRenderer(QObject):
                 self.sent.clear()
                 self._send({'cmd': 'template', 'path': str(template)})
         return style, variables, attributes
+
+    def frame_rate(self):
+        """Frames a second an animation is drawn at: the one asked for (an
+        export's), else the video's, else 25."""
+        return float(self.fps or 0) or float(session.VIDEO.get('framerate') or 0) or 25.0
 
     # --- size --------------------------------------------------------------
     def set_size(self, width, height):
@@ -416,12 +476,87 @@ class SubtitleRenderer(QObject):
             self.jobs.clear()
             self.layer_ready.emit()
 
-    # --- layers ------------------------------------------------------------
-    def _job(self, segment, at, style, variables, attributes):
-        """What renders `segment` at `at` seconds, keyed."""
+    # --- titles, and subtitles with a style of their own ---------------------
+    def _template_digest(self, path):
+        """A template a job names, by its content, read once a change."""
+        try:
+            stamp = path.stat().st_mtime_ns
+        except OSError:
+            stamp = None
+        cached = self._templates.get(path)
+        if cached is None or cached[0] != stamp:
+            try:
+                digest = hashlib.sha1(path.read_bytes()).hexdigest()
+            except OSError:
+                digest = ''
+            cached = self._templates[path] = (stamp, digest)
+        return cached[1]
+
+    def _title_job(self, segment, at):
+        """What renders a title at `at` seconds, keyed: its theme's
+        template, with its settings."""
+        theme = title_themes.of(segment)
+        settings = title_themes.values(segment)
+        variables = title_themes.css_variables(theme, settings)
+        attributes = title_themes.html_attributes(theme, settings)
+        template = template_of(theme)
+        extra = theme_page(theme.file, segment)
         text = text_of(segment)
         start, end = float(segment['start']), float(segment['end'])
-        fps = float(session.VIDEO.get('framerate') or 0) or 25.0
+        fps = self.frame_rate()
+        offset = moment = 0
+        if theme.animated:
+            offset = moment = int(round(math.floor((at - start) * fps + 1e-6) / fps * 1000))
+        safe = (session.CONFIG.get('videoplayer', {}).get('safe_margin_title_x', 10) / 100,
+                session.CONFIG.get('videoplayer', {}).get('safe_margin_title_y', 10) / 100)
+        width, height = self.size
+        duration = int(round((end - start) * 1000))
+        placed = position.of(segment)
+        place = {'h': position.as_percent(placed.h), 'v': position.as_percent(placed.v),
+                 'rotate': list(placed.rotate)} if placed.any() else None
+        # A title's text is its theme's "main" part; its own place on the
+        # keypad, its theme's placement where it has none.
+        lead, body = markup.split_lead(text)
+        align = markup.alignment(text) if lead else title_themes.alignment(theme, settings)
+        html = markup.to_html(body) if body.strip() else None
+        key = _digest('title', theme.id, self._template_digest(template), self._host_digest, qVersion(), variables,
+                      attributes, safe, body, self.size, (duration, moment) if theme.animated else None, place, align,
+                      extra)
+        page = {'html': html, 'align': align, 'vars': variables, 'attrs': attributes, 'aspect': width / height,
+                'safe': safe, 'offset': offset, 'duration': duration, 'pad': PAD, 'place': place, 'direction': None,
+                'bidi': None, 'look': None, 'writing': None, **extra}
+        return key, {'key': key, 'size': self.size, 'page': page, 'style': self._style_key, 'template': str(template)}
+
+    # --- layers ------------------------------------------------------------
+    def _own_style(self, segment, style):
+        """The style `segment` is drawn with and what tells its job apart:
+        its own (segment['theme']) where it names one there is, else
+        `style`; with its speaker's own values of the per-speaker fields.
+        (style, variables, attributes, template or None, key part); all but
+        the style None when it is `style` as it is."""
+        own_id = None if self.one_style else segment.get('theme')
+        own = subtitle_styles.get(own_id) if own_id and own_id != style.id and own_id in subtitle_styles.available() \
+            else style
+        speaker = segment.get('speaker') if any(f.get('per_speaker') for f in own.fields) else None
+        if own is style and not (speaker and subtitle_styles.speaker_values(own.id, speaker)):
+            return own, None, None, None, None
+        settings = subtitle_styles.values(own.id, speaker)
+        variables = subtitle_styles.css_variables(own.id, settings)
+        attributes = subtitle_styles.html_attributes(own.id, settings)
+        template = template_of(own) if own is not style else None
+        part = (own.id, self._template_digest(template) if template else None, variables, attributes)
+        return own, variables, attributes, template, part
+
+    def _job(self, segment, at, style, variables, attributes):
+        """What renders `segment` at `at` seconds, keyed."""
+        if cue_kinds.kind_of(segment) == cue_kinds.TITLE:
+            return self._title_job(segment, at)
+        style, own_variables, own_attributes, template, own_part = self._own_style(segment, style)
+        if own_variables is not None:
+            variables, attributes = own_variables, own_attributes
+        text = text_of(segment)
+        start, end = float(segment['start']), float(segment['end'])
+        fps = self.frame_rate()
         offset, moment = 0, None
         pieces = timed_pieces(segment)
         # The style's way for a piece that has none of its own.
@@ -457,12 +592,15 @@ class SubtitleRenderer(QObject):
         # The text, and for a timed one its pieces as drawn (their times and effects).
         key = _digest(self._style_key, text, html if pieces else None, self.size,
                       (duration, moment) if moment is not None else None,
-                      place, direction, bidi, styling, writing)
+                      place, direction, bidi, styling, writing, own_part)
         page = {'html': html, 'align': markup.alignment(text),
                 'vars': variables, 'attrs': attributes, 'aspect': width / height, 'safe': safe,
                 'offset': offset, 'duration': duration, 'pad': PAD, 'place': place, 'direction': direction,
-                'bidi': bidi, 'look': styling, 'writing': writing}
-        return key, {'key': key, 'size': self.size, 'page': page, 'style': self._style_key}
+                'bidi': bidi, 'look': styling, 'writing': writing, **theme_page(style.file)}
+        job = {'key': key, 'size': self.size, 'page': page, 'style': self._style_key}
+        if template is not None:
+            job['template'] = str(template)
+        return key, job
 
     def layers(self, segments, at):
         """[(QRectF of the stage, 0..1; QImage)] to draw for `segments`
@@ -507,19 +645,22 @@ class SubtitleRenderer(QObject):
                 continue
             if start > at + horizon:
                 break
-            if style.animated:
-                fps = float(session.VIDEO.get('framerate') or 0) or 25.0
+            is_title = cue_kinds.kind_of(segment) == cue_kinds.TITLE
+            animated = title_themes.of(segment).animated if is_title else self._own_style(segment, style)[0].animated
+            if animated:
+                fps = self.frame_rate()
                 moment = max(start, at)
-                while moment < min(end, at + horizon):
+                while moment < min(end, at + AHEAD_ANIMATED):
                     key, job = self._job(segment, moment, style, variables, attributes)
                     self._enqueue(key, job)
                     moment += 1 / fps
-            elif timed_pieces(segment):
+            elif timed_pieces(segment) and not is_title:
                 # A timed subtitle: a layer as each piece starts, and frames
                 # through a wipe or a pop close to the playhead.
-                fps = float(session.VIDEO.get('framerate') or 0) or 25.0
+                fps = self.frame_rate()
                 pieces = timed_pieces(segment)
-                effects = _effects(pieces, attributes.get('data-karaoke-effect'))
+                own_attributes = self._own_style(segment, style)[2] or attributes
+                effects = _effects(pieces, own_attributes.get('data-karaoke-effect'))
                 moments = [start] + [start + piece['start'] for piece in pieces]
                 for piece, effect, length in zip(pieces, effects, _lengths(pieces, effects)):
                     moment = max(start + piece['start'], at)
@@ -574,7 +715,10 @@ class SubtitleRenderer(QObject):
         job = dict(self.queue.pop(key), id=self.next_id, urgent=urgent)
         self.next_id += 1
         self.sent[job['id']] = job
-        self._send({'cmd': 'render', 'id': job['id'], 'size': job['size'], 'page': job['page'], 'urgent': urgent})
+        message = {'cmd': 'render', 'id': job['id'], 'size': job['size'], 'page': job['page'], 'urgent': urgent}
+        if job.get('template'):
+            message['template'] = job['template']
+        self._send(message)
 
     def forget(self, segments):
         """Stand-ins only for these segments (the subtitles now loaded)."""

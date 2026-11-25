@@ -233,14 +233,16 @@ def _with_speaker(text, name):
     return f'{lead}{name}: {rest}'
 
 
-def prepare(segments, options=None, karaoke_codes=False):
+def prepare(segments, options=None, karaoke_codes=False, clamp=True):
     """Copies of `segments` with the text and times the options ask for,
     in order of start. A subtitle timed word by word (modules.segment) gives
     its words; with `karaoke_codes` (a format that reads them: KARAOKE_FORMATS,
     INLINE_TIMED_FORMATS) its words with their timing as karaoke codes; with
     `timed` 'reveal', for a format that does not, one copy a piece, each
     showing the words up to it, from its start to the next one's. Removing
-    the formatting takes the timing with it."""
+    the formatting takes the timing with it. A cue that starts before 0 starts
+    at 0, unless not `clamp` (a burned-in video, which draws an animated
+    theme at the moment of its own time)."""
     settings = dict(DEFAULTS)
     settings.update({key: value for key, value in (options or {}).items() if value is not None})
     language = settings['language']
@@ -274,7 +276,11 @@ def prepare(segments, options=None, karaoke_codes=False):
             if end <= 0:
                 continue
             copy = dict(segment)
-            copy.update(start=max(0.0, round(begin, 3)), end=round(end, 3), text=text)
+            copy.update(start=max(0.0, round(begin, 3)) if clamp else round(begin, 3), end=round(end, 3), text=text)
+            # A title's other slots in the translation too, where it has them.
+            slot_translations = (segment.get('title_slot_translations') or {}).get(language) if language else None
+            if settings['text'] == 'translation' and isinstance(slot_translations, dict) and slot_translations:
+                copy['title_slots'] = dict(segment.get('title_slots') or {}, **slot_translations)
             if number and copy.get('id'):
                 copy['id'] = f'{copy["id"]}-{number}'
             prepared.append(copy)

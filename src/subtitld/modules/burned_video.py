@@ -98,7 +98,9 @@ def concat_list(pictures, size, duration, folder):
     """Write in `folder` the frames of the clear picture track that shows
     `pictures` (subtitle_pictures.draw's, each placed on a frame `size`)
     for their times, and the concat list that holds each for its time:
-    its path. Subtitles that overlap show one after the other."""
+    its path. Subtitles that overlap show one after the other, and so do
+    titles; a title and a subtitle (modules.cue_kinds: a picture with
+    'title') share the frames they overlap in, the title under."""
     from PySide6.QtCore import Qt
     from PySide6.QtGui import QImage, QPainter
     width, height = int(size[0]), int(size[1])
@@ -106,23 +108,48 @@ def concat_list(pictures, size, duration, folder):
     blank.fill(Qt.transparent)
     blank_path = os.path.join(folder, 'blank.png')
     blank.save(blank_path, 'PNG')
-    entries, at = [], 0.0
-    for number, picture in enumerate(sorted(pictures, key=lambda p: p['start']), start=1):
-        start, end = max(at, float(picture['start'])), min(float(duration), float(picture['end']))
-        if end <= start:
+    shown = []
+    for title in (True, False):
+        at = 0.0
+        for picture in sorted((p for p in pictures if bool(p.get('title')) == title), key=lambda p: p['start']):
+            start, end = max(at, float(picture['start'])), min(float(duration), float(picture['end']))
+            if end <= start:
+                continue
+            shown.append(dict(picture, start=start, end=end))
+            at = end
+    times = sorted({0.0, float(duration)} | {min(float(duration), max(0.0, float(picture[key])))
+                                             for picture in shown for key in ('start', 'end')})
+    entries, frames, images = [], {}, {}
+    for begin, end in zip(times, times[1:]):
+        if end <= begin:
             continue
-        frame = QImage(width, height, QImage.Format_ARGB32)
-        frame.fill(Qt.transparent)
-        painter = QPainter(frame)
-        painter.drawImage(int(picture['x']), int(picture['y']), QImage(picture['path']))
-        painter.end()
-        path = os.path.join(folder, f'frame{number:05d}.png')
-        frame.save(path, 'PNG')
-        if start > at:
-            entries.append((blank_path, start - at))
-        entries.append((path, end - start))
-        at = end
-    entries.append((blank_path, max(0.04, float(duration) - at)))
+        showing = tuple(number for number, picture in enumerate(shown)
+                        if float(picture['start']) <= begin and float(picture['end']) >= end)
+        if not showing:
+            path = blank_path
+        elif showing in frames:
+            path = frames[showing]
+        else:
+            frame = QImage(width, height, QImage.Format_ARGB32)
+            frame.fill(Qt.transparent)
+            painter = QPainter(frame)
+            for number in showing:
+                picture = shown[number]
+                if number not in images:
+                    images[number] = QImage(picture['path'])
+                painter.drawImage(int(picture['x']), int(picture['y']), images[number])
+            painter.end()
+            path = os.path.join(folder, f'frame{len(frames) + 1:05d}.png')
+            # Lighter compression: a quarter faster to write a whole frame
+            # (an animated theme is one a frame), a few KB more on disk.
+            frame.save(path, 'PNG', 80)
+            frames[showing] = path
+        if entries and entries[-1][0] == path:
+            entries[-1] = (path, entries[-1][1] + end - begin)
+        else:
+            entries.append((path, end - begin))
+    if not entries or entries[-1][0] != blank_path:
+        entries.append((blank_path, 0.04))
     lines = ['ffconcat version 1.0']
     for path, length in entries:
         lines += [f"file '{_quoted(path)}'", f'duration {length:.6f}']
@@ -157,7 +184,9 @@ def write_video(output, container, segments, video=None, size=None, fps=None, du
         duration = max([float(segment['end']) for segment in segments or []] + [1.0])
     folder = tempfile.mkdtemp(prefix='subtitld_burn_')
     try:
-        pictures = subtitle_pictures.draw(segments, size, os.path.join(folder, 'drawn'), style_id=style_id)
+        # An animated theme a frame at a time, at the picture's rate.
+        pictures = subtitle_pictures.draw(segments, size, os.path.join(folder, 'drawn'), style_id=style_id, fps=fps,
+                                          span=(0.0, float(duration)))
         listed = concat_list(pictures, size, duration, folder)
         overlay = ['-f', 'concat', '-safe', '0', '-i', listed]
         if holder['alpha']:

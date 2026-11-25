@@ -1837,6 +1837,13 @@ QPushButton[class="subtitle_formatting_button"]:checked {
     color: #ffffff;
 }
 
+/* The formatting buttons that do not fit the line, opened from its "…". */
+#overflow_bar_popup {
+    background-color: #1a232b;
+    border: 0;
+    border-radius: 3px;
+}
+
 QPushButton[class="subtitle_formatting_button"]::menu-indicator {
     image: none;
     width: 0;
@@ -1859,10 +1866,15 @@ QPushButton[class="subtitle_formatting_button"]::menu-indicator {
 }
 
 /* A subtitle timed piece by piece (interface/timed_text_strip.py): its pieces
-   are fields the widget draws, a line edit over the one typed in; under them
+   are outlines the widget draws, a line edit over the one typed in; under them
    the chosen one's times and how it lights up, in the fields' and combo
    boxes' own look. */
 #timed_text_strip {
+    background: transparent;
+}
+
+#timed_text_chips_area,
+#timed_text_chips_holder {
     background: transparent;
 }
 
@@ -1871,17 +1883,18 @@ QPushButton[class="subtitle_formatting_button"]::menu-indicator {
     font-size: 10px;
 }
 
-/* A piece typed in: the field it is drawn as, lit, its letters where the
-   drawing has them (7px in, the line edit's own 2px margin taken off). */
+/* A piece typed in: the outline it is drawn with, chosen, its letters where
+   the drawing has them (7px in, the border and the line edit's own 2px
+   margin taken off). */
 #timed_text_strip QLineEdit#timed_text_chip_editor {
     font-family: 'Montserrat';
     font-size: 12px;
     font-weight: 400;
     color: #ffffff;
-    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #3a4a58, stop:1 #4c6173);
-    border: 0;
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 210);
     border-radius: 3px;
-    padding: 0 5px;
+    padding: 0 4px;
     min-width: 0;
     min-height: 0;
 }
@@ -2035,12 +2048,17 @@ QMenu#subtitle_formatting_menu::separator {
     icon: url(graphics:regenerate_dub_icon_pressed.svg);
 }
 
+/* Drawn slanted (editor_selector.paint_slant), no border of its own. */
 #left_panel_subtitleslist_speaker_selector {
-    border-top: 1px solid #0affffff;
-    border-left: 1px solid #0affffff;
-    border-right: 0;
-    border-bottom: 0;
-    border-top-left-radius: 4px;
+    background: transparent;
+    border: 0;
+}
+
+QWidget[class="editor_selector"] QComboBox {
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    padding-left: 4px;
 }
 
 #left_panel_subtitleslist_speaker_selector #selector_button_label {
@@ -2233,6 +2251,28 @@ QMenu#subtitle_formatting_menu::separator {
 #timeline_speaker_container #timeline_show_speaker_tracks_button:checked {
     border-top-right-radius: 3px;
     icon: url(graphics:timeline_show_speaker_in_tracks_checked.svg);
+}
+
+/* Marks and titles shown on the timeline: a group of two, its own
+   rounded top corners. */
+#timeline_kinds_container #timeline_show_marks_button {
+    border-top-left-radius: 3px;
+    icon: url(graphics:timeline_show_marks.svg);
+}
+
+#timeline_kinds_container #timeline_show_marks_button:checked {
+    border-top-left-radius: 3px;
+    icon: url(graphics:timeline_show_marks_checked.svg);
+}
+
+#timeline_kinds_container #timeline_show_titles_button {
+    border-top-right-radius: 3px;
+    icon: url(graphics:timeline_show_titles.svg);
+}
+
+#timeline_kinds_container #timeline_show_titles_button:checked {
+    border-top-right-radius: 3px;
+    icon: url(graphics:timeline_show_titles_checked.svg);
 }
 
 #change_playback_speed QPushButton {
@@ -5015,4 +5055,17 @@ QWidget#subtitldcc_problem[severity="info"] {
 #left_panel_navigation QPushButton[class=navigation_button][live="true"]:!checked,
 #left_panel_navigation QPushButton[class=navigation_button][has_matches="true"]:!checked {
     border-left: 10px solid #55d43f;
+}
+
+/* A cue shorter than its theme's animation: a line under its text. */
+QLabel#left_panel_subtitleslist_animation_notice {
+    color: #e0574f;
+    font-size: 11px;
+    padding: 2px 0;
+}
+
+/* The export dialog's preview on its way: a thin moving bar, and what it is doing. */
+QLabel#export_dialog_preview_busy_note {
+    color: rgba(255, 255, 255, 150);
+    font-size: 11px;
 }

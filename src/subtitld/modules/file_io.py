@@ -25,6 +25,10 @@ from PySide6.QtCore import Qt, QThread, Signal, QByteArray, QBuffer, QIODevice
 from PySide6.QtGui import QImage, QPixmap
 
 from subtitld.modules import ass
+from subtitld.modules import chapters
+from subtitld.modules import cue_kinds
+from subtitld.modules import title_themes
+from subtitld.modules import themes
 from subtitld.modules import avid_subcap
 from subtitld.modules import ayato
 from subtitld.modules import bdn
@@ -267,6 +271,20 @@ def _usfx_attachments(zf, names):
             continue
         found.setdefault(kind, {})[name] = zf.read(member)
     return found
+
+
+# The theme files a project draws with (modules.themes): in a USFX, each a
+# member of its own under assets/themes/, its id the name. Read from the zip
+# as the project opens, and kept by Subtitld while it is open, never
+# installed.
+USFX_THEMES = 'assets/themes/'
+
+
+def _usfx_themes(zf, names):
+    """{member: bytes} of the theme files a USFX carries, from its open zip `zf`."""
+    return {name: zf.read(name) for name in names
+            if name.startswith(USFX_THEMES) and name.endswith(themes.EXTENSION) and '/' not in name[len(USFX_THEMES):]
+            and zf.getinfo(name).file_size <= themes.MAX_BYTES}
 
 
 def _is_phase1_usfx_member(name):
@@ -636,6 +654,7 @@ USFX_OPTION_DEFAULTS = {
     'include_original_audio': False,
     'include_processed_audio': False,
     'include_original_video': False,
+    'include_themes': False,
 }
 
 
@@ -976,9 +995,15 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
     # What a file says about itself belongs to that file: the one opened
     # before must not lend its title to the next.
     session.SUBTITLE.metadata = None
+    session.SUBTITLE.mark_categories = None
+    # And the subtitle theme it is drawn with: a file that names none is
+    # drawn with the app's (modules.subtitle_styles).
+    session.SUBTITLE.theme = None
     # So are the fonts and pictures it carries (an ASS script's [Fonts] and
     # [Graphics], a USFX's assets/attachments/).
     session.SUBTITLE.attachments = None
+    # And the theme files it carries (a USFX's assets/themes/).
+    themes.carry({})
 
     # Final Cut Pro's bundle is a folder with the document in it.
     if subtitle_file and os.path.isdir(subtitle_file) and subtitle_file.lower().rstrip('/\\').endswith('.fcpxmld'):
@@ -1754,6 +1779,9 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                 session.SUBTITLE.source_language = None
             if reader.metadata:
                 session.SUBTITLE.metadata = reader.metadata
+            # The categories its marks use, as it carries them.
+            session.SUBTITLE.mark_categories = cue_kinds.adopt(reader.mark_categories) or None
+            session.SUBTITLE.theme = subtitle_styles.adopt(reader.theme)
             # Speaker color/dubbing metadata is cheap — set synchronously.
             # Image decode + downscale moves to `_SpeakerImageLoader` so
             # 20 HD face crops don't add 0.5–2 s to the main-thread open.
@@ -1824,6 +1852,7 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                     attachments = _usfx_attachments(zf, names)
                     if attachments:
                         session.SUBTITLE.attachments = attachments
+                    themes.carry(_usfx_themes(zf, names))
                     if collab_state.STATE_MEMBER in names:
                         pending = zf.read(collab_state.PENDING_MEMBER) if collab_state.PENDING_MEMBER in names else b''
                         base = zf.read(collab_state.BASE_MEMBER) if collab_state.BASE_MEMBER in names else None
@@ -1858,6 +1887,9 @@ def process_subtitles_file(subtitle_file=False, subtitle_format='SRT'):
                 session.SUBTITLE.source_language = None
             if reader.metadata:
                 session.SUBTITLE.metadata = reader.metadata
+            # The categories its marks use, as it carries them.
+            session.SUBTITLE.mark_categories = cue_kinds.adopt(reader.mark_categories) or None
+            session.SUBTITLE.theme = subtitle_styles.adopt(reader.theme)
 
             # Speaker color/dubbing metadata stays inline; image decode
             # is dispatched to `_SpeakerImageLoader` (same rationale as
@@ -2234,6 +2266,24 @@ def _ensure_dub_files_present(segments, existing_usfx_path):
         return
 
 
+# Formats that keep every kind of cue, or take what they want of each.
+KIND_FORMATS = ('USF', 'USFX')
+# Formats of subtitles that can carry titles too, when the export asks.
+TITLE_FORMATS = ('ASS', 'DFXP', 'TTML')
+
+
+def _of_kinds(subtitle, kinds, leave_out=()):
+    """`subtitle` with only its cues of `kinds`, the same cues, but for
+    those in `leave_out`: a view, never the project changed."""
+    left_out = {id(item) for item in leave_out}
+    if not left_out and all(cue_kinds.kind_of(item) in kinds for item in subtitle.segments):
+        return subtitle
+    view = segment.Subtitle({name: getattr(subtitle, name) for name in segment.Subtitle.FIELDS})
+    view.segments = [item for item in subtitle.segments
+                     if cue_kinds.kind_of(item) in kinds and id(item) not in left_out]
+    return view
+
+
 def save_file(final_file, subtitle_format='USFX', language='en'):
     """Function to save the subtitle project. A subtitles dict and the format is given.
 
@@ -2265,6 +2315,26 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
     document_language = (SUBTITLE.language or '').strip()
     if document_language:
         language = document_language
+    # Marks and titles are Subtitld's own (modules.cue_kinds): a format of
+    # subtitles gets the subtitles, and the titles where it can draw them
+    # and the export asks; USF keeps them all, and the formats that carry
+    # marks take them from the whole project.
+    if subtitle_format in chapters.FORMATS:
+        # The marks, as chapters or a marker list (modules.chapters).
+        options = FORMAT.get('options', {}) if isinstance(FORMAT, dict) else {}
+        chapters.save(final_file, subtitle_format, SUBTITLE.segments, options.get('marks'),
+                      duration=float(VIDEO.get('duration') or 0) or None)
+        return
+    if subtitle_format not in KIND_FORMATS:
+        keep = {cue_kinds.SUBTITLE}
+        options_asked = FORMAT.get('options', {}) if isinstance(FORMAT, dict) else {}
+        if subtitle_format in TITLE_FORMATS and options_asked.get('titles'):
+            keep.add(cue_kinds.TITLE)
+        # A title whose theme has no look for a format of subtitles is
+        # drawn only: it shows in a burned-in video alone.
+        drawn_only = [item for item in SUBTITLE.segments
+                      if cue_kinds.kind_of(item) == cue_kinds.TITLE and not title_themes.exportable(item)]
+        SUBTITLE = _of_kinds(SUBTITLE, keep, leave_out=drawn_only)
     # `segments` may legitimately be empty — e.g. the user loaded a
     # video and clicked Save before transcribing or adding any
     # subtitles. We still want to persist the project file (video
@@ -2415,6 +2485,10 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                     programme = stl.get('TCP', '')
                     extra['start'] = options.get('start') or (
                         ':'.join(programme[i:i + 2] for i in range(0, 8, 2)) if len(programme) == 8 else None)
+            # Titles, where the export asks for them, as cues at their place
+            # in their theme's font, size and colour (modules.title_themes).
+            segments = [title_themes.as_subtitle(segment) if segment.get('kind') == cue_kinds.TITLE else segment
+                        for segment in segments]
             ttml.save(final_file, segments,
                       language=options.get('language') if options.get('text') == 'translation' and options.get('language')
                       else language,
@@ -3024,6 +3098,8 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                 origin=SUBTITLE.origin,
                 names={code: name for name, code in session.LANGUAGE_DICT_LIST.items()},
                 source_language=SUBTITLE.source_language,
+                mark_categories=cue_kinds.project_table(SUBTITLE.segments),
+                theme=subtitle_styles.project_table(SUBTITLE.segments),
             ))
 
         elif subtitle_format in ['USFX']:
@@ -3143,6 +3219,8 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                 origin=SUBTITLE.origin,
                 names={code: name for name, code in session.LANGUAGE_DICT_LIST.items()},
                 source_language=SUBTITLE.source_language,
+                mark_categories=cue_kinds.project_table(segments_copy),
+                theme=subtitle_styles.project_table(segments_copy),
             )
 
             def _mime_for(path_in_zip):
@@ -3173,6 +3251,9 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                 except (KeyError, OSError, zipfile.BadZipFile):
                     thumbnail = None
             attachment_members = _usfx_attachment_members(SUBTITLE.attachments)
+            theme_members = {f'{USFX_THEMES}{theme.id}{themes.EXTENSION}': theme.html.encode('utf-8')
+                             for theme in themes.to_embed(segments_copy, SUBTITLE.theme,
+                                                          installed=usfx_options['include_themes'])}
             manifest_entries = [('subtitles.usf', 'application/x-usf+xml')]
             if thumbnail:
                 manifest_entries.append(('thumbnail.png', 'image/png'))
@@ -3186,6 +3267,8 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                 manifest_entries.append((arc, 'application/json' if arc.endswith('.json') else 'application/x-ndjson'))
             for arc in attachment_members:
                 manifest_entries.append((arc, 'application/octet-stream'))
+            for arc in theme_members:
+                manifest_entries.append((arc, 'text/html'))
 
             manifest_lines = ['<?xml version="1.0" encoding="UTF-8"?>',
                               '<manifest version="1.0">',
@@ -3226,6 +3309,8 @@ def save_file(final_file, subtitle_format='USFX', language='en'):
                     for arc, data in collab_members.items():
                         zf.writestr(arc, data)
                     for arc, (_kind, _name, data) in attachment_members.items():
+                        zf.writestr(arc, data)
+                    for arc, data in theme_members.items():
                         zf.writestr(arc, data)
                 # Verify the tmp file is a structurally valid zip with
                 # intact CRCs for every member BEFORE atomic rename —

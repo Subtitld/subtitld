@@ -25,6 +25,7 @@ from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QScrollA
 
 from subtitld.interface import left_panel, theme, timeline_edges, timeline_shapes
 from subtitld.interface.translation import _
+from subtitld.modules import cue_kinds
 from subtitld.modules import markup, quality_check, session, subtitles, timeline_frames, timeline_style, timeline_svg
 from subtitld.modules.segment import text_of
 
@@ -369,8 +370,9 @@ class VerticalTimeline(QWidget):
         return QRectF(left, top, right - left, max(1.0, (subtitle['end'] - subtitle['start']) * self.pps))
 
     def visible_segments(self, top_time, bottom_time):
-        """The shown subtitles that reach into [top_time, bottom_time]."""
-        segments = session.SUBTITLE.segments
+        """The shown subtitles that reach into [top_time, bottom_time]:
+        subtitles alone, this timeline draws no marks or titles."""
+        segments = cue_kinds.subtitles(session.SUBTITLE.segments)
         starts = [segment['start'] for segment in segments]
         # A subtitle long enough to start above the view still reaches in:
         # look back from the first that starts inside it.

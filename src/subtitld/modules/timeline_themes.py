@@ -330,6 +330,13 @@ def apply(theme_id):
     theme = available()[theme_id]
     timeline_style.set_values(look_of(theme))
     _config()['theme'] = theme_id
+    # What the look was set to, to know later whether anyone changed it.
+    _config()['theme_look'] = _fingerprint(timeline_style.changes())
+
+
+def _fingerprint(changes):
+    import hashlib
+    return hashlib.sha1(json.dumps(changes, sort_keys=True, default=str).encode()).hexdigest()[:16]
 
 
 def set_option(key, value, theme_id=None):
@@ -422,16 +429,50 @@ def current():
     return available().get(_config().get('theme'))
 
 
+def _expected(theme):
+    """The look's changes as setting it from `theme` leaves them."""
+    reference = timeline_style.clean(look_of(theme))
+    return {'timeline': {k: v for k, v in reference['timeline'].items() if v != timeline_style.TIMELINE_DEFAULTS[k]},
+            'boxes': {kind: box for kind, box in reference['boxes'].items() if box}}
+
+
 def changed():
     """Whether the look has been changed since it was set from its theme
     (True without one)."""
     theme = current()
     if theme is None:
         return True
-    reference = timeline_style.clean(look_of(theme))
-    expected = {'timeline': {k: v for k, v in reference['timeline'].items() if v != timeline_style.TIMELINE_DEFAULTS[k]},
-                'boxes': {kind: box for kind, box in reference['boxes'].items() if box}}
-    return expected != timeline_style.changes()
+    return _expected(theme) != timeline_style.changes()
+
+
+def catch_up():
+    """As Subtitld starts: a look set from a theme and not changed since is
+    set from the theme again, its options kept, when the theme has come to
+    say more or other since (boxes for marks and titles, a setting a later
+    Subtitld added, a shape redrawn). Not changed since: as it was set (the
+    fingerprint `apply` keeps); for a look set before there was one, saying
+    nothing the theme does not, a shape standing for a shape. Whether it was."""
+    theme = current()
+    if theme is None or not changed():
+        return False
+    saved = timeline_style.changes()
+    kept = _config().get('theme_look')
+    if kept:
+        if kept != _fingerprint(saved):
+            return False
+    else:
+        expected = _expected(theme)
+        timeline_files, box_files = _file_fields()
+
+        def alike(theirs, ours, files):
+            return all(key in files and bool(value) and bool(theirs.get(key)) or theirs.get(key) == value
+                       for key, value in ours.items())
+        if not (alike(expected['timeline'], saved['timeline'], timeline_files) and all(
+                kind in expected['boxes'] and alike(expected['boxes'][kind], box, box_files)
+                for kind, box in saved['boxes'].items())):
+            return False
+    apply(theme.id)
+    return True
 
 
 def import_file(path):

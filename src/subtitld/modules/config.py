@@ -70,6 +70,9 @@ class Config(dict):
         self.setdefault('default_values', {})
         self.setdefault('videoplayer', {})
         self.setdefault('subtitle_style', {})
+        # Mark categories of the user's (modules.cue_kinds) and the title theme picked (modules.title_themes).
+        self.setdefault('marks', {})
+        self.setdefault('title_theme', {})
         self.setdefault('export', {})
         self.setdefault('autosave', {})
         self.setdefault('transcription', {})
@@ -103,6 +106,8 @@ class Config(dict):
             'default_values',
             'videoplayer',
             'subtitle_style',
+            'marks',
+            'title_theme',
             'export',
             'autosave',
             'transcription',

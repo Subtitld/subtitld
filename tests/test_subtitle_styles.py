@@ -123,6 +123,7 @@ check('the current style', styles.get().id, 'test.box')
 check('switching back keeps what was set', (styles.values('subtitld.classic')['color'], styles.values()['size']),
       ('#ff00ff00', 4.0))
 session.CONFIG['subtitle_style']['current'] = 'gone.style'
+session.SUBTITLE.theme['id'] = 'gone.style'         # the project's choice, made where it was installed
 check('a current style no longer there: Classic', styles.get().id, 'subtitld.classic')
 try:
     styles.set_current('gone.style')
@@ -141,6 +142,7 @@ check('every type', styles.css_variables('test.box'),
        '--title': '"Hi \\"you\\""'})
 
 print('from videoplayer, where the settings were')
+session.SUBTITLE.theme = None                       # a project that says nothing: the app's
 path = Path(tempfile.mkdtemp()) / 'subtitld.config'
 path.write_text(json.dumps({'videoplayer': {'font_size': 55, 'shadow_enabled': False, 'color': '#ffffff00',
                                              'safe_margin_title_x': 12, 'music_voice_separation_volume': 0.3}}))

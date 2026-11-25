@@ -7,6 +7,8 @@ boxes run along y, start at the top: `vertical` swaps the axes, the same
 shape mirrored onto them.
 """
 
+import math
+
 from PySide6.QtCore import QRectF, Qt
 from PySide6.QtGui import QBrush, QColor, QLinearGradient, QPainterPath, QPen, QTransform
 
@@ -36,7 +38,24 @@ def paint(painter, box, rect, side, radius, vertical=False):
     color = box.color('edge_start_color' if side == 'start' else 'edge_end_color')
     left, right, top, bottom = rect.left(), rect.right(), rect.top(), rect.bottom()
     r = max(0.0, min(radius, rect.height() / 2.0, rect.width() / 2.0))
-    if style == 'bar':
+    if style == 'bar' and side == 'end' and box['end_slant'] < 90:
+        # An end that slants (its frame draws it so): the bar along it, its
+        # top at the box's right, leaning back to the bottom.
+        width = min(thickness, rect.width() / 2.0)
+        run = rect.height() / math.tan(math.radians(box['end_slant']))
+        # Inside the frame's slanted side, which starts its curve a little
+        # short of the box's right.
+        edge = right - 2.5
+        bar = QPainterPath()
+        bar.moveTo(edge - width, top)
+        bar.lineTo(edge, top)
+        bar.lineTo(edge - run, bottom)
+        bar.lineTo(edge - run - width, bottom)
+        bar.closeSubpath()
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(color)
+        painter.drawPath(bar)
+    elif style == 'bar':
         shape = QPainterPath()
         shape.addRoundedRect(rect, r, r)
         width = min(thickness, rect.width() / 2.0)

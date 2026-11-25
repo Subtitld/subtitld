@@ -5,33 +5,55 @@
 import os
 import secrets
 from bisect import bisect
-from subtitld.modules import cue_ids, history, markup, session
+from subtitld.modules import cue_ids, cue_kinds, history, markup, session
 from subtitld.modules import segment as segment_text
 from subtitld.modules.segment import set_text, text_of, timed_pieces
 
 
-def add_subtitle(position=0.0, duration=3.0, text='', from_last_subtitle=False):
-    """Function to add a subtitle to the main subtitle list"""
+def _subtitles():
+    """The subtitles alone, without the marks and titles among them
+    (modules.cue_kinds): what "the subtitle before" and "the next one" are
+    counted in."""
+    return cue_kinds.subtitles(session.SUBTITLE.segments)
+
+
+def _insert(cue):
+    """Put `cue` in the list where its start puts it, among every kind."""
+    starts = [item['start'] for item in session.SUBTITLE.segments]
+    index = bisect(starts, cue['start'])
+    session.SUBTITLE.segments.insert(index, cue)
+    # The list holds a Segment made of it: that one is the cue now.
+    return session.SUBTITLE.segments[index]
+
+
+def add_subtitle(position=0.0, duration=3.0, text='', from_last_subtitle=False, kind_fields=None):
+    """Function to add a subtitle to the main subtitle list. `kind_fields`
+    makes it a cue of another kind (modules.cue_kinds: 'kind' and what that
+    kind keeps), placed among the cues of its kind."""
     history.history_append(session.SUBTITLE.segments)
 
-    subt = [item['start'] for item in session.SUBTITLE.segments]
+    kind = cue_kinds.kind_of(kind_fields or {})
+    segments = cue_kinds.of_kind(session.SUBTITLE.segments, kind)
+    subt = [item['start'] for item in segments]
     index = bisect(subt, position)
 
     if index:
-        if session.SUBTITLE.segments[index - 1]['end'] > position:
-            session.SUBTITLE.segments[index - 1]['end'] -= (session.SUBTITLE.segments[index - 1]['end']) - position
+        if segments[index - 1]['end'] > position:
+            segments[index - 1]['end'] -= (segments[index - 1]['end']) - position
         elif from_last_subtitle:
-            position = (session.SUBTITLE.segments[index - 1]['end']) + .001
+            position = (segments[index - 1]['end']) + .001
 
-    if len(session.SUBTITLE.segments) - 1 > index and session.SUBTITLE.segments[index]['start'] - position < duration:
-        duration = session.SUBTITLE.segments[index]['start'] - position
+    if len(segments) - 1 > index and segments[index]['start'] - position < duration:
+        duration = segments[index]['start'] - position
 
-    session.SUBTITLE.segments.insert(index, {
+    cue = dict(kind_fields or {})
+    cue.update({
         'id': cue_ids.new_id(),
         'start': position,
         'end': position + duration,
         'text': text
     })
+    return _insert(cue)
 
     # return session.SUBTITLE.segments[session.SUBTITLE.segments.index([position, duration, text])]
 
@@ -81,7 +103,18 @@ def slice_subtitle(selected_subtitle=False, position=0.0, last_text='', next_tex
         else:
             session.SUBTITLE.segments[index]['text'] = last_text
 
-        add_subtitle(position=position_to_cut, duration=new_duration, text=next_text)
+        add_subtitle(position=position_to_cut, duration=new_duration, text=next_text,
+                     kind_fields=_kind_fields(session.SUBTITLE.segments[index]))
+
+
+def _kind_fields(cue):
+    """What makes `cue` the kind it is, for a cue cut from it."""
+    if cue_kinds.kind_of(cue) == cue_kinds.SUBTITLE:
+        return None
+    fields = {key: cue[key] for key in ('kind', 'category', 'title_theme') if key in cue}
+    if isinstance(cue.get('title_settings'), dict):
+        fields['title_settings'] = dict(cue['title_settings'])
+    return fields
 
 
 def _concatenate_first_dubs(first_subtitle, second_subtitle):
@@ -166,8 +199,12 @@ def merge_back_subtitle(selected_subtitle=False):
     if selected_subtitle and session.SUBTITLE.segments.index(selected_subtitle):
         history.history_append(session.SUBTITLE.segments)
 
-        subt = sorted([subtitle['end'] for subtitle in session.SUBTITLE.segments if subtitle['end'] <= selected_subtitle['start']])
-        nearest_subttile = [subtitle for subtitle in session.SUBTITLE.segments if subtitle['end'] == subt[-1]][0]
+        # Among its own kind.
+        same = cue_kinds.of_kind(session.SUBTITLE.segments, cue_kinds.kind_of(selected_subtitle))
+        subt = sorted([subtitle['end'] for subtitle in same if subtitle['end'] <= selected_subtitle['start']])
+        if not subt:
+            return None
+        nearest_subttile = [subtitle for subtitle in same if subtitle['end'] == subt[-1]][0]
 
         nearest_subttile['end'] = selected_subtitle['end']
         nearest_subttile['text'] = segment_text.joined(nearest_subttile, selected_subtitle)
@@ -190,8 +227,11 @@ def merge_next_subtitle(selected_subtitle=False):
     if selected_subtitle and session.SUBTITLE.segments.index(selected_subtitle) < len(session.SUBTITLE.segments) - 1:
         history.history_append(session.SUBTITLE.segments)
 
-        subt = sorted([item['start'] for item in session.SUBTITLE.segments if item['start'] >= selected_subtitle['end']])
-        nearest_subttile = [subtitle for subtitle in session.SUBTITLE.segments if subtitle['start'] == subt[0]][0]
+        same = cue_kinds.of_kind(session.SUBTITLE.segments, cue_kinds.kind_of(selected_subtitle))
+        subt = sorted([item['start'] for item in same if item['start'] >= selected_subtitle['end']])
+        if not subt:
+            return None
+        nearest_subttile = [subtitle for subtitle in same if subtitle['start'] == subt[0]][0]
 
         selected_subtitle['end'] = nearest_subttile['end']
         selected_subtitle['text'] = segment_text.joined(selected_subtitle, nearest_subttile)
@@ -254,13 +294,15 @@ def speaker_lane(tracks_shown):
 
 
 def lane_segments(subtitle, lane=None):
-    """The subtitles on the same lane as `subtitle`, in order. `lane` maps a
-    subtitle to its lane (the timeline's speaker tracks); without one every
-    subtitle shares a single lane."""
-    if lane is None:
-        return session.SUBTITLE.segments
+    """The cues on the same lane as `subtitle`, in order: those of its kind
+    (modules.cue_kinds), and for a subtitle, those `lane` puts with it
+    (the timeline's speaker tracks; without it every subtitle shares one)."""
+    kind = cue_kinds.kind_of(subtitle)
+    segments = cue_kinds.of_kind(session.SUBTITLE.segments, kind)
+    if lane is None or kind != cue_kinds.SUBTITLE:
+        return segments
     key = lane(subtitle)
-    return [item for item in session.SUBTITLE.segments if lane(item) == key]
+    return [item for item in segments if lane(item) == key]
 
 
 def move_start_subtitle(selected_subtitle=False, amount=0.0, absolute_time=None, move_nereast=False, record=True, lane=None):
@@ -292,6 +334,8 @@ def move_end_subtitle(selected_subtitle=False, amount=0.0, absolute_time=None, m
     if selected_subtitle:
         if record:
             history.history_append(session.SUBTITLE.segments)
+        # A mark given an end is no longer open-ended (modules.cue_kinds).
+        selected_subtitle.pop('open_end', None)
         if move_nereast:
             segments = lane_segments(selected_subtitle, lane)
             subt = [item['start'] for item in segments]
@@ -309,55 +353,59 @@ def move_end_subtitle(selected_subtitle=False, amount=0.0, absolute_time=None, m
 
 def next_start_to_current_position(position=0.0):
     """Function to set next start to position of a subtitle in the main subtitle list"""
+    segments = _subtitles()
     history.history_append(session.SUBTITLE.segments)
-    subt = [item['start'] for item in session.SUBTITLE.segments]
+    subt = [item['start'] for item in segments]
     index = bisect(subt, position)
     if index < len(subt):
-        session.SUBTITLE.segments[index]['start'] = position
-    # if index and session.SUBTITLE.segments[index - 1]['end'] > position:
+        segments[index]['start'] = position
+    # if index and segments[index - 1]['end'] > position:
     #     last_end_to_current_position(position=position - 0.001)
 
 
 def subtitle_start_to_current_position(position=0.0):
     """Function to set start to position of a subtitle in the main subtitle list"""
+    segments = _subtitles()
     history.history_append(session.SUBTITLE.segments)
-    subt = [item['start'] for item in session.SUBTITLE.segments]
+    subt = [item['start'] for item in segments]
     index = bisect(subt, position)
-    if index and position < (session.SUBTITLE.segments[index - 1]['end']):
-        # end = session.SUBTITLE.segments[index - 1]['end']
-        session.SUBTITLE.segments[index - 1]['start'] = position
-        # session.SUBTITLE.segments[index - 1]['end'] = end - position
+    if index and position < (segments[index - 1]['end']):
+        # end = segments[index - 1]['end']
+        segments[index - 1]['start'] = position
+        # segments[index - 1]['end'] = end - position
     # else:
-    #     end = session.SUBTITLE.segments[index]['end']
-    #     session.SUBTITLE.segments[index]['start'] = position
-    #     session.SUBTITLE.segments[index]['end'] = end - position
+    #     end = segments[index]['end']
+    #     segments[index]['start'] = position
+    #     segments[index]['end'] = end - position
 
 
 def subtitle_end_to_current_position(position=0.0):
     """Function to set end to position of a subtitle in the main subtitle list"""
+    segments = _subtitles()
     history.history_append(session.SUBTITLE.segments)
-    subt = [item['start'] for item in session.SUBTITLE.segments]
+    subt = [item['start'] for item in segments]
     index = bisect(subt, position)
     if index:
-        if position < (session.SUBTITLE.segments[index - 1]['end']):
-            session.SUBTITLE.segments[index - 1]['end'] = position # - session.SUBTITLE.segments[index - 1]['start']
+        if position < (segments[index - 1]['end']):
+            segments[index - 1]['end'] = position # - segments[index - 1]['start']
         # else:
-        #     session.SUBTITLE.segments[index - 1]['end'] = position - session.SUBTITLE.segments[index - 1]['start']
+        #     segments[index - 1]['end'] = position - segments[index - 1]['start']
 
 
 def subtitle_under_current_position(position=False):
     """Function to return subtitle under position"""
+    segments = _subtitles()
     if not position:
         position = session.SUBTITLE.position or 0.0
     # current_subtitle = False
 
-    return next((item for item in session.SUBTITLE.segments if item['start'] <= position < item['end']), False)
+    return next((item for item in segments if item['start'] <= position < item['end']), False)
 
 
-    # subt = [item['start'] for item in session.SUBTITLE.segments]
+    # subt = [item['start'] for item in segments]
     # index = bisect(subt, position)
-    # if index - 1 > -1 and position > session.SUBTITLE.segments[index - 1]['start'] and position < (session.SUBTITLE.segments[index - 1]['end']):
-    #     current_subtitle = session.SUBTITLE.segments[index - 1]
+    # if index - 1 > -1 and position > segments[index - 1]['start'] and position < (segments[index - 1]['end']):
+    #     current_subtitle = segments[index - 1]
     # return current_subtitle
 
 
@@ -382,66 +430,72 @@ def get_adjacent_subtitles(position=False, subtitle=False, segments=None):
 
 def last_subtitle_current_position(position=0.0):
     """Function to return the last subtitle of position"""
+    segments = _subtitles()
     last_subtitle = False
-    subt = [item['start'] for item in session.SUBTITLE.segments]
+    subt = [item['start'] for item in segments]
     index = bisect(subt, position)
     if index:
-        if position > (session.SUBTITLE.segments[index - 1]['end']):
-            last_subtitle = session.SUBTITLE.segments[index - 1]
+        if position > (segments[index - 1]['end']):
+            last_subtitle = segments[index - 1]
     return last_subtitle
 
 
 def next_subtitle_current_position(position=0.0):
     """Function to return the next subtitle of position"""
+    segments = _subtitles()
     next_subtitle = False
-    subt = [item['start'] for item in session.SUBTITLE.segments]
+    subt = [item['start'] for item in segments]
     index = bisect(subt, position)
     if index < len(subt):
-        next_subtitle = session.SUBTITLE.segments[index]
+        next_subtitle = segments[index]
     return next_subtitle
 
 
 def next_end_to_current_position(position=0.0):
     """Function set next end to position"""
+    segments = _subtitles()
     history.history_append(session.SUBTITLE.segments)
-    subt = [item['start'] for item in session.SUBTITLE.segments]
+    subt = [item['start'] for item in segments]
     index = bisect(subt, position)
     if index:
-        end = session.SUBTITLE.segments[index - 1]['end']
+        end = segments[index - 1]['end']
         if end > position:
-            session.SUBTITLE.segments[index - 1]['end'] = position # - session.SUBTITLE.segments[index - 1]['start']
+            segments[index - 1]['end'] = position # - segments[index - 1]['start']
 
 
 def last_end_to_current_position(position=0.0):
     """Function set last end to position"""
+    segments = _subtitles()
     history.history_append(session.SUBTITLE.segments)
-    subt = [item['start'] for item in session.SUBTITLE.segments]
+    subt = [item['start'] for item in segments]
     index = bisect(subt, position)
 
     if index - 1 < len(subt) - 1:
-        session.SUBTITLE.segments[index - 1]['end'] = position # - session.SUBTITLE.segments[index - 1]['start']
+        segments[index - 1]['end'] = position # - segments[index - 1]['start']
 
 
 def last_start_to_current_position(position=0.0):
     """Function set last start to position"""
+    segments = _subtitles()
     history.history_append(session.SUBTITLE.segments)
-    subt = [item['start'] for item in session.SUBTITLE.segments]
+    subt = [item['start'] for item in segments]
     index = bisect(subt, position)
-    if index and session.SUBTITLE.segments[index - 1]['start'] < position and not (session.SUBTITLE.segments[index - 1]['end']) < position:
-        # end = session.SUBTITLE.segments[index - 1]['end']
-        session.SUBTITLE.segments[index - 1]['start'] = position
-        # session.SUBTITLE.segments[index - 1]['end'] = end - position
+    if index and segments[index - 1]['start'] < position and not (segments[index - 1]['end']) < position:
+        # end = segments[index - 1]['end']
+        segments[index - 1]['start'] = position
+        # segments[index - 1]['end'] = end - position
 
 
 def send_text_to_next_subtitle(selected_subtitle=False, last_text='', next_text=''):
     """Function send text to the next subtitle"""
-    if selected_subtitle and session.SUBTITLE.segments.index(selected_subtitle) + 1 < len(session.SUBTITLE.segments):
+    segments = _subtitles()
+    if selected_subtitle and segments.index(selected_subtitle) + 1 < len(segments):
         history.history_append(session.SUBTITLE.segments)
-        index = session.SUBTITLE.segments.index(selected_subtitle)
+        index = segments.index(selected_subtitle)
         last_text, next_text = markup.rebalance(last_text, next_text)
-        set_text(session.SUBTITLE.segments[index], last_text)
+        set_text(segments[index], last_text)
 
-        next_text = next_text.strip() + ' ' + session.SUBTITLE.segments[index + 1].text()
+        next_text = next_text.strip() + ' ' + segments[index + 1].text()
         if session.CONFIG['quality_check'].get('break_text_when_sending_text_to_adjacent', False) and '\n' in next_text:
             next_text = next_text.replace('\n', ' ')
             mid = len(next_text) // 2
@@ -455,17 +509,18 @@ def send_text_to_next_subtitle(selected_subtitle=False, last_text='', next_text=
                 split = left if (mid - left) < (right - mid) else right
             next_text = next_text[:split] + '\n' + next_text[split+1:]
 
-        set_text(session.SUBTITLE.segments[index + 1], next_text)
+        set_text(segments[index + 1], next_text)
 
 def send_translated_text_to_next_subtitle(selected_subtitle=False, last_text='', next_text=''):
     """Function send text to the last subtitle"""
-    if selected_subtitle and session.SUBTITLE.segments.index(selected_subtitle):
+    segments = _subtitles()
+    if selected_subtitle and segments.index(selected_subtitle):
         history.history_append(session.SUBTITLE.segments)
-        index = session.SUBTITLE.segments.index(selected_subtitle)
+        index = segments.index(selected_subtitle)
         last_text, next_text = markup.rebalance(last_text, next_text)
-        session.SUBTITLE.segments[index]['translations'][session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-us')] = last_text
+        segments[index]['translations'][session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-us')] = last_text
 
-        next_text = next_text.strip() + ' ' + session.SUBTITLE.segments[index + 1]['translations'][session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-us')]
+        next_text = next_text.strip() + ' ' + segments[index + 1]['translations'][session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-us')]
         if session.CONFIG['quality_check'].get('break_text_when_sending_text_to_adjacent', False) and '\n' in next_text:
             next_text = next_text.replace('\n', ' ')
             mid = len(next_text) // 2
@@ -479,18 +534,19 @@ def send_translated_text_to_next_subtitle(selected_subtitle=False, last_text='',
                 split = left if (mid - left) < (right - mid) else right
             next_text = next_text[:split] + '\n' + next_text[split+1:]
 
-        session.SUBTITLE.segments[index + 1]['translations'][session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-us')] = next_text
+        segments[index + 1]['translations'][session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-us')] = next_text
 
 
 def send_text_to_last_subtitle(selected_subtitle=False, last_text='', next_text=''):
     """Function send text to the last subtitle"""
-    if selected_subtitle and session.SUBTITLE.segments.index(selected_subtitle):
+    segments = _subtitles()
+    if selected_subtitle and segments.index(selected_subtitle):
         history.history_append(session.SUBTITLE.segments)
-        index = session.SUBTITLE.segments.index(selected_subtitle)
+        index = segments.index(selected_subtitle)
         last_text, next_text = markup.rebalance(last_text, next_text)
-        set_text(session.SUBTITLE.segments[index], next_text)
+        set_text(segments[index], next_text)
 
-        last_text = session.SUBTITLE.segments[index - 1].text() + ' ' + last_text
+        last_text = segments[index - 1].text() + ' ' + last_text
         if session.CONFIG['quality_check'].get('break_text_when_sending_text_to_adjacent', False) and '\n' in last_text:
             last_text = last_text.replace('\n', ' ')
             mid = len(last_text) // 2
@@ -505,18 +561,19 @@ def send_text_to_last_subtitle(selected_subtitle=False, last_text='', next_text=
             last_text = last_text[:split] + '\n' + last_text[split+1:]
 
 
-        set_text(session.SUBTITLE.segments[index - 1], last_text)
+        set_text(segments[index - 1], last_text)
 
 
 def send_translated_text_to_last_subtitle(selected_subtitle=False, last_text='', next_text=''):
     """Function send text to the last subtitle"""
-    if selected_subtitle and session.SUBTITLE.segments.index(selected_subtitle):
+    segments = _subtitles()
+    if selected_subtitle and segments.index(selected_subtitle):
         history.history_append(session.SUBTITLE.segments)
-        index = session.SUBTITLE.segments.index(selected_subtitle)
+        index = segments.index(selected_subtitle)
         last_text, next_text = markup.rebalance(last_text, next_text)
-        session.SUBTITLE.segments[index]['translations'][session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-us')] = next_text
+        segments[index]['translations'][session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-us')] = next_text
 
-        last_text = session.SUBTITLE.segments[index - 1]['translations'][session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-us')] + ' ' + last_text
+        last_text = segments[index - 1]['translations'][session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-us')] + ' ' + last_text
         if session.CONFIG['quality_check'].get('break_text_when_sending_text_to_adjacent', False) and '\n' in last_text:
             last_text = last_text.replace('\n', ' ')
             mid = len(last_text) // 2
@@ -530,7 +587,7 @@ def send_translated_text_to_last_subtitle(selected_subtitle=False, last_text='',
                 split = left if (mid - left) < (right - mid) else right
             last_text = last_text[:split] + '\n' + last_text[split+1:]
 
-        session.SUBTITLE.segments[index - 1]['translations'][session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-us')] = last_text
+        segments[index - 1]['translations'][session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-us')] = last_text
 
 
 def set_gap(position=0.0, gap=0.0):
@@ -550,20 +607,45 @@ def change_subtitle_text(selected_subtitle=False, text=''):
 
 
 def is_current_position_above_subtitle(position=0.0):
-    subt = [item['start'] for item in session.SUBTITLE.segments]
+    segments = _subtitles()
+    subt = [item['start'] for item in segments]
     index = bisect(subt, position)
 
-    if position < session.SUBTITLE.segments[index - 1]['end']:
+    if position < segments[index - 1]['end']:
         return True
 
     return False
 
 def get_speaker_intervals(speaker_name):
+    segments = _subtitles()
     intervals = []
-    for subtitle in session.SUBTITLE.segments:
+    for subtitle in segments:
         speaker = subtitle.get('speaker', None)
         if speaker == speaker_name:
             start = subtitle['start']
             end = subtitle['end']
             intervals.append((start, end))
     return intervals
+
+def add_mark(position=0.0, category=None, text=''):
+    """A mark at `position` (modules.cue_kinds), open-ended: it lasts until
+    the next of its category. Its category is the one marked with last
+    when none is given."""
+    history.history_append(session.SUBTITLE.segments)
+    marks = session.CONFIG.setdefault('marks', {}) if isinstance(session.CONFIG, dict) else {}
+    category = category or marks.get('last_category') or cue_kinds.DEFAULT_CATEGORY
+    if category not in cue_kinds.categories():
+        category = cue_kinds.DEFAULT_CATEGORY
+    marks['last_category'] = category
+    cue = cue_kinds.new_mark(position, text, category)
+    cue['id'] = cue_ids.new_id()
+    return _insert(cue)
+
+
+def add_title(position=0.0, duration=3.0, text=''):
+    """A title from `position`, drawn by the current title theme
+    (modules.title_themes), among the titles as a subtitle is among
+    subtitles."""
+    fields = cue_kinds.new_title(position, position + duration)
+    return add_subtitle(position=position, duration=duration, text=text,
+                        kind_fields={key: fields[key] for key in ('kind', 'title_theme', 'title_settings')})

@@ -44,6 +44,7 @@ import re
 import subprocess
 from pathlib import Path
 
+from subtitld.modules import cue_kinds
 from subtitld.modules import session
 from subtitld.modules import markup
 from subtitld.modules import utils as modules_utils
@@ -219,7 +220,7 @@ def _pick_spans_for_speaker(
     conditions; jumping around the timeline introduces louder/softer
     discontinuities the embedding extractor doesn't like.
     """
-    segments = session.SUBTITLE.segments
+    segments = cue_kinds.subtitles(session.SUBTITLE.segments)
     # Resolve once, outside the loop — the source language is a
     # project-level property, identical for every segment.
     source_lang = _resolve_source_language()

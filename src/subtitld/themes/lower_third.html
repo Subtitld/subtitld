@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Lower third</title>
+<script type="application/json" id="subtitld-theme">
+{
+  "format": 1,
+  "id": "subtitld.lower_third",
+  "kind": "title",
+  "name": "Lower third",
+  "version": "26.12.1",
+  "author": "Subtitld",
+  "licence": "GPL-3.0-or-later",
+  "description": "A name and what they do, beside an accent bar, with an optional logo: it slides in and out.",
+  "timing": {"intro": 700, "outro": 400},
+  "slice": "words",
+  "slots": [
+    {"key": "main", "type": "text", "label": "Name"},
+    {"key": "role", "type": "text", "label": "Role", "max_length": 80, "placeholder": "What they do"},
+    {"key": "logo", "type": "image", "label": "Logo", "visible_if": "show_logo"}
+  ],
+  "fields": [
+    {"key": "placement", "type": "select", "label": "Place", "default": "lower_third",
+     "options": [{"value": "upper_third", "label": "Upper third"}, {"value": "lower_third", "label": "Lower third"},
+                 {"value": "bottom", "label": "At the bottom"}]},
+    {"key": "font_family", "type": "font", "label": "Font", "default": "Montserrat"},
+    {"key": "name_size", "type": "int", "label": "Name size", "default": 60, "min": 12, "max": 200, "unit": "px"},
+    {"key": "role_size", "type": "int", "label": "Role size", "default": 34, "min": 8, "max": 160, "unit": "px"},
+    {"key": "color", "type": "color", "label": "Name color", "default": "#ffffffff"},
+    {"key": "role_color", "type": "color", "label": "Role color", "default": "#ffd5dde6"},
+    {"key": "accent_color", "type": "color", "label": "Accent color", "default": "#ffe5a823"},
+    {"key": "box_enabled", "type": "bool", "label": "Background box", "default": true},
+    {"key": "box_color", "type": "color", "label": "Box color", "default": "#d9141a21", "visible_if": "box_enabled"},
+    {"key": "show_logo", "type": "bool", "label": "Logo", "default": true}
+  ],
+  "fallback": {"placement": "lower_third", "font_size": 54, "color": "#ffffffff", "bold": true,
+               "box_color": "#d9141a21", "box_padding": 16}
+}
+</script>
+<style>
+  /* Lower third: the name over what they do, beside a bar of accent, a
+     logo before them when there is one, on a dark box. The bar grows, the
+     box opens and the words rise in, one after the other; at the end it
+     all slides away. Lengths are pixels of a 1080-pixel-tall picture.
+
+     The settings' defaults, for this file opened in a browser; Subtitld
+     sets the title's own on the root element. */
+  :root {
+    --font-family: "Montserrat"; --name-size: 60px; --role-size: 34px;
+    --color: #ffffff; --role-color: #d5dde6; --accent-color: #e5a823;
+    --box-color: rgba(20, 26, 33, 0.85);
+  }
+  /* Only in a browser: the sample where Subtitld would put it. */
+  html { background: #3a3a3a; }
+  body { min-height: 100vh; display: flex; align-items: flex-end; padding: 0 0 12vh 10vw; box-sizing: border-box; }
+
+  .card {
+    display: flex;
+    align-items: stretch;
+    gap: calc(var(--name-size) * 0.3);
+    font-family: var(--font-family);
+    animation: card-in 700ms cubic-bezier(.2, .7, .2, 1) both;
+  }
+  .bar {
+    width: calc(var(--name-size) * 0.12);
+    background: var(--accent-color);
+    transform-origin: 50% 100%;
+    animation: bar-in 250ms ease-out both;
+  }
+  .body {
+    display: flex;
+    align-items: center;
+    gap: calc(var(--name-size) * 0.35);
+    padding: calc(var(--name-size) * 0.22) calc(var(--name-size) * 0.45) calc(var(--name-size) * 0.22) 0;
+  }
+  :root[data-box-enabled="1"] .body {
+    background: var(--box-color);
+    padding-left: calc(var(--name-size) * 0.4);
+    clip-path: inset(0 0 0 0);
+    animation: box-in 450ms 100ms cubic-bezier(.2, .7, .2, 1) both;
+  }
+  .logo {
+    height: calc(var(--name-size) * 1.6);
+    max-width: calc(var(--name-size) * 3);
+    object-fit: contain;
+  }
+  .logo[data-empty], :root[data-show-logo="0"] .logo { display: none; }
+  .text { display: flex; flex-direction: column; justify-content: center; }
+  .name {
+    margin: 0;
+    font-size: var(--name-size);
+    font-weight: 700;
+    line-height: 1.1;
+    color: var(--color);
+    white-space: pre-wrap;
+  }
+  .role {
+    margin: calc(var(--role-size) * 0.2) 0 0;
+    font-size: var(--role-size);
+    font-weight: 500;
+    line-height: 1.2;
+    color: var(--role-color);
+  }
+  .role[data-empty] { display: none; }
+  .word { display: inline-block; animation: word-in 350ms cubic-bezier(.2, .7, .2, 1) both; }
+  .name .word { animation-delay: calc(200ms + var(--i) * 70ms); }
+  .role .word { animation-delay: calc(320ms + var(--i) * 40ms); }
+
+  .theme-out .card { animation: card-out 400ms ease-in both; }
+
+  @keyframes card-in { from { transform: translateX(-24px); } }
+  @keyframes bar-in { from { transform: scaleY(0); } }
+  @keyframes box-in { from { clip-path: inset(0 100% 0 0); } }
+  @keyframes word-in { from { opacity: 0; transform: translateY(0.4em); } }
+  @keyframes card-out { to { opacity: 0; transform: translateX(-40px); } }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="bar"></div>
+    <div class="body">
+      <img class="logo" data-slot="logo" alt="" src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI0NiIgZmlsbD0iI2U1YTgyMyIvPjxwYXRoIGQ9Ik0zMCA1MiBsMTQgMTQgMjYtMzIiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzE0MWEyMSIgc3Ryb2tlLXdpZHRoPSIxMCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+PC9zdmc+">
+      <div class="text">
+        <h1 class="name" data-slot="main">Maria Souza</h1>
+        <p class="role" data-slot="role">Field reporter</p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

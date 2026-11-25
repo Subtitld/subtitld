@@ -1,7 +1,8 @@
 """The pieces of a subtitle timed word by word on the timeline
 (interface.timeline_pieces), where its text would be: dragging the edge two
 pieces share moves both, with Alt only the one dragged towards; an edge of
-its own moves alone; edges snap to the playhead; a click on a chip takes the
+its own moves alone; edges snap to the playhead, not with Shift; with
+Shift, a drag from a chip moves its piece, its length kept; a click on a chip takes the
 playhead to it (a drag from it is the timeline's), a double click cuts it
 finer; with Ctrl, a click cuts it in two where the pointer is; tapping K
 while it plays times one piece after another. Each change is one undo step.
@@ -144,6 +145,12 @@ document()
 drag(150, 140, 130, modifiers=Qt.AltModifier)
 check('with Alt, dragged left: only the earlier one', spans()[:2], [(0.0, 0.3), (0.5, 0.8)])
 document()
+drag(150, 165, 170, modifiers=Qt.ShiftModifier)
+check('with Shift too: only the later one', spans()[:2], [(0.0, 0.5), (0.7, 0.8)])
+document()
+drag(150, 140, 130, modifiers=Qt.ShiftModifier)
+check('with Shift, dragged left: only the earlier one', spans()[:2], [(0.0, 0.3), (0.5, 0.8)])
+document()
 drag(180, 190, 260)
 check('an edge of its own moves alone, up to the next piece', spans()[1:], [(0.5, 1.0), (1.0, 1.6)])
 
@@ -163,6 +170,36 @@ tl.background_onsets = [2.31]
 drag(260, 240, 235)
 check('to an onset heard', spans()[2], (1.0, 1.31))
 tl.background_onsets = None
+document()
+session.SUBTITLE.position = 1.7
+drag(150, 168, 173, modifiers=Qt.ShiftModifier)
+check('with Shift, not snapped (and only the later one)', spans()[:2], [(0.0, 0.5), (0.73, 0.8)])
+
+print('with Shift, a piece moved')
+document()
+mouse(QEvent.MouseMove, 165, Qt.ShiftModifier, Qt.NoButton)
+check('the pointer over a chip shows it moves', (tl._pieces_hover, tl.cursor().shape()), (('piece', 1), Qt.SizeAllCursor))
+check('the subtitle drawn locked meanwhile', (timeline_pieces.held(tl, session.SUBTITLE.selected), tl.frame_state(session.SUBTITLE.selected)),
+      (True, 'locked'))
+tl.grab()
+mouse(QEvent.MouseMove, 165, Qt.NoModifier, Qt.NoButton)
+check('and not once Shift is let go', timeline_pieces.held(tl, session.SUBTITLE.selected), False)
+mouse(QEvent.MouseMove, 165, Qt.ShiftModifier, Qt.NoButton)
+drag(165, 170, 175, modifiers=Qt.ShiftModifier)
+check('its length kept', spans(), [(0.0, 0.5), (0.6, 0.9), (1.0, 1.6)])
+history.history_undo()
+check('one undo step', [(p['start'], p['end']) for p in timed_pieces(session.SUBTITLE.segments[0])][1], (0.5, 0.8))
+document()
+drag(165, 200, 300, modifiers=Qt.ShiftModifier)
+check('up to the next piece', spans()[1], (0.7, 1.0))
+document()
+drag(165, 120, modifiers=Qt.ShiftModifier)
+check('back to the one before', spans()[1], (0.5, 0.8))
+document()
+session.SUBTITLE.position = 2.0
+drag(165, 166, modifiers=Qt.ShiftModifier)
+check('a Shift-click moves nothing, takes the playhead to it', (spans()[1], session.SUBTITLE.position, len(history.ALL_HISTORY)),
+      ((0.5, 0.8), 1.5, 0))
 
 print('a click, a double click')
 document()

@@ -72,6 +72,18 @@ class Segment(dict):
 
     __slots__ = ()
 
+    def kind(self):
+        """Which kind of cue it is: a subtitle, a mark or a title
+        (modules.cue_kinds)."""
+        kind = self.get('kind')
+        return kind if kind in ('mark', 'title') else 'subtitle'
+
+    def kind(self):
+        """Which kind of cue it is: 'subtitle', 'mark' or 'title'
+        (modules.cue_kinds)."""
+        kind = self.get('kind')
+        return kind if kind in ('mark', 'title') else 'subtitle'
+
     def text(self):
         """Its words, a string whether its text is timed or not."""
         return text_of(self.get('text'))
@@ -370,6 +382,24 @@ def time_piece(segment, number, start=None, end=None):
     return new_start, new_end
 
 
+
+def move_piece(segment, number, start):
+    """Piece `number` of `segment` moved to start at `start`, in seconds from
+    the subtitle's start, its length kept: after the piece before it, before
+    the next, within the subtitle. Gives the times it took, or None for no
+    such piece."""
+    pieces = timed_pieces(segment)
+    if not 0 <= number < len(pieces):
+        return None
+    piece = pieces[number]
+    length = piece['end'] - piece['start']
+    floor = pieces[number - 1]['end'] if number else 0.0
+    total = max(0.0, float(segment.get('end', 0) or 0) - float(segment.get('start', 0) or 0))
+    ceiling = pieces[number + 1]['start'] if number + 1 < len(pieces) else max(total, piece['end'])
+    new_start = round(max(floor, min(start, ceiling - length)), 3)
+    piece['start'], piece['end'] = new_start, round(new_start + length, 3)
+    return piece['start'], piece['end']
+
 def set_effect(segment, number, effect):
     """How piece `number` of `segment` lights up (EFFECTS); None for the
     style's way."""
@@ -530,6 +560,11 @@ class Subtitle:
         translations     the languages of its translations
         attachments      the fonts and pictures it carries (an ASS
                          script's, a USFX's)
+        mark_categories  the categories its marks use, {id: {'name',
+                         'color'}}, as the file carries them
+                         (modules.cue_kinds)
+        theme            the subtitle theme it is drawn with and what was
+                         set of it (modules.subtitle_styles)
         current          the subtitle under the playhead
 
     It is also a mapping of the same names, for what edits a project as a
@@ -540,7 +575,7 @@ class Subtitle:
     """
 
     FIELDS = ('position', 'language', 'source_language', 'filepath', 'metadata', 'origin', 'translations', 'attachments',
-              'current')
+              'mark_categories', 'theme', 'current')
     _NAMES = ('segments', 'selected') + FIELDS
 
     def __init__(self, fields=None, **more):
