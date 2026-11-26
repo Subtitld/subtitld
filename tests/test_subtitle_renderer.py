@@ -219,6 +219,34 @@ fourth_run.set_size(960, 540)
 check('and it works', len(rendered(fourth_run, project[2])), 1)
 fourth_run.close()
 
+print('a project just opened: rendered whole, to disk')
+whole_path = Path(tempfile.mkdtemp()) / 'whole.sqlite'
+whole = subtitle_renderer.SubtitleRenderer(disk_cache=whole_path)
+whole.set_size(960, 540)
+opened = [{'start': 300.0 + 10 * i, 'end': 302.0 + 10 * i, 'text': f'Opened {i}'} for i in range(6)]
+opened.append({'start': 400.0, 'end': 404.0,
+               'text': [{'text': 'one ', 'start': 0.0, 'end': 1.0}, {'text': 'two', 'start': 1.0, 'end': 2.0}]})
+opened.append({'start': 410.0, 'end': 411.0, 'text': '', 'kind': 'mark'})
+whole_keys = [whole._job(s, at, *whole._style())[0]
+              for s in opened[:6] for at in [s['start']]] + \
+             [whole._job(opened[6], at, *whole._style())[0] for at in (400.0, 401.0)]
+whole.render_all(opened)
+check('every cue rendered, far from any playhead', wait_for(lambda: all(k in whole.disk.index for k in whole_keys), 60),
+      True)
+check('a timed one at each piece start, a mark not at all', whole.stats['rendered'], 8)
+check('kept on disk, not in memory', any(k in whole.cache for k in whole_keys), False)
+check('never more than one job at once', all(j.get('background') for j in whole.sent.values()), True)
+rendered_before = whole.stats['rendered']
+whole.render_all(opened)
+wait_for(lambda: False, 1)
+check('opened again: nothing rendered twice', whole.stats['rendered'], rendered_before)
+whole.close()
+reopened = subtitle_renderer.SubtitleRenderer(disk_cache=whole_path)
+reopened.set_size(960, 540)
+check('played later: read from disk', (len(rendered(reopened, opened[3])), reopened.stats['rendered']), (1, 0))
+reopened.close()
+check('no disk: no pass', subtitle_renderer.SubtitleRenderer(disk_cache=None).render_all(opened), None)
+
 from subtitld.interface.subtitle_disk_cache import SubtitleDiskCache
 from PySide6.QtCore import QRectF
 from PySide6.QtGui import QImage
