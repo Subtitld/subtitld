@@ -2137,7 +2137,7 @@ class AddonsPanel(QWidget):
         installing them and the add-on on yes. True when started."""
         ask = utils.SimpleDialog(self, title=_('addons_dialog.packages_title'))
         ask.content.layout().addWidget(QLabel(
-            _('addons_dialog.packages_text').format(addon=missing.addon_id,
+            _('addons_dialog.packages_text').format(addon=missing.name,
                                                    packages='\n'.join(missing.packages))
         ))
         ask.exec()

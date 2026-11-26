@@ -207,9 +207,10 @@ class MissingPackagesError(Exception):
     `haiku_packages`). Nothing was extracted; install `packages` with
     `platforms.install_packages` and install the zip again."""
 
-    def __init__(self, addon_id: str, packages: list[str], zip_path: Path):
+    def __init__(self, addon_id: str, packages: list[str], zip_path: Path, name: str = ''):
         super().__init__(f'{addon_id} needs these packages: {", ".join(packages)}')
         self.addon_id = addon_id
+        self.name = name or addon_id  # the manifest's display_name, for the prompt
         self.packages = packages
         self.zip_path = zip_path
 
@@ -259,7 +260,7 @@ def install_from_zip(zip_path: Path, addon_id: str | None = None) -> str:
             raise ValueError(f'{zip_path.name}: manifest has no `id` field')
         missing = missing_packages(manifest)
         if missing:
-            raise MissingPackagesError(resolved_id, missing, zip_path)
+            raise MissingPackagesError(resolved_id, missing, zip_path, manifest.get('display_name') or '')
 
         # Stage to a sibling dir, then atomically swap in. If the target
         # exists we replace it (upgrade path).
