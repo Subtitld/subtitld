@@ -154,7 +154,14 @@ with tempfile.TemporaryDirectory() as tmp:
             missing = exc
         check('Haiku: missing packages stop the install', missing and missing.packages,
               ['onnxruntime_python3.14'])
+        check('Haiku: the prompt names the add-on by its id when it has no display name', missing and missing.name,
+              'modes')
         check('Haiku: nothing extracted', (Path(tmp) / 'addons' / 'modes').exists(), False)
+        make_zip(Path(tmp) / 'named.zip', {**manifest, 'id': 'named', 'display_name': 'Named add-on'}, {})
+        try:
+            installer.install_from_zip(Path(tmp) / 'named.zip')
+        except installer.MissingPackagesError as exc:
+            check('Haiku: the prompt names the add-on by its display name', exc.name, 'Named add-on')
         platforms.active_packages = lambda: {'python3.14', 'onnxruntime_python3.14'}
         check('Haiku: installs once the packages are there',
               installer.install_from_zip(Path(tmp) / 'modes.zip'), 'modes')
