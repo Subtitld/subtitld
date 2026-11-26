@@ -649,17 +649,23 @@ class VerticalTimeline(QWidget):
         first = int(self.y_at(top_time) // WAVEFORM_TILE)
         last = int(self.y_at(bottom_time) // WAVEFORM_TILE)
         painter.save()
-        painter.setOpacity(timeline_shapes.waveform_setting()[1])
-        for index in range(max(0, first), last + 1):
-            tile = self._waveform_tile(manager, look, index, lane)
-            if tile is not None:
-                painter.drawPixmap(QPointF(lane[0], index * WAVEFORM_TILE), tile)
+        opacity = timeline_shapes.waveform_setting()[1]
+        layers = self.timeline().waveform_layers() if hasattr(self.timeline(), 'waveform_layers') else [(manager, 'mix', 1.0)]
+        for layer, kind, gain in layers:
+            if gain <= 0.0:
+                continue
+            painter.setOpacity(opacity * gain)
+            for index in range(max(0, first), last + 1):
+                tile = self._waveform_tile(layer, look, index, lane, kind)
+                if tile is not None:
+                    painter.drawPixmap(QPointF(lane[0], index * WAVEFORM_TILE), tile)
         painter.restore()
 
-    def _waveform_tile(self, manager, look, index, lane):
+    def _waveform_tile(self, manager, look, index, lane, kind='mix'):
         """The waveform over canvas rows [index, index + 1) × WAVEFORM_TILE, as
         wide as its lane, made once for what it is drawn from (as the
-        timeline's tiles are); None while there is no level to draw."""
+        timeline's tiles are), `kind` as there; None while there is no level
+        to draw."""
         rate = session.VIDEO.get('samplerate', 48000) or 48000
         top = index * WAVEFORM_TILE
         start, end = self.time_at(top), self.time_at(top + WAVEFORM_TILE)
@@ -667,7 +673,7 @@ class VerticalTimeline(QWidget):
         scale = self.devicePixelRatioF()
         style, _opacity = timeline_shapes.waveform_setting()
         if style == 'spectral':
-            key = ('spectral', index, self.pps, rate, id(manager.samples), width, scale)
+            key = ('spectral', kind, index, self.pps, rate, id(manager.samples), width, scale)
             tile = self._waveform_tiles.get(key)
             if tile is not None:
                 return tile
@@ -687,7 +693,7 @@ class VerticalTimeline(QWidget):
         last = min(len(level[0]), int(end * rate) // per_bucket + 3)
         if last - first < 2:
             return None
-        key = (style, index, self.pps, rate, chosen, id(level[0]), width, look['waveform_scale'], look['waveform_fill_color'],
+        key = (style, kind, index, self.pps, rate, chosen, id(level[0]), width, look['waveform_scale'], look['waveform_fill_color'],
                look['waveform_border_color'], look['waveform_border_width'], scale)
         tile = self._waveform_tiles.get(key)
         if tile is not None:

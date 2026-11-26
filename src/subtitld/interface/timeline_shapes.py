@@ -167,6 +167,19 @@ SPECTRAL_CEILING_DB = -10.0
 SPECTRAL_FRAMES = 4
 
 
+def stem_gains():
+    """How loud the separated background and voice play, (background, voice),
+    from the music ↔ voice balance (as playercontrols sets the tracks' gains):
+    both full in the middle, the other fading out towards either end."""
+    try:
+        volume = float((session.VIDEO.get('music_voice_separation') or {}).get('volume', 0.5))
+    except (TypeError, ValueError):
+        volume = 0.5
+    background = 1.0 if volume <= 0.5 else 1.0 - (volume - 0.5) * 2.0
+    voice = 1.0 if volume >= 0.5 else volume * 2.0
+    return min(1.0, max(0.0, background)), min(1.0, max(0.0, voice))
+
+
 def _spectral_colors():
     """256 premultiplied RGBA colours, quiet to loud: see-through dark violet,
     magenta, orange, a pale yellow, opaque."""
