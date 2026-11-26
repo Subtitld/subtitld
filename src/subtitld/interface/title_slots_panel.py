@@ -36,6 +36,27 @@ def translation_language():
     return options.get('target_language') if options.get('show_translations') else None
 
 
+class PreviewButton(QPushButton):
+    """A button over an image slot's preview. Its icon shows on hover, and
+    on focus only when it came from the keyboard: focus that lands on it
+    after the file dialog, or as the other button hides, would otherwise
+    show it with the mouse elsewhere."""
+
+    def focusInEvent(self, event):
+        self._set_tabbed(event.reason() in (Qt.TabFocusReason, Qt.BacktabFocusReason))
+        super().focusInEvent(event)
+
+    def focusOutEvent(self, event):
+        self._set_tabbed(False)
+        super().focusOutEvent(event)
+
+    def _set_tabbed(self, tabbed):
+        if self.property('tabbed') != tabbed:
+            self.setProperty('tabbed', tabbed)
+            self.style().unpolish(self)
+            self.style().polish(self)
+
+
 class TitleSlotsPanel(QWidget):
     """The selected title's slots (`title()` gives it); `changed` after an
     edit."""
@@ -159,7 +180,7 @@ class TitleSlotsPanel(QWidget):
         return line
 
     def _preview_button(self, preview, object_name, text, name):
-        button = QPushButton(preview)
+        button = PreviewButton(preview)
         button.setObjectName(object_name)
         inset = (THUMBNAIL - BUTTON) // 2
         button.setGeometry(inset, inset, BUTTON, BUTTON)
