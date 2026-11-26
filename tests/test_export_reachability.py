@@ -19,6 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
 from subtitld.modules import file_io, karaoke, session, usf
+from subtitld.modules.segment import Subtitle
 
 fails = []
 
@@ -33,7 +34,7 @@ def check(name, got, want):
 print('the export list')
 from subtitld.interface.export_dialog import KARAOKE_FORMATS, PLAYER_ERA_FORMATS, _SubtitlesPanel
 session.CONFIG.pop('export_subtitles', None)
-session.SUBTITLE = {'segments': [{'start': 1.0, 'end': 2.0, 'text': 'Hi', 'speaker': 'A'}]}
+session.SUBTITLE = Subtitle({'segments': [{'start': 1.0, 'end': 2.0, 'text': 'Hi', 'speaker': 'A'}]})
 session.SPEAKERS, session.FORMAT, session.VIDEO = {}, {}, {}
 panel = _SubtitlesPanel()
 combo = panel.format_combo.combobox
@@ -72,7 +73,7 @@ def export(fmt, options_from=None):
     return path, options
 
 
-for fmt in KARAOKE_FORMATS + PLAYER_ERA_FORMATS:
+for fmt in ('SUBVIEWER2',) + KARAOKE_FORMATS + PLAYER_ERA_FORMATS:
     session.FORMAT, session.VIDEO = {}, {'framerate': 25.0}
     path, options = export(fmt)
     session.SUBTITLE['segments'] = []
@@ -125,15 +126,17 @@ check('USF writer and reader: every code, in its place', [segment['text'] for se
 check('USF: a code that also sets bold times its syllable as before', karaoke.timed(read[1]['text'], 4.0),
       karaoke.timed(SUNG[1]['text'], 4.0))
 for fmt in ('USF', 'USFX'):
-    session.SUBTITLE = {'language': 'en', 'segments': [dict(segment) for segment in SUNG]}
+    session.SUBTITLE = Subtitle({'language': 'en', 'segments': [dict(segment) for segment in SUNG]})
     session.SPEAKERS, session.FORMAT, session.VIDEO = {}, {}, {}
     file_io.save_file(str(folder / f'sung.{fmt.lower()}'), fmt)
-    session.SUBTITLE, session.SPEAKERS, session.FORMAT, session.VIDEO = {}, {}, {}, {}
+    session.SUBTITLE, session.SPEAKERS, session.FORMAT, session.VIDEO = Subtitle(), {}, {}, {}
     opened = file_io.process_subtitles_file(str(folder / f'sung.{fmt.lower()}'))[0]
     if session.USFX_BACKGROUND_LOAD is not None:
         session.USFX_BACKGROUND_LOAD.wait(10000)
-    check(f'{fmt}: saved and opened, the first subtitle\'s timing whole', opened[0]['text'], SUNG[0]['text'])
-check('USFX: the syllables timed as before', karaoke.timed(opened[0]['text'], opened[0]['start']),
+    # Opened, a subtitle's text is its timed pieces (modules.segment).
+    check(f'{fmt}: saved and opened, the first subtitle\'s timing whole', karaoke.codes_of(opened[0]['text']),
+          SUNG[0]['text'])
+check('USFX: the syllables timed as before', karaoke.timed(karaoke.codes_of(opened[0]['text']), opened[0]['start']),
       karaoke.timed(SUNG[0]['text'], SUNG[0]['start']))
 
 print()

@@ -49,7 +49,7 @@ from subtitld.modules.segment import text_of, timed_pieces
 SUBTITLE_FORMATS = ['SRT', 'VTT', 'HLS', 'CMFT', 'DASH', 'ISMT', 'ASS', 'DFXP', 'TTML', 'SAMI', 'SCC', 'MCC', 'STL', 'PAC', 'FPC', 'CAP', 'LAMBDACAP', 'CAVENA890',
                     'EZTXML', 'AYATO', 'SOFTNI', 'SOFTNICOLON', 'SWIFTTEXT', 'SWIFTNUMBERS', 'SWIFTNUMBERSDURATION', 'XIF', 'SIF', 'CHEETAHASC', 'CAPMAKER',
                     'AVID', 'FCPXML', 'DCP', 'VOBSUB', 'PGS', 'TEXTST', 'DVDSUP', 'CDG', 'BDN', 'SCENARISTBMP', 'SON', 'DOST', 'SPUMUX',
-                    'TIMEDIMAGES', 'FCPIMAGE', 'RHOZET', 'DVDSTUDIOPRO', 'ENCORE', 'DVDARCHITECT', 'SCENARIST', 'DVDPRODUCER', 'AVIDDVD', 'SBV', 'SUB',
+                    'TIMEDIMAGES', 'FCPIMAGE', 'RHOZET', 'DVDSTUDIOPRO', 'ENCORE', 'DVDARCHITECT', 'SCENARIST', 'DVDPRODUCER', 'AVIDDVD', 'SBV', 'SUBVIEWER2', 'SUB',
                     'XML', 'XMLDIALECT', 'LRC', 'TTXT', 'KATE', 'DCPMXF', 'IMSCMXF', 'STLMXF', 'EDL', 'EDIUS', 'PREMIERE', 'DETX', 'USF', 'JSON', 'JSONDIALECT', 'BCC',
                     'TEXTGRID', 'EAF', 'TRS', 'EXB', 'CHAT', 'CTM', 'AUDACITY', 'AENEAS', 'TMX']
 # Karaoke's own formats, and the player era's, each group after a line in the
