@@ -3,12 +3,14 @@ writing one): every problem found, or what Subtitld reads in it; with
 --preview, a picture of it drawn with sample text at moments through its
 intro, middle and outro, by the same renderer the preview and burn-in use.
 
-    subtitld --check-theme THEME.html [--preview OUT.png] [--text TEXT]
+    subtitld --check-theme THEME.html [--preview OUT.png] [--text TEXT] [--sung]
              [--slot KEY=TEXT]... [--set FIELD=VALUE]...
 
 --text is the cue's text (\n for a new line), --slot a title's other text
 slot (a list slot's items split by |), --set one of the theme's fields
-(JSON where it parses: true, 72, "#ff00ff00"; text otherwise).
+(JSON where it parses: true, 72, "#ff00ff00"; text otherwise). --sung
+times a subtitle's text word by word, as karaoke is, and draws it as its
+first two words are sung too.
 
 The theme is not installed: it is drawn as a project's carried theme is
 (modules.themes.carry). A frozen Subtitld has no Python to run a script
@@ -31,7 +33,8 @@ def summary(theme):
     """What Subtitld reads in a theme, as lines."""
     lines = [f'OK: {theme.id} ({theme.kind}) "{theme.name}" {theme.version or "(no version)"}']
     if theme.timing:
-        lines.append(f'  animated: intro {theme.timing["intro"]} ms, outro {theme.timing["outro"]} ms')
+        lines.append(f'  animated: intro {theme.timing["intro"]} ms, outro {theme.timing["outro"]} ms'
+                     + (f', a sung word moves for {theme.timing["sung"]} ms' if theme.timing.get('sung') else ''))
     else:
         lines.append('  not animated (no "timing"): drawn once, its animations at their first frame')
     lines.append(f'  slots: {", ".join(f"{s["key"]} ({s["type"]})" for s in theme.slots)}'
@@ -45,8 +48,41 @@ def summary(theme):
     return lines
 
 
-def moments(theme, length):
-    """(seconds into the cue, label) to draw a cue of `length` seconds at."""
+def sung_pieces(text, first, last):
+    """`text` timed word by word, as karaoke is: its words sung one after
+    another from `first` to `last` seconds into the cue."""
+    import re
+    words = re.findall(r'\S+\s*', text)
+    step = (last - first) / max(1, len(words))
+    return [{'text': word, 'start': round(first + step * number, 3), 'end': round(first + step * (number + 1), 3),
+             'level': 'word'} for number, word in enumerate(words)]
+
+
+def sung_span(theme, length):
+    """(first, last): when the sample's words are sung, in seconds into the cue."""
+    intro = theme.timing['intro'] / 1000 if theme.timing else 0
+    outro = theme.timing['outro'] / 1000 if theme.timing else 0
+    return intro + 0.1, length - outro - 0.4
+
+
+def moments(theme, length, pieces=None):
+    """(seconds into the cue, label) to draw a cue of `length` seconds at;
+    `pieces`: its sample timed word by word."""
+    if pieces:
+        shots = [(pieces[0]['start'] - 0.05, 'before it is sung')]
+        sung = (theme.timing or {}).get('sung', 0) / 1000
+        for number, piece in enumerate(pieces[:2], start=1):
+            shots += [(piece['start'], f'word {number} sung')]
+            if sung:
+                shots += [(piece['start'] + sung * part, f'word {number} +{int(sung * part * 1000)} ms')
+                          for part in (0.33, 0.66)]
+        shots.append((pieces[-1]['end'] - 0.05, 'all sung'))
+        if not theme.timing:
+            return [(max(0.0, at), label) for at, label in shots]
+        intro, outro = theme.timing['intro'] / 1000, theme.timing['outro'] / 1000
+        found = [(intro * part, f'intro {int(part * 100)}%') for part in (0, 0.5)] + shots
+        found += [(length - outro + outro * part, f'outro {int(part * 100)}%') for part in (0, 0.5)]
+        return found
     if not theme.timing:
         return [(length / 2, 'still')]
     intro, outro = theme.timing['intro'] / 1000, theme.timing['outro'] / 1000
@@ -78,22 +114,30 @@ def _sample_image():
     return 'data:image/png;base64,' + base64.b64encode(bytes(data)).decode('ascii')
 
 
-def preview(theme, out, text=None, slot_texts=None, settings=None):
+def preview(theme, out, text=None, slot_texts=None, settings=None, sung=False):
     """Draw `theme` with sample text (or `text`, `slot_texts` {key: text},
-    `settings` {field: value}) at moments() into a contact sheet `out` (PNG)."""
+    `settings` {field: value}; `sung`: a subtitle's timed word by word) at
+    moments() into a contact sheet `out` (PNG)."""
+    # The pictures and the settings go in a folder of their own, gone after.
+    with tempfile.TemporaryDirectory(prefix='subtitld-check-') as work:
+        return _preview(Path(work), theme, out, text, slot_texts, settings, sung)
+
+
+def _preview(work, theme, out, text, slot_texts, settings, sung):
     from PySide6.QtCore import QRect, Qt
     from PySide6.QtGui import QColor, QFont, QImage, QPainter
     from subtitld.interface import subtitle_pictures
     from subtitld.modules import config, session, themes
     from subtitld.modules.segment import Segment, Subtitle
 
-    session.CONFIG = config.Config(Path(tempfile.mkdtemp()) / 'check.config')
+    session.CONFIG = config.Config(work / 'check.config')
     session.SUBTITLE = Subtitle(segments=[])
     session.VIDEO = {'framerate': FPS, 'width': SIZE[0], 'height': SIZE[1]}
     themes.carry({theme.path.name: theme.html.encode('utf-8')})
     length = 4.0
     if theme.timing:
         length = max(length, (theme.timing['intro'] + theme.timing['outro']) / 1000 + 1.5)
+    pieces = None
     if theme.kind == 'title':
         slots = {}
         for slot in theme.slots:
@@ -116,11 +160,15 @@ def preview(theme, out, text=None, slot_texts=None, settings=None):
         from subtitld.modules import subtitle_styles
         for key, value in (settings or {}).items():
             subtitle_styles.set_value(key, value, theme.id)
-        segment = Segment({'start': 0, 'end': length, 'text': text or SAMPLE_SUBTITLE})
         style_id = theme.id
-    folder = tempfile.mkdtemp()
-    pictures = subtitle_pictures.draw([segment], SIZE, folder, style_id=style_id, fps=FPS)
-    shots = moments(theme, length)
+        if sung:
+            words = len((text or SAMPLE_SUBTITLE).split())
+            length = max(length, sung_span(theme, 0)[0] + 0.4 + words * 0.35 + 0.4
+                         + ((theme.timing or {}).get('outro', 0) / 1000))
+            pieces = sung_pieces(text or SAMPLE_SUBTITLE, *sung_span(theme, length))
+        segment = Segment({'start': 0, 'end': length, 'text': pieces or text or SAMPLE_SUBTITLE})
+    pictures = subtitle_pictures.draw([segment], SIZE, str(work), style_id=style_id, fps=FPS)
+    shots = moments(theme, length, pieces)
     columns = min(4, len(shots))
     rows = (len(shots) + columns - 1) // columns
     sheet = QImage(TILE[0] * columns, TILE[1] * rows, QImage.Format_ARGB32)
@@ -148,17 +196,20 @@ def preview(theme, out, text=None, slot_texts=None, settings=None):
     return len(shots)
 
 
-USAGE = 'subtitld --check-theme THEME.html [--preview OUT.png] [--text TEXT] [--slot KEY=TEXT]... [--set FIELD=VALUE]...'
+USAGE = 'subtitld --check-theme THEME.html [--preview OUT.png] [--text TEXT] [--sung] [--slot KEY=TEXT]... [--set FIELD=VALUE]...'
 
 
 def _options(args):
-    """(the file, out, text, {slot: text}, {field: value}) from the command line; None when it makes no sense."""
+    """(the file, out, text, {slot: text}, {field: value}, sung) from the command line; None when it makes
+    no sense."""
     import json
-    files, out, text, slot_texts, settings = [], None, None, {}, {}
+    files, out, text, slot_texts, settings, sung = [], None, None, {}, {}, False
     args = list(args)
     while args:
         arg = args.pop(0)
-        if arg in ('--preview', '--text', '--slot', '--set'):
+        if arg == '--sung':
+            sung = True
+        elif arg in ('--preview', '--text', '--slot', '--set'):
             if not args:
                 return None
             value = args.pop(0)
@@ -179,7 +230,7 @@ def _options(args):
                         settings[key] = rest
         else:
             files.append(arg)
-    return (Path(files[0]), out, text, slot_texts, settings) if len(files) == 1 else None
+    return (Path(files[0]), out, text, slot_texts, settings, sung) if len(files) == 1 else None
 
 
 def main(args):
@@ -188,7 +239,7 @@ def main(args):
     if options is None:
         print(USAGE, file=sys.stderr)
         return 2
-    path, out, text, slot_texts, settings = options
+    path, out, text, slot_texts, settings, sung = options
     app = QApplication(sys.argv[:1])   # noqa: F841 (the renderer needs one)
     from subtitld.modules import themes
     try:
@@ -207,6 +258,7 @@ def main(args):
             [key for key in slot_texts if theme.slot(key) is None or key == 'main']
         if unknown:
             print(f'  no such field or slot: {", ".join(unknown)}')
-        count = preview(theme, out, text, slot_texts, {k: v for k, v in settings.items() if theme.field(k)})
+        count = preview(theme, out, text, slot_texts, {k: v for k, v in settings.items() if theme.field(k)},
+                        sung=sung and theme.kind != 'title')
         print(f'preview: {out} ({count} moments)')
     return 0

@@ -14,6 +14,9 @@ A cue whose theme is animated (modules.themes: an intro and an outro) is
 drawn once settled, after its intro: a picture for a file. For a video
 (`fps` given), its intro and outro a picture a frame, the time between
 them one picture: a theme holds still between its intro and its outro.
+Unless the cue is timed word by word: then a picture from each word's
+start, and a picture a frame while a word moves as it is sung (the
+theme's timing "sung").
 """
 
 import os
@@ -25,7 +28,7 @@ from PySide6.QtGui import QImage
 
 from subtitld.interface import subtitle_renderer
 from subtitld.modules import markup, themes
-from subtitld.modules.segment import text_of
+from subtitld.modules.segment import text_of, timed_pieces
 
 BATCH = 8                    # subtitles sent to the helper at once
 WAIT = 60.0                  # seconds one batch may take before it is given up on
@@ -58,10 +61,43 @@ def moments(segment, fps=None, style_id=None):
             out.append((at, at, min(last, first + (number + 1) / fps)))
             number += 1
     frames(start, settled)
-    if leaving > settled + 1e-6:
-        out.append((settled, settled, leaving))
+    middle(settled, leaving, segment, style_id, out, frames)
     frames(leaving, end)
     return out
+
+
+def middle(first, last, segment, style_id, out, frames):
+    """The pictures of an animated cue between its intro and its outro, into
+    `out`: one, unless it is timed word by word: then one from each word's
+    start, and `frames` while a word moves as it is sung."""
+    if last <= first + 1e-6:
+        return
+    start = float(segment['start'])
+    starts = sorted({start + piece['start'] for piece in timed_pieces(segment) or []
+                     if piece['end'] > piece['start']})
+    sung = themes.sung(segment, style_id) if starts else None
+    moving = []
+    for at in starts if sung else []:
+        a, b = max(first, at), min(last, at + sung)
+        if b <= a + 1e-6:
+            continue
+        if moving and a <= moving[-1][1] + 1e-6:
+            moving[-1] = (moving[-1][0], max(moving[-1][1], b))
+        else:
+            moving.append((a, b))
+
+    def hold(a, b):
+        cuts = [a] + [at for at in starts if a + 1e-6 < at < b - 1e-6] + [b]
+        for begin, until in zip(cuts, cuts[1:]):
+            out.append((begin, begin, until))
+    cursor = first
+    for a, b in moving:
+        if a > cursor + 1e-6:
+            hold(cursor, a)
+        frames(a, b)
+        cursor = b
+    if last > cursor + 1e-6:
+        hold(cursor, last)
 
 
 def draw(segments, size, folder, stem='', wait=WAIT, style_id=None, fps=None, span=None):

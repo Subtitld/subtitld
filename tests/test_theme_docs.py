@@ -30,7 +30,7 @@ def check(name, got, want):
 
 document = (SRC / 'subtitld' / 'themes' / 'AUTHORING.md').read_text(encoding='utf-8')
 blocks = [b for b in re.findall(r'```html\n(.*?)```', document, re.DOTALL) if b.lstrip().lower().startswith('<!doctype')]
-check('complete theme files in it', len(blocks), 4)
+check('complete theme files in it', len(blocks), 5)
 folder = Path(tempfile.mkdtemp())
 
 

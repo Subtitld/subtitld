@@ -338,7 +338,7 @@
   // line cut out of the middle of a <b> keeps its own <b>.
   const graphemes = typeof Intl !== 'undefined' && Intl.Segmenter ? new Intl.Segmenter(undefined, {granularity: 'grapheme'}) : null;
   function slice(el, depth) {
-    if (!depth || depth === 'none') return;
+    if (!depth || depth === 'none') { sung(el); return; }
     const lines = [];
     for (const br of [...el.querySelectorAll('br')]) {
       if (!el.contains(br)) continue;
@@ -392,6 +392,40 @@
     el.style.setProperty('--lines', lines.length);
     el.style.setProperty('--words', words);
     el.style.setProperty('--chars', chars);
+    sung(el);
+  }
+
+  // A subtitle timed word by word: its pieces are .subtitld-k spans with
+  // their --k-start and --k-length. Each word and character of the slot
+  // gets the moment it is sung, --k-at, and for how long, --k-for: its
+  // piece's, a character's a share of its piece's length in turn (those
+  // before the first piece: 0ms, for 0ms), and the slot data-timed, so a
+  // theme can move each one as it is sung and keep its stagger by --i for
+  // a subtitle that is not.
+  function sung(el) {
+    const pieces = el.querySelectorAll('.subtitld-k');
+    if (!pieces.length) return;
+    el.setAttribute('data-timed', '');
+    for (const part of el.querySelectorAll('.word, .char')) {
+      if (!part.closest('.subtitld-k')) {
+        part.style.setProperty('--k-at', '0ms');
+        part.style.setProperty('--k-for', '0ms');
+      }
+    }
+    for (const piece of pieces) {
+      const start = parseFloat(piece.style.getPropertyValue('--k-start')) || 0;
+      const length = parseFloat(piece.style.getPropertyValue('--k-length')) || 0;
+      for (const word of piece.querySelectorAll('.word')) {
+        word.style.setProperty('--k-at', `${start}ms`);
+        word.style.setProperty('--k-for', `${length}ms`);
+      }
+      const chars = [...piece.querySelectorAll('.char')];
+      chars.forEach((char, j) => {
+        const at = Math.round(start + length * j / chars.length);
+        char.style.setProperty('--k-at', `${at}ms`);
+        char.style.setProperty('--k-for', `${Math.round(start + length * (j + 1) / chars.length) - at}ms`);
+      });
+    }
   }
 
   function measure(job, scale) {

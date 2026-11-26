@@ -15,6 +15,7 @@ page:
       "min_subtitld": "26.12",
       "author": "…", "licence": "CC BY 4.0", "description": "…",
       "timing": {"intro": 400, "outro": 300},    ms; present = animated
+                                              (+ "sung": ms, a sung word's own motion)
       "ignores_position": false,
       "slice": "words",                       none | lines | words | chars
       "slots": [
@@ -62,6 +63,7 @@ MAX_BYTES = 5 * 1024 * 1024
 MAX_SLOTS = 24
 MAX_FIELDS = 48
 MAX_TIMING = 60000                  # ms, an intro or outro
+MAX_SUNG = 3000                     # ms, a sung word's own motion
 EXTENSION = '.html'
 _ID = re.compile(r'[a-z0-9][a-z0-9._-]*')
 _KEY = re.compile(r'[a-z][a-z0-9_]*')
@@ -115,7 +117,7 @@ class Theme:
     author: str = ''
     licence: str = ''
     description: str = ''
-    timing: dict = None             # {'intro': ms, 'outro': ms}, or None: not animated
+    timing: dict = None             # {'intro': ms, 'outro': ms[, 'sung': ms]}, or None: not animated
     ignores_position: bool = False
     slice: str = 'words'            # how far text slots are cut: none, lines, words, chars
     slots: list = dataclass_field(default_factory=list)
@@ -247,15 +249,19 @@ def _check_manifest(manifest, marked_slots):
             problems.append(f'{key} is not text')
     timing = manifest.get('timing')
     if timing is not None:
-        if not isinstance(timing, dict) or set(timing) - {'intro', 'outro'}:
-            problems.append('timing: {"intro": ms, "outro": ms}')
+        if not isinstance(timing, dict) or set(timing) - {'intro', 'outro', 'sung'}:
+            problems.append('timing: {"intro": ms, "outro": ms[, "sung": ms]}')
             timing = None
         else:
-            for part in ('intro', 'outro'):
+            for part, most in (('intro', MAX_TIMING), ('outro', MAX_TIMING), ('sung', MAX_SUNG)):
                 value = timing.get(part, 0)
-                if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= MAX_TIMING:
-                    problems.append(f'timing {part}: whole milliseconds from 0 to {MAX_TIMING}')
-            timing = {'intro': timing.get('intro', 0), 'outro': timing.get('outro', 0)}
+                if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= most:
+                    problems.append(f'timing {part}: whole milliseconds from 0 to {most}')
+            # "sung": how long the theme's own motion of a word takes once it is sung (a subtitle timed
+            # word by word): Subtitld draws a picture a frame through it, in a burned-in video.
+            sung = timing.get('sung', 0)
+            timing = {'intro': timing.get('intro', 0), 'outro': timing.get('outro', 0),
+                      **({'sung': sung} if sung else {})}
     ignores_position = manifest.get('ignores_position', False)
     if not isinstance(ignores_position, bool):
         problems.append('ignores_position is not true or false')
@@ -413,6 +419,17 @@ def animation(segment, style_id=None):
     if not timing:
         return None
     return timing.get('intro', 0) / 1000, timing.get('outro', 0) / 1000
+
+
+def sung(segment, style_id=None):
+    """How long, in seconds, the theme a subtitle is drawn with moves a word
+    once it is sung (its manifest's timing "sung"); None when it does not."""
+    from subtitld.modules import cue_kinds, subtitle_styles
+    if cue_kinds.kind_of(segment) != cue_kinds.SUBTITLE:
+        return None
+    look = subtitle_styles.get(style_id) if style_id else subtitle_styles.of(segment)
+    timing = getattr(getattr(look, 'file', None), 'timing', None) or {}
+    return timing['sung'] / 1000 if timing.get('sung') else None
 
 
 def too_short(segment):
