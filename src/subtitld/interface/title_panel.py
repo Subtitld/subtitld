@@ -111,9 +111,12 @@ class TitleSettingsDialog(utils.SimpleDialog):
 
     def _group(self, theme, switch, fields, values):
         group = QGroupBox(field_label(theme, switch) if switch else '')
+        # The stylesheet's padding is the group's only inset; with no title
+        # it needs no room on top for one.
+        group.setProperty('untitled', switch is None)
         grid = QGridLayout()
-        grid.setContentsMargins(10, 10, 10, 10)
-        grid.setHorizontalSpacing(20)
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setHorizontalSpacing(16)
         grid.setVerticalSpacing(10)
         group.setLayout(grid)
         if switch is not None:

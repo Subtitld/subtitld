@@ -1478,6 +1478,15 @@ QGroupBox {
     color: #b8cee0;
 }
 
+/* A title's settings dialog: groups with less room around their fields. */
+#title_settings_dialog QGroupBox {
+    padding: 22 8 8 9;
+}
+
+#title_settings_dialog QGroupBox[untitled="true"] {
+    padding-top: 8px;
+}
+
 QGroupBox:disabled {
     border-image: url(graphics:groupbox_background_disabled.svg) 4 4 4 4 stretch stretch;
 }
@@ -1997,6 +2006,80 @@ QMenu#subtitle_formatting_menu::separator {
     font-weight: 700;
     color: #bbffffff;
     padding: 15px 3px 6px 3px;
+}
+
+/* A title's slots (title_slots_panel): each a group with the speaker and
+   theme selectors' 1px border and the buttons' 3px corners, its label on
+   top and its field, borderless, under it. */
+#title_slot_group {
+    background: transparent;
+    border: 1px solid #14ffffff;
+    border-radius: 3px;
+}
+
+#title_slot_group QLabel#title_slot_label {
+    font-size: 9px;
+    font-weight: 700;
+    color: #b8ffffff;
+    text-transform: uppercase;
+    padding: 0;
+}
+
+#left_panel_subtitleslist_bottom_panel #title_slot_group QLineEdit,
+#title_slot_group QPlainTextEdit {
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    padding: 2px 0;
+    font-family: 'Ubuntu Mono', monospace;
+    font-size: 15px;
+    font-weight: 700;
+    color: #bbffffff;
+}
+
+#title_slot_group QLineEdit:hover {
+    background: transparent;
+}
+
+#title_slot_thumbnail {
+    background: #08ffffff;
+    border-radius: 3px;
+}
+
+#title_slot_group QPushButton#title_slot_choose,
+#title_slot_group QPushButton#title_slot_remove {
+    background: transparent;
+    border: 0;
+    border-radius: 3px;
+    padding: 0;
+    min-width: 26px;
+    max-width: 26px;
+    min-height: 26px;
+    max-height: 26px;
+    icon-size: 16px;
+}
+
+#title_slot_group QPushButton#title_slot_choose {
+    background: #08ffffff;
+    icon: url(graphics:title_slot_choose_icon.svg);
+}
+
+#title_slot_group QPushButton#title_slot_choose:hover {
+    background: #12ffffff;
+    icon: url(graphics:title_slot_choose_icon_hover.svg);
+}
+
+#title_slot_group QPushButton#title_slot_remove {
+    icon: url(graphics:speaker_list_item_remove_icon.svg);
+}
+
+#title_slot_group QPushButton#title_slot_remove:hover {
+    background: rgba(255, 107, 107, 0.2);
+    icon: url(graphics:speaker_list_item_remove_icon_hover.svg);
+}
+
+#title_slot_group QPushButton:pressed {
+    background: rgba(0, 0, 0, 0.15);
 }
 
 #subtitles_panel_simplelist_properties_duration_timing_lock_button {
