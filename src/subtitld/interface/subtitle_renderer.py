@@ -32,6 +32,13 @@ is rendered ahead, and the helper keeps a view for urgent jobs alone.
 Rendering ahead (the subtitles after the playhead, so each is ready when it
 comes) starts again from wherever the playhead goes.
 
+A project just opened is rendered whole (render_all), to disk only, while
+the helper has nothing else to do: every cue whose layers the disk does not
+have yet, one job at a time, so playing it later reads them from disk
+instead of racing the helper. Not an animated style's frames, which are a
+layer each: those stay rendered ahead. A new size or style starts the pass
+over, for that size or style.
+
 The helper starts a second after Subtitld does (warm_up), or with the first
 subtitle asked for if that is sooner, and again if it stops (a few times).
 """
@@ -204,6 +211,10 @@ class SubtitleRenderer(QObject):
         self.size_timer.timeout.connect(self._settle_size)
         self.stats = {'rendered': 0, 'from_disk': 0, 'hits': 0, 'stand_ins': 0, 'misses': 0, 'restarts': 0}
         self.urgent = set()             # keys of queued or sent jobs a subtitle on screen waits for
+        self.backlog = []               # the project's cues, rendered to disk while nothing else waits
+        self.backlog_at = 0             # the next of them
+        self.backlog_mark = None        # (style key, size) the pass renders for; another starts it over
+        self.backlog_jobs = []          # (key, job) of the cue being gone through
         self.waiting = {}               # key -> when a subtitle on screen first lacked it
         self.gaps = []                  # ms subtitles on screen waited for their layer
         self._style_key = None
@@ -306,7 +317,10 @@ class SubtitleRenderer(QObject):
             self.stats['rendered'] += 1
             if self.disk is not None:
                 self.disk.put(job['key'], *layer)
-            self._store(job['key'], layer)
+            # One of the whole project's goes to disk alone, unless it was
+            # asked for meanwhile: in memory it would push out what is needed now.
+            if not job.get('background') or job['key'] in self.jobs:
+                self._store(job['key'], layer)
         self.schedule()
 
     def _loaded(self, key, layer):
@@ -535,6 +549,51 @@ class SubtitleRenderer(QObject):
                 self._enqueue(key, job)
         self.schedule()
 
+    def _still_moments(self, segment):
+        """The moments a cue not animated changes at: its start and, timed,
+        each piece's start (a wipe's or a pop's frames aside)."""
+        start = float(segment['start'])
+        return [start] + [start + piece['start'] for piece in timed_pieces(segment)]
+
+    def render_all(self, segments):
+        """Render the project's cues to disk while nothing else waits.
+        `segments` is the live list: a cue added before the pass reaches it
+        is rendered too."""
+        if self.disk is None:
+            return                      # nowhere to keep them
+        self.backlog = segments
+        self.backlog_at = 0
+        self.backlog_mark = None
+        self.backlog_jobs = []
+        self._start()                   # it says hello, and the pass begins
+        self.schedule()
+
+    def _next_background(self):
+        """(key, job) of the next layer of the project the disk lacks, or None."""
+        if self.size is None or (self.backlog_mark == (self._style_key, self.size)
+                                 and self.backlog_at >= len(self.backlog) and not self.backlog_jobs):
+            return None                 # gone through already
+        style, variables, attributes = self._style()
+        if style.animated:
+            return None                 # a layer a frame: rendered ahead only
+        mark = (self._style_key, self.size)
+        if mark != self.backlog_mark:
+            self.backlog_mark, self.backlog_at, self.backlog_jobs = mark, 0, []
+        sent = {job['key'] for job in self.sent.values()}
+        while True:
+            while self.backlog_jobs:
+                key, job = self.backlog_jobs.pop(0)
+                if not (key in self.cache or key in self.disk.index or key in self.queue or key in self.loading
+                        or key in sent):
+                    return key, job
+            if self.backlog_at >= len(self.backlog):
+                return None
+            segment = self.backlog[self.backlog_at]
+            self.backlog_at += 1
+            end = float(segment['end'])
+            self.backlog_jobs = [self._job(segment, moment, style, variables, attributes)
+                                 for moment in sorted(set(self._still_moments(segment))) if moment < end]
+
     def _enqueue(self, key, job, first=False):
         if first:
             self.urgent.add(key)
@@ -569,6 +628,14 @@ class SubtitleRenderer(QObject):
         while self.queue and ahead < self.slots:
             self._dispatch(next(iter(self.queue)), urgent=False)
             ahead += 1
+        # Then the whole project, a job at a time: the helper shares the
+        # computer with the video playing.
+        if not self.queue and ahead == 0 and self.backlog:
+            found = self._next_background()
+            if found is not None:
+                key, job = found
+                self.queue[key] = dict(job, background=True)
+                self._dispatch(key, urgent=False)
 
     def _dispatch(self, key, urgent):
         job = dict(self.queue.pop(key), id=self.next_id, urgent=urgent)
