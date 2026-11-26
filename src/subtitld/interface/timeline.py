@@ -249,6 +249,7 @@ class WaveformManager:
         self.workers = {}  # zoom_key -> worker thread
         self.cache_dir = os.path.join(session.PATH_SUBTITLD_USER_CACHE, 'waveform')
         self._cache_save_timer = None
+        self.on_change = None  # called when a level is ready (the separated stems' managers repaint by it)
         if not os.path.exists(self.cache_dir):
             os.makedirs(self.cache_dir)
         if samples is not None:
@@ -337,6 +338,8 @@ class WaveformManager:
         mins = np.asarray(mins, dtype=np.float32)
         maxs = np.asarray(maxs, dtype=np.float32)
         self.levels[zoom_key] = (mins, maxs, samples_per_bucket)
+        if self.on_change is not None:
+            self.on_change()
         # Schedule a coalesced cache write rather than saving on every worker
         # finish — at high zoom many workers complete in quick succession and
         # each np.save() blocks the main thread with a large disk write,
@@ -677,6 +680,10 @@ class Timeline(QWidget):
         widget.audio_thread.finished.connect(widget.on_waveform_loaded)
 
         widget.waveform_manager = WaveformManager(filepath=session.VIDEO.get("filepath"))
+        # The separated background's and voice's waveforms (stem_waveforms), and their loaders, the
+        # replaced ones kept until they end.
+        widget.stem_managers = {}
+        widget.stem_threads = []
         # The waveform drawn, a tile at a time (_waveform_tile).
         widget._waveform_tiles = timeline_shapes.TileCache(WAVEFORM_TILES_BYTES)
         widget.waveform_height = widget.height() - widget.subtitle_y - 10
@@ -806,16 +813,33 @@ class Timeline(QWidget):
             painter.end()
         event.accept()
 
-    def _waveform_tile(widget, look, index):
+    def _waveform_tile(widget, look, index, manager=None, kind='mix'):
         """The waveform over timeline pixels [index, index + 1) × WAVEFORM_TILE
         as an image the timeline's height, made once for everything it is
         drawn from: the zoom, the waveform level used (a finer one when it is
         ready) and its data, where the waveform is, its look, the screen's
-        scale. None while there is no level to draw."""
-        manager = widget.waveform_manager
+        scale. `manager` and `kind` for a separated stem's ('background',
+        'vocals'); the whole sound's otherwise. None while there is no level
+        to draw."""
+        manager = manager or widget.waveform_manager
         wpp = widget.width_proportion
         sr = session.VIDEO.get('samplerate', 48000)
         left = index * WAVEFORM_TILE
+        style, _opacity = timeline_shapes.waveform_setting()
+        scale = widget.devicePixelRatioF()
+        if style == 'spectral':
+            key = ('spectral', kind, index, wpp, sr, id(manager.samples), widget.waveform_y, widget.waveform_height,
+                   widget.height(), scale)
+            tile = widget._waveform_tiles.get(key)
+            if tile is not None:
+                return tile
+            if widget.waveform_height < 1:
+                return None
+            image = timeline_shapes.spectrogram_image(manager.samples, sr, left / wpp, 1.0 / wpp, WAVEFORM_TILE,
+                                                      int(math.ceil(widget.waveform_height * scale)))
+            rect = QRectF(0.0, widget.waveform_y, WAVEFORM_TILE, widget.waveform_height)
+            return widget._waveform_tiles.put(
+                key, timeline_shapes.spectrogram_tile(WAVEFORM_TILE, widget.height(), scale, image, rect))
         samples_per_pixel = max(1, int(sr / wpp))
         _mins, _maxs, spb, chosen = manager.get_level(samples_per_pixel, int(left / wpp * sr),
                                                       int((left + WAVEFORM_TILE) / wpp * sr))
@@ -829,19 +853,79 @@ class Timeline(QWidget):
         if last - first < 2:
             return None
         border = look['waveform_border_width']
-        scale = widget.devicePixelRatioF()
-        key = (index, wpp, sr, chosen, id(all_mins), widget.waveform_y, widget.waveform_height,
+        key = (style, kind, index, wpp, sr, chosen, id(all_mins), widget.waveform_y, widget.waveform_height,
                widget.height(), look['waveform_scale'], look['waveform_fill_color'], look['waveform_border_color'],
                border, scale)
         tile = widget._waveform_tiles.get(key)
         if tile is not None:
             return tile
-        center = widget.waveform_y + widget.waveform_height * 0.5
-        amplitude = widget.waveform_height * (look['waveform_scale'] / 100.0) / 2.0
-        polygon = timeline_shapes.waveform_polygon(manager.levels[chosen], first, last, spb / sr * wpp, left,
-                                                   center, amplitude)
+        if style == 'bottom':
+            polygon = timeline_shapes.waveform_bottom_polygon(
+                manager.levels[chosen], first, last, spb / sr * wpp, left, widget.waveform_y + widget.waveform_height,
+                widget.waveform_height * (look['waveform_scale'] / 100.0))
+        else:
+            center = widget.waveform_y + widget.waveform_height * 0.5
+            amplitude = widget.waveform_height * (look['waveform_scale'] / 100.0) / 2.0
+            polygon = timeline_shapes.waveform_polygon(manager.levels[chosen], first, last, spb / sr * wpp, left,
+                                                       center, amplitude)
         return widget._waveform_tiles.put(
             key, timeline_shapes.waveform_tile(WAVEFORM_TILE, widget.height(), scale, polygon, look))
+
+    def waveform_layers(widget):
+        """What the waveform is drawn as, bottom first: [(manager, kind, how
+        opaque)]: the separated background and voice, each as loud as it
+        plays, once both are loaded; the whole sound's until then."""
+        stems = widget.stem_waveforms()
+        if stems is not None and all(manager.samples is not None for manager in stems):
+            background, voice = timeline_shapes.stem_gains()
+            return [(stems[0], 'background', background), (stems[1], 'vocals', voice)]
+        return [(widget.waveform_manager, 'mix', 1.0)]
+
+    def stem_waveforms(widget):
+        """The separated (background, vocals) waveforms, loading from their
+        files the first time they are asked for (from the cache when it has
+        them); None while the sound isn't separated."""
+        separation = session.VIDEO.get('music_voice_separation') or {}
+        paths = {kind: separation.get(kind) for kind in ('background', 'vocals')}
+        if not all(paths.values()):
+            return None
+        for kind, path in paths.items():
+            manager = widget.stem_managers.get(kind)
+            if manager is not None and manager.filepath == path:
+                continue
+            manager = WaveformManager(filepath=path)
+            manager.on_change = widget._waveforms_changed
+            widget.stem_managers[kind] = manager
+            if manager._load_from_cache():
+                manager._start_worker_if_missing(512)
+                continue
+            if not os.path.isfile(path):
+                continue
+            thread = AudioLoaderThread(parent=widget)
+            thread.filepath = path
+            thread.finished.connect(lambda samples, _rate, manager=manager: widget._on_stem_loaded(manager, samples))
+            thread.finished.connect(lambda _samples, _rate, thread=thread: widget._forget_stem_thread(thread))
+            widget.stem_threads.append(thread)
+            thread.start()
+        return widget.stem_managers['background'], widget.stem_managers['vocals']
+
+    def _on_stem_loaded(widget, manager, samples):
+        if manager not in widget.stem_managers.values():
+            return
+        manager.set_samples(samples)
+        manager._save_to_cache()
+        widget._waveforms_changed()
+
+    def _forget_stem_thread(widget, thread):
+        # its run() is all but over: dropped after it returns (see _release_worker)
+        QTimer.singleShot(0, lambda: thread in widget.stem_threads and widget.stem_threads.remove(thread))
+
+    def _waveforms_changed(widget):
+        """Both timelines painted again: a waveform has more to draw."""
+        widget.update()
+        vtimeline = getattr(widget.window(), 'vtimeline_panel', None)
+        if vtimeline is not None:
+            vtimeline.canvas.update()
 
     def _ruler_geometry(widget, look):
         """The labels' top and height: `ruler_offset` from the top or the
@@ -1242,10 +1326,17 @@ class Timeline(QWidget):
             # the strip being painted are copied.
             tile_first = int(iter_left // WAVEFORM_TILE)
             tile_last = int((iter_right - 1) // WAVEFORM_TILE)
-            for index in range(tile_first, tile_last + 1):
-                tile = widget._waveform_tile(look, index)
-                if tile is not None:
-                    painter.drawPixmap(QPointF(index * WAVEFORM_TILE, 0.0), tile)
+            painter.save()
+            opacity = timeline_shapes.waveform_setting()[1]
+            for manager, kind, gain in widget.waveform_layers():
+                if gain <= 0.0:
+                    continue
+                painter.setOpacity(opacity * gain)
+                for index in range(tile_first, tile_last + 1):
+                    tile = widget._waveform_tile(look, index, manager, kind)
+                    if tile is not None:
+                        painter.drawPixmap(QPointF(index * WAVEFORM_TILE, 0.0), tile)
+            painter.restore()
 
         # Onset markers (consonant-onset visual aid — see
         # `subtitld.modules.onset_detection`). Drawn AFTER the main

@@ -2802,6 +2802,9 @@ def music_voice_separation_slider_changed(self):
     session.set_unsaved()
 
     music_voice_separation_buttons_update(self)
+    # the timelines draw the background and the voice as loud as they play
+    if hasattr(self, 'timeline_widget'):
+        self.timeline_widget._waveforms_changed()
 
     audio_device = self.preview_panel_player._audio_device
     original_track = getattr(audio_device, 'original_track', None)

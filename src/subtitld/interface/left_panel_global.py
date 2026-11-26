@@ -11,6 +11,7 @@ from subtitld.interface import utils
 from subtitld.interface.addons_dialog import AddonsPanel
 from subtitld.interface.cloud_dashboard import CloudDashboardPanel
 from subtitld.interface import theme
+from subtitld.interface import timeline_shapes
 from subtitld.interface import translation
 from subtitld.interface.translation import _
 from subtitld.modules import appimage_integration
@@ -233,6 +234,22 @@ def load(self):
         self.global_panel_theme_combobox.combobox.addItem('', choice)
     self.global_panel_theme_combobox.activated.connect(lambda: global_panel_theme_combobox_activated(self))
     self.left_panel_global_tab_general.layout().addWidget(self.global_panel_theme_combobox)
+
+    # How the timelines draw the waveform (timeline_shapes.waveform_setting), whatever their look: as it always
+    # was, as peaks standing on the bottom, or as a spectrogram; and how opaque.
+    self.global_panel_waveform_style_combobox = utils.LabeledComboBox()
+    for style in timeline_shapes.WAVEFORM_STYLES:
+        self.global_panel_waveform_style_combobox.combobox.addItem('', style)
+    self.global_panel_waveform_style_combobox.activated.connect(lambda: global_panel_waveform_changed(self))
+    self.left_panel_global_tab_general.layout().addWidget(self.global_panel_waveform_style_combobox)
+
+    self.global_panel_waveform_opacity_spinbox = utils.LabeledDoubleSpinBox()
+    self.global_panel_waveform_opacity_spinbox.setRange(0, 100)
+    self.global_panel_waveform_opacity_spinbox.setDecimals(0)
+    self.global_panel_waveform_opacity_spinbox.setSingleStep(5)
+    self.global_panel_waveform_opacity_spinbox.setSuffix(' %')
+    self.global_panel_waveform_opacity_spinbox.valueChanged.connect(lambda: global_panel_waveform_changed(self))
+    self.left_panel_global_tab_general.layout().addWidget(self.global_panel_waveform_opacity_spinbox)
 
     # Run from an AppImage: its entry in the applications menu, which also opens subtitld.cc's links
     # (interface/appimage_prompt.py asks about it once).
@@ -457,6 +474,18 @@ def global_panel_theme_combobox_activated(self):
     theme.apply()
 
 
+def global_panel_waveform_changed(self):
+    session.CONFIG['waveform'] = {
+        'style': self.global_panel_waveform_style_combobox.combobox.currentData() or 'normal',
+        'opacity': int(round(self.global_panel_waveform_opacity_spinbox.value())),
+    }
+    if hasattr(self, 'timeline_widget'):
+        self.timeline_widget.update()
+    vtimeline_panel = getattr(self, 'vtimeline_panel', None)
+    if vtimeline_panel is not None:
+        vtimeline_panel.scroll.canvas.update()
+
+
 def apply_language(self):
     """Switch the interface to the saved language (or the system's)."""
     translation.set_language(translation.pick_language(session.CONFIG.get('interface_language')))
@@ -468,6 +497,13 @@ def update(self):
     global_panel_language_combobox_populate(self)
     theme_combobox = self.global_panel_theme_combobox.combobox
     theme_combobox.setCurrentIndex(max(0, theme_combobox.findData(theme.setting())))
+
+    style, opacity = timeline_shapes.waveform_setting()
+    waveform_combobox = self.global_panel_waveform_style_combobox.combobox
+    waveform_combobox.setCurrentIndex(max(0, waveform_combobox.findData(style)))
+    self.global_panel_waveform_opacity_spinbox.spinbox.blockSignals(True)
+    self.global_panel_waveform_opacity_spinbox.setValue(round(opacity * 100))
+    self.global_panel_waveform_opacity_spinbox.spinbox.blockSignals(False)
 
     appimage = appimage_integration.running_appimage()
     self.global_panel_general_appimage_menu.setChecked(appimage is not None and appimage_integration.registered_path() == appimage)
@@ -559,6 +595,11 @@ def translate(self):
     for choice, label in (('system', _('global_panel.theme_system').format(theme=system_name)),
                           ('dark', _('global_panel.theme_dark')), ('light', _('global_panel.theme_light'))):
         theme_combobox.setItemText(theme_combobox.findData(choice), label)
+    self.global_panel_waveform_style_combobox.setLabel(_('global_panel.waveform_style'))
+    waveform_combobox = self.global_panel_waveform_style_combobox.combobox
+    for style in timeline_shapes.WAVEFORM_STYLES:
+        waveform_combobox.setItemText(waveform_combobox.findData(style), _(f'global_panel.waveform_style_{style}'))
+    self.global_panel_waveform_opacity_spinbox.setLabel(_('global_panel.waveform_opacity'))
     global_panel_language_combobox_populate(self)
     if hasattr(self, 'global_panel_cloud_dashboard'):
         self.global_panel_cloud_dashboard.retranslate()
