@@ -651,6 +651,8 @@
     "addons_dialog.installed_title": "설치됨",
     "addons_dialog.installed_text": "{addon} 설치 완료.",
     "addons_dialog.install_error": "설치 실패",
+    "addons_dialog.packages_title": "필요한 패키지",
+    "addons_dialog.packages_text": "{addon}에 다음 Haiku 패키지가 필요합니다:\n\n{packages}\n\n지금 설치할까요? HaikuPorts 또는 Subtitld 저장소(hpkg.subtitld.org)에서 받습니다.",
     "addons_dialog.confirm_remove": "애드온 제거",
     "addons_dialog.confirm_remove_text": "{addon} 애드온과 데이터를 제거하시겠습니까?",
     "addons_dialog.empty.loading": "불러오는 중…",

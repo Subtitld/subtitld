@@ -22,7 +22,6 @@ import json
 import logging
 import re
 import shutil
-import sys
 import time
 import zipfile
 from pathlib import Path
@@ -31,6 +30,7 @@ from urllib.request import Request, urlopen
 
 from subtitld import __version__
 from subtitld.modules import session
+from subtitld.modules.addons.platforms import current_platform_key, missing_packages
 from subtitld.modules.net import https_context
 
 log = logging.getLogger(__name__)
@@ -110,7 +110,7 @@ def find_release(catalog: dict, addon_id: str, version: str | None = None) -> di
 
 def _download_for_platform(release: dict) -> dict | None:
     """Pick the download for the current platform out of a release entry."""
-    plat = {'linux': 'linux', 'darwin': 'macos', 'win32': 'windows'}.get(sys.platform, sys.platform)
+    plat = current_platform_key()
     for dl in release.get('downloads', []):
         if dl.get('platform') == plat:
             return dl
@@ -161,11 +161,20 @@ def task_supported(entry: dict) -> bool:
     return bool(tasks) and tasks[0] in supported_tasks()
 
 
+def has_download_here(release: dict) -> bool:
+    """Whether a release has a zip for this platform. A release that lists no
+    downloads at all is taken on trust."""
+    if 'downloads' not in release:
+        return True
+    return _download_for_platform(release) is not None
+
+
 def compatible_release(entry: dict, running: str | None = None) -> dict | None:
     """The newest release of a catalog entry that this Subtitld is new enough
-    for (releases are listed newest first), or None."""
+    for and that has a zip for this platform (releases are listed newest
+    first), or None."""
     for release in entry.get('releases') or []:
-        if subtitld_is_new_enough(release.get('min_subtitld'), running):
+        if subtitld_is_new_enough(release.get('min_subtitld'), running) and has_download_here(release):
             return release
     return None
 
@@ -193,10 +202,44 @@ def _sha256(path: Path) -> str:
     return h.hexdigest()
 
 
+class MissingPackagesError(Exception):
+    """The add-on needs system packages that aren't installed (Haiku's
+    `haiku_packages`). Nothing was extracted; install `packages` with
+    `platforms.install_packages` and install the zip again."""
+
+    def __init__(self, addon_id: str, packages: list[str], zip_path: Path):
+        super().__init__(f'{addon_id} needs these packages: {", ".join(packages)}')
+        self.addon_id = addon_id
+        self.packages = packages
+        self.zip_path = zip_path
+
+
+def _restore_modes(zf: zipfile.ZipFile, target: Path) -> None:
+    """Put back the Unix permission bits zipfile.extractall drops, so the
+    helpers and libraries an add-on bundles next to its executable stay
+    executable."""
+    if _os.name != 'posix':
+        return
+    root = target.resolve()
+    for info in zf.infolist():
+        mode = (info.external_attr >> 16) & 0o777
+        if not mode or info.is_dir():
+            continue
+        # extractall sanitises names; only touch what landed inside.
+        path = (target / info.filename).resolve()
+        if not path.is_relative_to(root) or not path.is_file():
+            continue
+        try:
+            path.chmod(mode | 0o600)
+        except OSError:
+            pass
+
+
 def install_from_zip(zip_path: Path, addon_id: str | None = None) -> str:
     """Extract a local zip into the addons directory. Returns the resolved
     addon_id. Used by both online install and "Install from file..." in the
-    UI."""
+    UI. Raises MissingPackagesError, before extracting anything, when the
+    add-on needs system packages this computer doesn't have."""
     zip_path = Path(zip_path)
     if not zip_path.is_file():
         raise FileNotFoundError(zip_path)
@@ -214,6 +257,9 @@ def install_from_zip(zip_path: Path, addon_id: str | None = None) -> str:
         resolved_id = addon_id or manifest.get('id')
         if not resolved_id:
             raise ValueError(f'{zip_path.name}: manifest has no `id` field')
+        missing = missing_packages(manifest)
+        if missing:
+            raise MissingPackagesError(resolved_id, missing, zip_path)
 
         # Stage to a sibling dir, then atomically swap in. If the target
         # exists we replace it (upgrade path).
@@ -225,6 +271,7 @@ def install_from_zip(zip_path: Path, addon_id: str | None = None) -> str:
 
         try:
             zf.extractall(staging_dir)
+            _restore_modes(zf, staging_dir)
         except Exception:
             shutil.rmtree(staging_dir, ignore_errors=True)
             raise

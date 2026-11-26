@@ -651,6 +651,8 @@
     "addons_dialog.installed_title": "Terpasang",
     "addons_dialog.installed_text": "{addon} terpasang.",
     "addons_dialog.install_error": "Pemasangan gagal",
+    "addons_dialog.packages_title": "Paket diperlukan",
+    "addons_dialog.packages_text": "{addon} memerlukan paket Haiku berikut:\n\n{packages}\n\nPasang sekarang? Paket berasal dari HaikuPorts atau repositori Subtitld (hpkg.subtitld.org).",
     "addons_dialog.confirm_remove": "Hapus pengaya",
     "addons_dialog.confirm_remove_text": "Hapus {addon} beserta datanya?",
     "addons_dialog.empty.loading": "Memuat…",

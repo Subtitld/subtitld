@@ -48,7 +48,7 @@ from subtitld.interface import utils
 from subtitld.interface.translation import _
 from subtitld.modules import addons, hardware as _hardware, session
 from subtitld.modules.addons import compute as _compute
-from subtitld.modules.addons import installer, languages as _languages, registry
+from subtitld.modules.addons import installer, languages as _languages, platforms, registry
 from subtitld.modules.addons import schema as addon_schema
 from subtitld.modules.addons.provider import (
     TASK_ASR_TRANSCRIBE,
@@ -88,25 +88,42 @@ class _CatalogFetchThread(QThread):
 
 
 class _InstallThread(QThread):
-    """Runs `installer.download_and_install` off the GUI thread."""
+    """Runs `installer.download_and_install` off the GUI thread. Or, once the
+    user agreed to install the system packages an add-on needs (Haiku),
+    installs those with pkgman and then the zip already downloaded."""
 
     progress = Signal(float, str)
     done = Signal(str, str)  # (addon_id, error_msg_or_empty)
 
-    def __init__(self, catalog_entry: dict):
+    def __init__(self, catalog_entry: dict | None = None, packages=(), zip_path=None, addon_id=''):
         super().__init__()
-        self._entry = catalog_entry
+        self._entry = catalog_entry or {}
+        self._packages = list(packages)
+        self._zip_path = zip_path
+        self._addon_id = addon_id or self._entry.get('id', '')
+        # Set instead of an error when the add-on needs packages this
+        # computer doesn't have: the dialog asks, then starts another thread.
+        self.missing: installer.MissingPackagesError | None = None
 
     def run(self):
         try:
-            addon_id = installer.download_and_install(
-                self._entry,
-                on_progress=lambda v, msg: self.progress.emit(float(v), msg),
-            )
+            if self._packages:
+                self.progress.emit(0.5, '')
+                platforms.install_packages(self._packages, on_line=lambda line: self.progress.emit(0.5, line))
+            if self._zip_path is not None:
+                addon_id = installer.install_from_zip(Path(self._zip_path), addon_id=self._addon_id or None)
+            else:
+                addon_id = installer.download_and_install(
+                    self._entry,
+                    on_progress=lambda v, msg: self.progress.emit(float(v), msg),
+                )
             self.done.emit(addon_id, '')
+        except installer.MissingPackagesError as exc:
+            self.missing = exc
+            self.done.emit(exc.addon_id, '')
         except Exception as exc:  # pragma: no cover - network paths
             log.warning('addons_dialog: install failed: %s', _short_error(exc))
-            self.done.emit(self._entry.get('id', ''), _short_error(exc))
+            self.done.emit(self._addon_id, _short_error(exc))
 
 
 class _HardwareThread(QThread):
@@ -2102,16 +2119,34 @@ class AddonsPanel(QWidget):
         # Mark this row as the install target BEFORE re-rendering so the
         # newly-built card has its progress bar visible from frame zero.
         self._install_target_id = row.addon_id
-        thread = _InstallThread(row.catalog_entry)
-        thread.progress.connect(self._on_install_progress)
-        thread.done.connect(self._on_install_done)
-        thread.finished.connect(lambda: self._release_thread('_install_thread'))
-        self._install_thread = thread
-        thread.start()
+        self._start_install(_InstallThread(row.catalog_entry))
         # Re-render so all cards' Install/Update buttons disable while a
         # background install is in flight (prevents queuing two at once)
         # AND the target card surfaces its inline progress bar.
         self._render_list()
+
+    def _start_install(self, thread: _InstallThread):
+        thread.progress.connect(self._on_install_progress)
+        thread.done.connect(self._on_install_done)
+        thread.finished.connect(lambda t=thread: self._release_thread('_install_thread', t))
+        self._install_thread = thread
+        thread.start()
+
+    def _offer_packages(self, missing: installer.MissingPackagesError) -> bool:
+        """Ask to install the system packages an add-on needs, and start
+        installing them and the add-on on yes. True when started."""
+        ask = utils.SimpleDialog(self, title=_('addons_dialog.packages_title'))
+        ask.content.layout().addWidget(QLabel(
+            _('addons_dialog.packages_text').format(addon=missing.addon_id,
+                                                   packages='\n'.join(missing.packages))
+        ))
+        ask.exec()
+        if ask.result() != 1:
+            return False
+        self._install_target_id = missing.addon_id
+        self._start_install(_InstallThread(packages=missing.packages, zip_path=missing.zip_path,
+                                           addon_id=missing.addon_id))
+        return True
 
     def _on_install_progress(self, value: float, message: str):
         # `message` is intentionally unused — the inline progress bar is
@@ -2127,6 +2162,15 @@ class AddonsPanel(QWidget):
     def _on_install_done(self, addon_id: str, error: str):
         # Clear target before re-render so the rebuilt card shows no bar.
         self._install_target_id = None
+        thread = self._install_thread
+        missing = getattr(thread, 'missing', None)
+        if missing is not None:
+            # The worker is past run(): let it go so another can start.
+            thread.wait()
+            self._install_thread = None
+            self._offer_packages(missing)
+            self._render_list()
+            return
         if error:
             err = utils.SimpleDialog(self, title=_('addons_dialog.install_error'))
             err.content.layout().addWidget(QLabel(
@@ -2214,17 +2258,23 @@ class AddonsPanel(QWidget):
         try:
             addon_id = installer.install_from_zip(Path(zip_path))
             addons.get_manager().discover()
+        except installer.MissingPackagesError as missing:
+            if self._install_thread is None:
+                self._offer_packages(missing)
+            self._render_list()
+            return
+        except Exception as exc:
+            err = utils.SimpleDialog(self, title=_('addons_dialog.install_error'))
+            err.content.layout().addWidget(QLabel(str(exc)))
+            err.reject_button.setVisible(False)
+            err.exec()
+        else:
             confirm = utils.SimpleDialog(self, title=_('addons_dialog.installed_title'))
             confirm.content.layout().addWidget(QLabel(
                 _('addons_dialog.installed_text').format(addon=addon_id)
             ))
             confirm.reject_button.setVisible(False)
             confirm.exec()
-        except Exception as exc:
-            err = utils.SimpleDialog(self, title=_('addons_dialog.install_error'))
-            err.content.layout().addWidget(QLabel(str(exc)))
-            err.reject_button.setVisible(False)
-            err.exec()
         self._rebuild_rows()
         self._render_list()
 
@@ -2259,14 +2309,18 @@ class AddonsPanel(QWidget):
         self._render_list()
 
     # -- Teardown ----------------------------------------------------------
-    def _release_thread(self, attr: str):
+    def _release_thread(self, attr: str, thread: QThread | None = None):
         """Slot for a worker's own QThread.finished: drop `self.<attr>`.
         The signal comes while the worker's thread is still returning, and
         destroying a QThread before it has returned makes Qt abort the
         process ("QThread: Destroyed while thread is still running"), so
-        wait for it first."""
-        thread = getattr(self, attr, None)
-        setattr(self, attr, None)
+        wait for it first. Given `thread`, `self.<attr>` is only dropped
+        while it is still that one (another may have started since)."""
+        current = getattr(self, attr, None)
+        if thread is None:
+            thread = current
+        if current is thread:
+            setattr(self, attr, None)
         if thread is not None:
             thread.wait()  # past run(), at most still unwinding: returns at once
             thread.deleteLater()

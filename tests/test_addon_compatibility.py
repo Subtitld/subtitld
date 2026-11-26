@@ -101,6 +101,73 @@ with tempfile.TemporaryDirectory() as tmp:
     finally:
         installer.__version__ = running
 
+# ---- Platforms ----
+from subtitld.modules.addons import platforms
+real_platform = sys.platform
+try:
+    for name, key in (('haiku', 'haiku'), ('haiku1', 'haiku'), ('linux', 'linux'),
+                      ('darwin', 'macos'), ('win32', 'windows')):
+        sys.platform = name
+        check(f'{name} is {key}', platforms.current_platform_key(), key)
+finally:
+    sys.platform = real_platform
+check('package name from an hpkg file name',
+      platforms._package_name('onnxruntime_python3.14-1.31.0-1-x86_64.hpkg'), 'onnxruntime_python3.14')
+
+here = platforms.current_platform_key()
+other = 'haiku' if here != 'haiku' else 'linux'
+split = {'id': 'split', 'tasks': ['tts.synthesize'], 'latest_version': '2.0.0',
+         'releases': [{'version': '2.0.0', 'downloads': [{'platform': other, 'url': 'x'}]},
+                      {'version': '1.0.0', 'downloads': [{'platform': here, 'url': 'x'}]}]}
+check('newest release with a zip for this platform',
+      installer.compatible_entry(split, '0.0.0.dev0')['latest_version'], '1.0.0')
+elsewhere = {**split, 'releases': split['releases'][:1]}
+check('nothing to offer without a zip for this platform',
+      installer.compatible_entry(elsewhere, '0.0.0.dev0'), None)
+
+
+def make_zip(path, manifest, files):
+    import json
+    import zipfile
+    with zipfile.ZipFile(path, 'w') as zf:
+        zf.writestr('manifest.json', json.dumps(manifest))
+        for name, mode in files.items():
+            info = zipfile.ZipInfo(name)
+            info.external_attr = (0o100000 | mode) << 16
+            zf.writestr(info, '#!/bin/sh\n')
+
+
+with tempfile.TemporaryDirectory() as tmp:
+    session.PATH_SUBTITLD_ADDONS = str(Path(tmp) / 'addons')
+    manifest = {'id': 'modes', 'executable': 'bin/modes-addon', 'haiku_packages': ['onnxruntime_python3.14']}
+    make_zip(Path(tmp) / 'modes.zip', manifest,
+             {'bin/modes-addon': 0o755, 'native/helper': 0o755, 'lib/data.txt': 0o644})
+
+    real_haiku, real_active = platforms.is_haiku, platforms.active_packages
+    platforms.is_haiku = lambda: True
+    platforms.active_packages = lambda: {'python3.14'}
+    try:
+        try:
+            installer.install_from_zip(Path(tmp) / 'modes.zip')
+            missing = None
+        except installer.MissingPackagesError as exc:
+            missing = exc
+        check('Haiku: missing packages stop the install', missing and missing.packages,
+              ['onnxruntime_python3.14'])
+        check('Haiku: nothing extracted', (Path(tmp) / 'addons' / 'modes').exists(), False)
+        platforms.active_packages = lambda: {'python3.14', 'onnxruntime_python3.14'}
+        check('Haiku: installs once the packages are there',
+              installer.install_from_zip(Path(tmp) / 'modes.zip'), 'modes')
+        platforms.is_haiku = lambda: False
+        platforms.active_packages = lambda: set()
+        check('elsewhere haiku_packages are ignored', platforms.missing_packages(manifest), [])
+    finally:
+        platforms.is_haiku, platforms.active_packages = real_haiku, real_active
+    if os.name == 'posix':
+        root = Path(tmp) / 'addons' / 'modes'
+        check('bundled helper keeps its executable bit', os.access(root / 'native/helper', os.X_OK), True)
+        check('data file stays not executable', os.access(root / 'lib/data.txt', os.X_OK), False)
+
 # ---- The add-ons dialog's rows ----
 from PySide6.QtWidgets import QApplication
 app = QApplication.instance() or QApplication([])
