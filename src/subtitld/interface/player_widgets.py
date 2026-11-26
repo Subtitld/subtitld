@@ -9,7 +9,7 @@ checked looks, so a group reads as one object.
 
 import math
 
-from PySide6.QtCore import QEvent, QPointF, QRectF, QSize, Qt
+from PySide6.QtCore import QEvent, QPoint, QPointF, QRectF, QSize, Qt, Signal
 from PySide6.QtGui import (QColor, QFontMetricsF, QIcon, QImage, QLinearGradient, QPainter, QPainterPath, QPen, QPainterPathStroker,
                            QPolygonF, QRegion, QTransform)
 from PySide6.QtWidgets import QAbstractButton, QAbstractSlider, QPushButton, QSizePolicy, QStyleOptionButton, QWidget
@@ -379,7 +379,10 @@ class BalanceSlider(QAbstractSlider):
     share printed in it. The split is the handle — a 2px light line, solid
     for its top quarter, then fading out; the value snaps at the middle. The
     music and voice icons at the ends are keys (music_key / voice_key) that
-    nudge the balance."""
+    nudge the balance. A right-click anywhere on it (keys included) asks for
+    its menu with menu_requested(global position)."""
+
+    menu_requested = Signal(QPoint)
 
     H = 42
     W = 132
@@ -429,6 +432,11 @@ class BalanceSlider(QAbstractSlider):
 
     def mouseReleaseEvent(self, event):
         self.setSliderDown(False)
+
+    def contextMenuEvent(self, event):
+        # The keys don't take it, so theirs comes here too.
+        self.menu_requested.emit(event.globalPos())
+        event.accept()
 
     def sliderChange(self, change):
         super().sliderChange(change)
