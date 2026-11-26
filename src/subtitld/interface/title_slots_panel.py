@@ -3,8 +3,8 @@ one field for each slot its theme has besides "main" (modules.title_themes),
 those its settings show. Each slot is a bordered group, its label on top and
 its field under it. A text slot is a line (a box, where the slot is
 multiline), a list slot a box of one item a line, an image slot a small
-preview (a placeholder while there is none) with icon buttons to choose it
-and, once there is one, remove it. Where translations are shown, each
+preview (a placeholder while there is none) that is its button: hovered, it
+offers to choose a picture, or, once the title has its own, to remove it. Where translations are shown, each
 text and list slot has its translation under it, in the language the
 translation goes to.
 
@@ -22,7 +22,7 @@ from subtitld.interface import theme as look
 from subtitld.interface.translation import _
 from subtitld.modules import history, session, title_themes
 
-THUMBNAIL = 32
+THUMBNAIL = 40
 
 
 def slot_label(theme, slot):
@@ -142,18 +142,12 @@ class TitleSlotsPanel(QWidget):
         row.thumbnail.setFixedSize(THUMBNAIL, THUMBNAIL)
         row.thumbnail.setAlignment(Qt.AlignCenter)
         line.addWidget(row.thumbnail)
-        row.choose = QPushButton()
-        row.choose.setObjectName('title_slot_choose')
-        row.choose.setToolTip(_('title_slots.choose_image'))
-        row.choose.setAccessibleName(f'{name}: {_("title_slots.choose_image")}')
+        # Over the preview, one at a time: their icons show on hover (or
+        # focus), so the picture is seen whole the rest of the time.
+        row.choose = self._preview_button(row.thumbnail, 'title_slot_choose', 'title_slots.choose_image', name)
         row.choose.clicked.connect(lambda: self._choose(row, slot['key']))
-        line.addWidget(row.choose)
-        row.remove = QPushButton()
-        row.remove.setObjectName('title_slot_remove')
-        row.remove.setToolTip(_('title_slots.remove_image'))
-        row.remove.setAccessibleName(f'{name}: {_("title_slots.remove_image")}')
+        row.remove = self._preview_button(row.thumbnail, 'title_slot_remove', 'title_slots.remove_image', name)
         row.remove.clicked.connect(lambda: self._set(slot['key'], None))
-        line.addWidget(row.remove)
         row.problem = QLabel()
         row.problem.setObjectName('title_slot_problem')
         row.problem.setWordWrap(True)
@@ -162,6 +156,15 @@ class TitleSlotsPanel(QWidget):
         line.addWidget(row.problem, 1)
         line.addStretch()
         return line
+
+    def _preview_button(self, preview, object_name, text, name):
+        button = QPushButton(preview)
+        button.setObjectName(object_name)
+        button.setGeometry(0, 0, THUMBNAIL, THUMBNAIL)
+        button.setCursor(Qt.PointingHandCursor)
+        button.setToolTip(_(text))
+        button.setAccessibleName(f'{name}: {_(text)}')
+        return button
 
     # --- showing -----------------------------------------------------------
     def _fill(self, title, slots, language):
@@ -176,6 +179,7 @@ class TitleSlotsPanel(QWidget):
                 else:
                     row.thumbnail.setPixmap(look.pixmap('title_slot_image_placeholder.svg', 16))
                 own = (title.get('title_slots') or {}).get(key)
+                row.choose.setVisible(not own)
                 row.remove.setVisible(bool(own))
                 continue
             for field, lang in ((row.field, None), (row.translated, language)):

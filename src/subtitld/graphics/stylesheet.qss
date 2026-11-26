@@ -2046,40 +2046,34 @@ QMenu#subtitle_formatting_menu::separator {
     border-radius: 3px;
 }
 
+/* The preview's buttons lie over all of it, clear until hovered. */
 #title_slot_group QPushButton#title_slot_choose,
 #title_slot_group QPushButton#title_slot_remove {
     background: transparent;
     border: 0;
     border-radius: 3px;
     padding: 0;
-    min-width: 26px;
-    max-width: 26px;
-    min-height: 26px;
-    max-height: 26px;
+    min-width: 0;
+    min-height: 0;
     icon-size: 16px;
+    icon: url(graphics:title_slot_preview_clear.svg);
 }
 
-#title_slot_group QPushButton#title_slot_choose {
-    background: #08ffffff;
-    icon: url(graphics:title_slot_choose_icon.svg);
-}
-
-#title_slot_group QPushButton#title_slot_choose:hover {
-    background: #12ffffff;
+#title_slot_group QPushButton#title_slot_choose:hover,
+#title_slot_group QPushButton#title_slot_choose:focus {
+    background: rgba(26, 35, 43, 0.8);
     icon: url(graphics:title_slot_choose_icon_hover.svg);
 }
 
-#title_slot_group QPushButton#title_slot_remove {
-    icon: url(graphics:speaker_list_item_remove_icon.svg);
-}
-
-#title_slot_group QPushButton#title_slot_remove:hover {
-    background: rgba(255, 107, 107, 0.2);
+#title_slot_group QPushButton#title_slot_remove:hover,
+#title_slot_group QPushButton#title_slot_remove:focus {
+    background: rgba(90, 30, 30, 0.75);
     icon: url(graphics:speaker_list_item_remove_icon_hover.svg);
 }
 
-#title_slot_group QPushButton:pressed {
-    background: rgba(0, 0, 0, 0.15);
+#title_slot_group QPushButton#title_slot_choose:pressed,
+#title_slot_group QPushButton#title_slot_remove:pressed {
+    background: rgba(0, 0, 0, 0.6);
 }
 
 #subtitles_panel_simplelist_properties_duration_timing_lock_button {

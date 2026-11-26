@@ -169,10 +169,12 @@ check('the role in its field', panel.rows[0].field.text(), 'Field reporter')
 panel.rows[0].field.textEdited.emit('Anchor')
 check('typing sets the slot', selected['title_slots']['role'], 'Anchor')
 check('and says so', len(changes), 1)
-check('the remove button shown, with a logo', panel.rows[1].remove.isHidden(), False)
+check('the preview offers to remove the logo', (panel.rows[1].remove.isHidden(), panel.rows[1].choose.isHidden()),
+      (False, True))
 panel.rows[1].remove.click()
 check('removed', 'logo' in selected.get('title_slots', {}), False)
-check('the remove button hidden, without', panel.rows[1].remove.isHidden(), True)
+check('and to choose one, without', (panel.rows[1].remove.isHidden(), panel.rows[1].choose.isHidden()),
+      (True, False))
 check('a placeholder for the picture', panel.rows[1].thumbnail.pixmap().isNull(), False)
 check('no translation fields', panel.rows[0].translated, None)
 session.CONFIG.setdefault('translation', {}).setdefault('engine_options', {}).update(show_translations=True,
