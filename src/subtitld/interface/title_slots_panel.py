@@ -23,6 +23,7 @@ from subtitld.interface.translation import _
 from subtitld.modules import history, session, title_themes
 
 THUMBNAIL = 40
+BUTTON = 26          # a normal button's height
 
 
 def slot_label(theme, slot):
@@ -46,7 +47,7 @@ class TitleSlotsPanel(QWidget):
         self.setObjectName('title_slots_panel')
         self.title = title
         self.setLayout(QVBoxLayout())
-        self.layout().setContentsMargins(8, 6, 8, 8)
+        self.layout().setContentsMargins(14, 10, 14, 12)
         self.layout().setSpacing(6)
         self.rows = []
         self.editing = None          # the field whose edit has its undo step already
@@ -160,7 +161,8 @@ class TitleSlotsPanel(QWidget):
     def _preview_button(self, preview, object_name, text, name):
         button = QPushButton(preview)
         button.setObjectName(object_name)
-        button.setGeometry(4, 4, THUMBNAIL - 8, THUMBNAIL - 8)
+        inset = (THUMBNAIL - BUTTON) // 2
+        button.setGeometry(inset, inset, BUTTON, BUTTON)
         button.setCursor(Qt.PointingHandCursor)
         button.setToolTip(_(text))
         button.setAccessibleName(f'{name}: {_(text)}')
