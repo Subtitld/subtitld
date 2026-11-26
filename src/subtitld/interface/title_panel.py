@@ -3,8 +3,8 @@ panel's editor where a subtitle has its speaker, and its settings, in a
 dialog the button beside it opens.
 
 The theme is picked from those there are, and becomes the one new titles
-get; that one is also picked in the Interface panel's Titles tab
-(NewTitlesThemePicker), above the title themes on subtitld.cc. In the
+get; that one is also chosen in the Interface panel's Titles tab, among
+the title themes' cards (interface/html_theme_browser.py). In the
 dialog each of the theme's fields gets the control its type asks for
 (subtitle_style_panel.field_control); a bool other fields are
 `visible_if` is a group that can be switched off, those fields inside it.
@@ -17,7 +17,7 @@ Labels come from the locale files when they have
 """
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import (QComboBox, QFrame, QGridLayout, QGroupBox, QLabel, QPushButton, QScrollArea, QVBoxLayout,
+from PySide6.QtWidgets import (QFrame, QGridLayout, QGroupBox, QPushButton, QScrollArea, QVBoxLayout,
                                QWidget)
 
 from subtitld.interface import theme, utils
@@ -145,46 +145,6 @@ class TitleSettingsDialog(utils.SimpleDialog):
             history.history_append()
             self.title['title_settings'] = {}
             self.build()
-            self.changed.emit()
-
-
-class NewTitlesThemePicker(QWidget):
-    """The theme new titles get, picked from those there are (the Interface
-    panel's Titles tab); `changed` after a pick. A title keeps its own: it
-    is changed in the subtitles panel's editor."""
-
-    changed = Signal()
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setObjectName('new_titles_theme_picker')
-        self.setLayout(QVBoxLayout())
-        self.layout().setContentsMargins(0, 0, 0, 0)
-        self.layout().setSpacing(2)
-        self.label = QLabel()
-        self.label.setProperty('class', 'widget_label')
-        self.layout().addWidget(self.label, 0, Qt.AlignLeft)
-        self.combobox = QComboBox()
-        self.combobox.setObjectName('new_titles_theme_combobox')
-        self.combobox.activated.connect(self._picked)
-        self.layout().addWidget(self.combobox, 0, Qt.AlignLeft)
-        self.build()
-
-    def build(self):
-        """The themes there are, in the interface's language, the current one selected."""
-        self.label.setText(_('title_panel.new_titles_theme'))
-        self.combobox.setAccessibleName(_('title_panel.new_titles_theme'))
-        self.combobox.blockSignals(True)
-        self.combobox.clear()
-        for available in title_themes.available().values():
-            self.combobox.addItem(theme_name(available), available.id)
-        self.combobox.setCurrentIndex(self.combobox.findData(title_themes.current_id()))
-        self.combobox.blockSignals(False)
-
-    def _picked(self, index):
-        theme_id = self.combobox.itemData(index)
-        if theme_id and theme_id != title_themes.current_id():
-            title_themes.set_current(theme_id)
             self.changed.emit()
 
 

@@ -2,8 +2,9 @@
 interface/html_theme_browser.py): the client asks for a kind, the browse helper lists them, installing
 writes the file (and its picture) under cc.<share ID in hex> and keeps its version, what a card offers
 (install, update, use, in use) as that changes, removing one (never one of Subtitld's), a theme id back to
-its share ID and forth, and the sections themselves: built lazily, cards for the themes not installed,
-Install moving a card up among the installed and into the pickers, the trash taking it out again.
+its share ID and forth, and the sections themselves: every theme there is here as a card (Subtitld's own
+first, with their pictures, never removable), built lazily, cards for the themes not installed, Install
+moving a card up among the others and into the pickers, the trash taking it out again.
 subtitld.cc is a fake here: its client answers from memory, and background calls run at once.
 
 Standalone script, like the other suites here; puts this checkout's src/ on the path itself.
@@ -24,7 +25,6 @@ from subtitld.modules import config, session, subtitle_styles, theme_store, them
 from subtitld.modules import subtitldcc_service as service
 from subtitld.modules.subtitldcc import client as api
 from subtitld.interface import html_theme_browser
-from subtitld.interface.title_panel import NewTitlesThemePicker
 
 fails = []
 
@@ -213,7 +213,12 @@ check('Install on the slanted tab, its picture 16:9', (cards['Boxed'].main.text(
                                                      cards['Boxed'].preview.pixmap is not None), ('Install', 180, True))
 check('an animated one says so on its label', (cards['Karaoke'].info['mark'], cards['Boxed'].info['mark']),
       ('Animated', ''))
-check('nothing installed here: no installed cards', section.installed_box.isHidden(), True)
+BUILTIN_SUBTITLES = [theme.id for theme in themes.available('subtitle').values() if theme.builtin]
+check('Subtitld\'s own first, each with its picture, none removable',
+      ([card.info['theme_id'] for card in section.mine], all(card.preview.pixmap is not None for card in section.mine),
+       any(card.remove is not None for card in section.mine), section.installed_box.isHidden()),
+      (BUILTIN_SUBTITLES, True, False, False))
+check('one in use: the project\'s', [card.state for card in section.mine].count('in_use'), 1)
 changes, used = [], []
 section.changed.connect(lambda: changes.append(1))
 section.used.connect(lambda: used.append(1))
@@ -223,24 +228,24 @@ check('Install downloads it', downloaded, [('Karaoke0000', 1)])
 KARAOKE = theme_store.theme_id('Karaoke0000')
 check('into the picker\'s list, not in use yet', (KARAOKE in subtitle_styles.available(),
                                                   subtitle_styles.current_id() == KARAOKE), (True, False))
-check('its card goes up among the installed', ([card.info['share_id'] for card in section.cards],
-                                               [card.info['share_id'] for card in section.mine]),
-      (['Boxed000000'], ['Karaoke0000']))
+check('its card goes up after Subtitld\'s own', ([card.info['share_id'] for card in section.cards],
+                                              [card.info['share_id'] for card in section.mine]),
+      (['Boxed000000'], [None] * len(BUILTIN_SUBTITLES) + ['Karaoke0000']))
 check('the panel hears of it', (len(changes), len(used)), (1, 0))
-mine = section.mine[0]
+mine = section.mine[-1]
 check('installed: Use, removable, its picture kept, its page', (mine.state, mine.remove is not None,
       mine.preview.pixmap is not None, mine.site is not None, mine.remove.isVisible()), ('use', True, True, True, False))
 mine.main.click()
-check('Use: the project draws with it', (subtitle_styles.current_id(), section.mine[0].state, len(used)),
+check('Use: the project draws with it', (subtitle_styles.current_id(), section.mine[-1].state, len(used)),
       (KARAOKE, 'in_use', 1))
 html_theme_browser.remote['Karaoke0000'] = dict(SITE['Karaoke0000'][0], version=2)
 section.build_installed()
-check('a newer version on subtitld.cc: an update button', section.mine[0].update_button is not None, True)
+check('a newer version on subtitld.cc: an update button', section.mine[-1].update_button is not None, True)
 html_theme_browser.remote['Karaoke0000'] = dict(SITE['Karaoke0000'][0])
 section.build_installed()
-section.mine[0].remove.click()
-check('the trash takes it out', (KARAOKE in subtitle_styles.available(), section.mine,
-                                 section.installed_box.isHidden()), (False, [], True))
+section.mine[-1].remove.click()
+check('the trash takes it out', (KARAOKE in subtitle_styles.available(),
+                                 [card.info['theme_id'] for card in section.mine]), (False, BUILTIN_SUBTITLES))
 check('and it is on subtitld.cc to install again', [card.info['share_id'] for card in section.cards],
       ['Boxed000000', 'Karaoke0000'])
 section.search.setText('box')
@@ -253,20 +258,22 @@ area.hide()
 
 print('the title themes\' section and the theme new titles get')
 titles = html_theme_browser.HtmlThemeBrowser('title')
-check('the installed title theme has its card at once', [card.info['share_id'] for card in titles.mine],
-      ['Banner00000'])
-check('in use: new titles get it; its texts said', (titles.mine[0].state, titles.mine[0].info['slots'],
-                                                    titles.mine[0].info['mark']), ('in_use', ['Name', 'Role'], 'Animated'))
+check('the installed title theme has its card at once, after Subtitld\'s own',
+      [card.info['share_id'] for card in titles.mine if card.info['share_id']], ['Banner00000'])
+banner = next(card for card in titles.mine if card.info['share_id'])
+check('in use: new titles get it; its texts said', (banner.state, banner.info['slots'], banner.info['mark']),
+      ('in_use', ['Name', 'Role'], 'Animated'))
 titles.show()
 app.processEvents()
 check('nothing else on subtitld.cc: said so', (titles.cards, titles.status.text()),
       ([], 'Every theme on subtitld.cc is installed here.'))
-picker = NewTitlesThemePicker()
-check('the picker shows it', picker.combobox.currentData(), BANNER)
-picker.combobox.setCurrentIndex(picker.combobox.findData(title_themes.DEFAULT_THEME))
-picker.combobox.activated.emit(picker.combobox.currentIndex())
-titles.build_installed()
-check('another picked there: Use again on its card', (title_themes.current_id(), titles.mine[0].state),
+check('it is the theme new titles get', title_themes.current_id(), BANNER)
+own = next(card for card in titles.mine if card.info['theme_id'] == title_themes.DEFAULT_THEME)
+check('Subtitld\'s own: its name from the locale files, no page', (own.info['title'], own.info['url']),
+      ('Plain', None))
+own.main.click()
+banner = next(card for card in titles.mine if card.info['share_id'])
+check('Use on one of Subtitld\'s: new titles get it; Use again on the other', (title_themes.current_id(), banner.state),
       (title_themes.DEFAULT_THEME, 'use'))
 titles.hide()
 

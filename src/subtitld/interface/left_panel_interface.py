@@ -8,7 +8,6 @@ from subtitld.interface import timeline_theme_browser
 from subtitld.interface.html_theme_browser import HtmlThemeBrowser
 from subtitld.interface.mark_categories_panel import MarkCategoriesPanel
 from subtitld.interface.timeline_theme_panel import TimelineThemePanel
-from subtitld.interface.title_panel import NewTitlesThemePicker
 from subtitld.interface.translation import _
 from subtitld.modules import session, timeline_themes
 
@@ -41,8 +40,7 @@ def load(self):
 
     self.global_panel_interface_tabwidget = QTabWidget()
 
-    # The page: the settings, with the panel's 10px sides, then the subtitle themes on subtitld.cc, whose
-    # head runs from edge to edge.
+    # The page: the settings, with the panel's 10px sides.
     self.global_panel_interface_tabwidget_videoplayer_page = QWidget()
     self.global_panel_interface_tabwidget_videoplayer_page.setLayout(QVBoxLayout())
     self.global_panel_interface_tabwidget_videoplayer_page.layout().setContentsMargins(0, 0, 0, 10)
@@ -219,28 +217,30 @@ def load(self):
 
     self.global_panel_interface_tabwidget_videoplayer.layout().addWidget(self.global_panel_interface_videoplayer_safe_margin_title_group)
 
-    # Under the settings, the subtitle themes installed from subtitld.cc and those there to install;
-    # fetched the first time the section's head is scrolled to.
-    self.global_panel_interface_tabwidget_videoplayer_page.layout().addSpacing(14)
-    self.global_panel_interface_subtitle_theme_browser = HtmlThemeBrowser('subtitle')
-    self.global_panel_interface_subtitle_theme_browser.changed.connect(lambda: subtitle_themes_changed(self))
-    self.global_panel_interface_subtitle_theme_browser.used.connect(lambda: refresh_preview(self))
-    self.global_panel_interface_tabwidget_videoplayer_page.layout().addWidget(self.global_panel_interface_subtitle_theme_browser)
     self.global_panel_interface_tabwidget_videoplayer_page.layout().addStretch()
 
     self.global_panel_interface_tabwidget.addTab(self.global_panel_interface_tabwidget_videoplayer_page, '')
 
-    # The titles' themes: the one new titles get, then those from subtitld.cc.
+    # The subtitles' themes, as the Timeline tab has the timeline's: those there are here, Use putting one
+    # on the project's subtitles, then those on subtitld.cc to install; fetched the first time the
+    # section's head is in sight.
+    self.global_panel_interface_tabwidget_subtitles = QWidget()
+    self.global_panel_interface_tabwidget_subtitles.setLayout(QVBoxLayout())
+    # No side margins: the subtitld.cc section's head runs from edge to edge; the cards keep their own.
+    self.global_panel_interface_tabwidget_subtitles.layout().setContentsMargins(0, 10, 0, 10)
+    self.global_panel_interface_tabwidget_subtitles.layout().setSpacing(0)
+    self.global_panel_interface_subtitle_theme_browser = HtmlThemeBrowser('subtitle')
+    self.global_panel_interface_subtitle_theme_browser.changed.connect(lambda: subtitle_themes_changed(self))
+    self.global_panel_interface_subtitle_theme_browser.used.connect(lambda: refresh_preview(self))
+    self.global_panel_interface_tabwidget_subtitles.layout().addWidget(self.global_panel_interface_subtitle_theme_browser)
+    self.global_panel_interface_tabwidget_subtitles.layout().addStretch()
+    self.global_panel_interface_tabwidget.addTab(self.global_panel_interface_tabwidget_subtitles, '')
+
+    # The titles' themes, the same way: Use makes one the theme new titles get (a title keeps its own).
     self.global_panel_interface_tabwidget_titles = QWidget()
     self.global_panel_interface_tabwidget_titles.setLayout(QVBoxLayout())
-    # No side margins: the subtitld.cc section's head runs from edge to edge; the picker keeps its own.
     self.global_panel_interface_tabwidget_titles.layout().setContentsMargins(0, 10, 0, 10)
     self.global_panel_interface_tabwidget_titles.layout().setSpacing(0)
-    self.global_panel_interface_title_theme_picker = NewTitlesThemePicker()
-    self.global_panel_interface_title_theme_picker.layout().setContentsMargins(10, 0, 10, 0)
-    self.global_panel_interface_title_theme_picker.changed.connect(lambda: self.global_panel_interface_title_theme_browser.build_installed())
-    self.global_panel_interface_tabwidget_titles.layout().addWidget(self.global_panel_interface_title_theme_picker)
-    self.global_panel_interface_tabwidget_titles.layout().addSpacing(24)
     self.global_panel_interface_title_theme_browser = HtmlThemeBrowser('title')
     self.global_panel_interface_title_theme_browser.changed.connect(lambda: title_themes_changed(self))
     self.global_panel_interface_tabwidget_titles.layout().addWidget(self.global_panel_interface_title_theme_browser)
@@ -293,7 +293,6 @@ def update(self):
     # The project's style and its settings: another project may be open.
     self.global_panel_interface_style_panel.build()
     self.global_panel_interface_subtitle_theme_browser.build_installed()
-    self.global_panel_interface_title_theme_picker.build()
     self.global_panel_interface_title_theme_browser.build_installed()
     self.global_panel_interface_videoplayer_safe_margin_action_group.setChecked(session.CONFIG['videoplayer'].get('safe_margin_action_enabled', False))
     self.global_panel_interface_videoplayer_safe_margin_action_x_margin.setValue(session.CONFIG['videoplayer'].get('safe_margin_action_x', 5))
@@ -317,8 +316,8 @@ def refresh_preview(self):
 
 
 def subtitle_themes_changed(self):
-    """A subtitle theme from subtitld.cc was installed, removed or put in use: the pickers list them
-    again, and the preview draws with the project's."""
+    """A subtitle theme was installed, removed or put in use: the pickers list them again, and the
+    preview draws with the project's."""
     self.global_panel_interface_style_panel.build()
     refresh_editor_themes(self)
     if hasattr(self, 'preview_panel_player'):
@@ -326,8 +325,7 @@ def subtitle_themes_changed(self):
 
 
 def title_themes_changed(self):
-    """A title theme from subtitld.cc was installed, removed or put in use: the pickers list them again."""
-    self.global_panel_interface_title_theme_picker.build()
+    """A title theme was installed, removed or put in use: the pickers list them again."""
     refresh_editor_themes(self)
     if hasattr(self, 'preview_panel_player'):
         self.preview_panel_player._graphics_video_item.update()
@@ -436,7 +434,6 @@ def translate(self):
     self.global_panel_interface_timeline_theme_panel.build()
     self.global_panel_interface_theme_browser.translate()
     self.global_panel_interface_subtitle_theme_browser.translate()
-    self.global_panel_interface_title_theme_picker.build()
     self.global_panel_interface_title_theme_browser.translate()
     self.global_panel_interface_videoplayer_safe_margin_action_group.setTitle(_('interface_panel.action_safe_margin'))
     self.global_panel_interface_videoplayer_safe_margin_action_x_margin_label.setText(_('interface_panel.horizontal_margin'))
@@ -455,6 +452,7 @@ def translate(self):
         f"{_('interface_panel.title_safe_margin')}: {_('units.color')}")
     tabs = self.global_panel_interface_tabwidget
     tabs.setTabText(tabs.indexOf(self.global_panel_interface_tabwidget_videoplayer_page), _('interface_panel.video_player'))
+    tabs.setTabText(tabs.indexOf(self.global_panel_interface_tabwidget_subtitles), _('interface_panel.subtitles'))
     tabs.setTabText(tabs.indexOf(self.global_panel_interface_tabwidget_titles), _('interface_panel.titles'))
     tabs.setTabText(tabs.indexOf(self.global_panel_interface_tabwidget_timeline), _('interface_panel.timeline'))
     tabs.setTabText(tabs.indexOf(self.global_panel_interface_tabwidget_marks), _('interface_panel.marks'))
