@@ -816,6 +816,21 @@ class Timeline(QWidget):
         wpp = widget.width_proportion
         sr = session.VIDEO.get('samplerate', 48000)
         left = index * WAVEFORM_TILE
+        style, _opacity = timeline_shapes.waveform_setting()
+        scale = widget.devicePixelRatioF()
+        if style == 'spectral':
+            key = ('spectral', index, wpp, sr, id(manager.samples), widget.waveform_y, widget.waveform_height,
+                   widget.height(), scale)
+            tile = widget._waveform_tiles.get(key)
+            if tile is not None:
+                return tile
+            if widget.waveform_height < 1:
+                return None
+            image = timeline_shapes.spectrogram_image(manager.samples, sr, left / wpp, 1.0 / wpp, WAVEFORM_TILE,
+                                                      int(math.ceil(widget.waveform_height * scale)))
+            rect = QRectF(0.0, widget.waveform_y, WAVEFORM_TILE, widget.waveform_height)
+            return widget._waveform_tiles.put(
+                key, timeline_shapes.spectrogram_tile(WAVEFORM_TILE, widget.height(), scale, image, rect))
         samples_per_pixel = max(1, int(sr / wpp))
         _mins, _maxs, spb, chosen = manager.get_level(samples_per_pixel, int(left / wpp * sr),
                                                       int((left + WAVEFORM_TILE) / wpp * sr))
@@ -829,17 +844,21 @@ class Timeline(QWidget):
         if last - first < 2:
             return None
         border = look['waveform_border_width']
-        scale = widget.devicePixelRatioF()
-        key = (index, wpp, sr, chosen, id(all_mins), widget.waveform_y, widget.waveform_height,
+        key = (style, index, wpp, sr, chosen, id(all_mins), widget.waveform_y, widget.waveform_height,
                widget.height(), look['waveform_scale'], look['waveform_fill_color'], look['waveform_border_color'],
                border, scale)
         tile = widget._waveform_tiles.get(key)
         if tile is not None:
             return tile
-        center = widget.waveform_y + widget.waveform_height * 0.5
-        amplitude = widget.waveform_height * (look['waveform_scale'] / 100.0) / 2.0
-        polygon = timeline_shapes.waveform_polygon(manager.levels[chosen], first, last, spb / sr * wpp, left,
-                                                   center, amplitude)
+        if style == 'bottom':
+            polygon = timeline_shapes.waveform_bottom_polygon(
+                manager.levels[chosen], first, last, spb / sr * wpp, left, widget.waveform_y + widget.waveform_height,
+                widget.waveform_height * (look['waveform_scale'] / 100.0))
+        else:
+            center = widget.waveform_y + widget.waveform_height * 0.5
+            amplitude = widget.waveform_height * (look['waveform_scale'] / 100.0) / 2.0
+            polygon = timeline_shapes.waveform_polygon(manager.levels[chosen], first, last, spb / sr * wpp, left,
+                                                       center, amplitude)
         return widget._waveform_tiles.put(
             key, timeline_shapes.waveform_tile(WAVEFORM_TILE, widget.height(), scale, polygon, look))
 
@@ -1242,10 +1261,13 @@ class Timeline(QWidget):
             # the strip being painted are copied.
             tile_first = int(iter_left // WAVEFORM_TILE)
             tile_last = int((iter_right - 1) // WAVEFORM_TILE)
+            painter.save()
+            painter.setOpacity(timeline_shapes.waveform_setting()[1])
             for index in range(tile_first, tile_last + 1):
                 tile = widget._waveform_tile(look, index)
                 if tile is not None:
                     painter.drawPixmap(QPointF(index * WAVEFORM_TILE, 0.0), tile)
+            painter.restore()
 
         # Onset markers (consonant-onset visual aid — see
         # `subtitld.modules.onset_detection`). Drawn AFTER the main

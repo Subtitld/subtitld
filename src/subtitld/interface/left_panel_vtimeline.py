@@ -13,6 +13,7 @@ do, and with Shift its start, with Ctrl its end. Ctrl+wheel zooms, around the
 pointer.
 """
 
+import math
 import os
 import time
 from bisect import bisect_left
@@ -647,10 +648,13 @@ class VerticalTimeline(QWidget):
             return
         first = int(self.y_at(top_time) // WAVEFORM_TILE)
         last = int(self.y_at(bottom_time) // WAVEFORM_TILE)
+        painter.save()
+        painter.setOpacity(timeline_shapes.waveform_setting()[1])
         for index in range(max(0, first), last + 1):
             tile = self._waveform_tile(manager, look, index, lane)
             if tile is not None:
                 painter.drawPixmap(QPointF(lane[0], index * WAVEFORM_TILE), tile)
+        painter.restore()
 
     def _waveform_tile(self, manager, look, index, lane):
         """The waveform over canvas rows [index, index + 1) × WAVEFORM_TILE, as
@@ -659,6 +663,20 @@ class VerticalTimeline(QWidget):
         rate = session.VIDEO.get('samplerate', 48000) or 48000
         top = index * WAVEFORM_TILE
         start, end = self.time_at(top), self.time_at(top + WAVEFORM_TILE)
+        width = lane[1] - lane[0]
+        scale = self.devicePixelRatioF()
+        style, _opacity = timeline_shapes.waveform_setting()
+        if style == 'spectral':
+            key = ('spectral', index, self.pps, rate, id(manager.samples), width, scale)
+            tile = self._waveform_tiles.get(key)
+            if tile is not None:
+                return tile
+            if width < 1 or end <= start:
+                return None
+            image = timeline_shapes.spectrogram_image(manager.samples, rate, start, (end - start) / WAVEFORM_TILE,
+                                                      WAVEFORM_TILE, int(math.ceil(width * scale)), vertical=True)
+            return self._waveform_tiles.put(key, timeline_shapes.spectrogram_tile(
+                width, WAVEFORM_TILE, scale, image, QRectF(0.0, 0.0, width, WAVEFORM_TILE)))
         _mins, _maxs, per_bucket, chosen = manager.get_level(max(1, int(rate / self.pps)), max(0, int(start * rate)),
                                                              max(0, int(end * rate)))
         if chosen is None:
@@ -669,16 +687,19 @@ class VerticalTimeline(QWidget):
         last = min(len(level[0]), int(end * rate) // per_bucket + 3)
         if last - first < 2:
             return None
-        width = lane[1] - lane[0]
-        scale = self.devicePixelRatioF()
-        key = (index, self.pps, rate, chosen, id(level[0]), width, look['waveform_scale'], look['waveform_fill_color'],
+        key = (style, index, self.pps, rate, chosen, id(level[0]), width, look['waveform_scale'], look['waveform_fill_color'],
                look['waveform_border_color'], look['waveform_border_width'], scale)
         tile = self._waveform_tiles.get(key)
         if tile is not None:
             return tile
-        polygon = timeline_shapes.waveform_polygon(level, first, last, per_bucket / rate * self.pps, top - TOP,
-                                                   width / 2.0, width * look['waveform_scale'] / 100.0 / 2.0,
-                                                   vertical=True)
+        if style == 'bottom':
+            polygon = timeline_shapes.waveform_bottom_polygon(level, first, last, per_bucket / rate * self.pps,
+                                                              top - TOP, width, width * look['waveform_scale'] / 100.0,
+                                                              vertical=True)
+        else:
+            polygon = timeline_shapes.waveform_polygon(level, first, last, per_bucket / rate * self.pps, top - TOP,
+                                                       width / 2.0, width * look['waveform_scale'] / 100.0 / 2.0,
+                                                       vertical=True)
         return self._waveform_tiles.put(key, timeline_shapes.waveform_tile(width, WAVEFORM_TILE, scale, polygon, look))
 
     def _onset_marker(self, cfg):
