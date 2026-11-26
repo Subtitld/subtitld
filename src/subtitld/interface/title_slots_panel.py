@@ -46,7 +46,7 @@ class TitleSlotsPanel(QWidget):
         self.setObjectName('title_slots_panel')
         self.title = title
         self.setLayout(QVBoxLayout())
-        self.layout().setContentsMargins(0, 4, 0, 4)
+        self.layout().setContentsMargins(8, 6, 8, 8)
         self.layout().setSpacing(6)
         self.rows = []
         self.editing = None          # the field whose edit has its undo step already
@@ -160,7 +160,7 @@ class TitleSlotsPanel(QWidget):
     def _preview_button(self, preview, object_name, text, name):
         button = QPushButton(preview)
         button.setObjectName(object_name)
-        button.setGeometry(0, 0, THUMBNAIL, THUMBNAIL)
+        button.setGeometry(4, 4, THUMBNAIL - 8, THUMBNAIL - 8)
         button.setCursor(Qt.PointingHandCursor)
         button.setToolTip(_(text))
         button.setAccessibleName(f'{name}: {_(text)}')
