@@ -50,7 +50,7 @@ late = Segment({'start': 7, 'end': 8, 'text': 'Late'})
 mark = Segment({'kind': 'mark', 'start': 9, 'end': 9, 'text': 'Chapter'})
 
 print('what the still is taken at')
-from subtitld.interface.export_dialog import ExportDialog
+from subtitld.interface.export_dialog import ExportDialog, _PreviewPanel
 
 
 def cue_at(segments, position):
@@ -87,12 +87,23 @@ check('the Lower third settled in it, not its first frame', dark > 500, True)
 print('the dialog while it draws')
 session.SUBTITLE = Subtitle(segments=[title])
 session.SUBTITLE.position = 0
+# What the bar was when shown: a fast machine draws the still before a
+# look at it later would find it.
+shown = []
+show_busy = _PreviewPanel.show_busy
+
+
+def noting_busy(panel, note):
+    show_busy(panel, note)
+    shown.append((not panel.busy.isHidden(), panel.busy.maximum(), bool(panel.busy_note.text())))
+
+
+_PreviewPanel.show_busy = noting_busy
 dialog = ExportDialog(initial_category='video')
+panel = dialog.preview_panel
 dialog.show()
 spin(0.2)
-panel = dialog.preview_panel
-check('a moving bar and what it does', (not panel.busy.isHidden(), panel.busy.maximum(), bool(panel.busy_note.text())),
-      (True, 0, True))
+check('a moving bar and what it does', shown[:1], [(True, 0, True)])
 deadline = time.monotonic() + 60
 while dialog._still is not None and time.monotonic() < deadline:
     spin(0.1)
