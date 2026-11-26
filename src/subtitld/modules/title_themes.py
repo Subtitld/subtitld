@@ -46,7 +46,7 @@ import re
 from dataclasses import dataclass, field as dataclass_field
 
 from subtitld.modules import session
-from subtitld.modules.subtitle_styles import StyleError, _check_field, coerce, css_color
+from subtitld.modules.subtitle_styles import StyleError, _check_field, coerce, css_color, css_string
 
 DEFAULT_THEME = 'subtitld.plain'
 MANIFEST = 'theme.json'
@@ -340,7 +340,7 @@ def css_variables(theme, settings):
         elif f['type'] == 'select':
             css = str(value)
         else:
-            css = json.dumps(value)
+            css = css_string(value)
         variables[name] = css
     return variables
 

@@ -424,6 +424,15 @@ def css_color(value):
     return f'#{rgb}' if alpha == 255 else f'rgba({int(rgb[0:2], 16)}, {int(rgb[2:4], 16)}, {int(rgb[4:6], 16)}, {alpha / 255:.3f})'
 
 
+def css_string(value):
+    """`value` as a quoted CSS string. Not json.dumps: CSS escapes are
+    a backslash and hex digits, so JSON's \\u2014 would read as "u2014"."""
+    def escape(match):
+        char = match.group()
+        return '\\' + char if char in '"\\' else f'\\{ord(char):x} '
+    return '"' + re.sub(r'["\\\x00-\x1f\x7f]', escape, str(value)) + '"'
+
+
 def css_variables(style_id=None, settings=None):
     """The style's settings as the template reads them: a CSS custom
     property each (--key, with "_" as "-"), numbers with their unit,
@@ -443,7 +452,7 @@ def css_variables(style_id=None, settings=None):
         elif f['type'] == 'select':
             css = str(value)
         else:
-            css = json.dumps(value)
+            css = css_string(value)
         variables[name] = css
     return variables
 

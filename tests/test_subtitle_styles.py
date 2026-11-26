@@ -140,6 +140,9 @@ check('Classic', styles.css_variables('subtitld.classic'),
 check('every type', styles.css_variables('test.box'),
       {'--size': '4em', '--boxed': '1', '--edge': '#00ff00', '--motion': 'fade', '--family': '"Inter"',
        '--title': '"Hi \\"you\\""'})
+check('text as a CSS string: what is not ASCII kept, a line break as CSS writes it',
+      [styles.css_string(v) for v in ('Café — 日本', 'a\\b', 'two\nlines')],
+      ['"Café — 日本"', '"a\\\\b"', '"two\\a lines"'])
 
 print('from videoplayer, where the settings were')
 session.SUBTITLE.theme = None                       # a project that says nothing: the app's
