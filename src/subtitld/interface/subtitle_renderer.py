@@ -533,12 +533,14 @@ class SubtitleRenderer(QObject):
         lead, body = markup.split_lead(text)
         align = markup.alignment(text) if lead else title_themes.alignment(theme, settings)
         html = markup.to_html(body) if body.strip() else None
+        # Its own move, turn and size, on top of what its theme draws.
+        transform = title_themes.drawn_transform(segment)
         key = _digest('title', theme.id, self._template_digest(template), self._host_digest, qVersion(), variables,
                       attributes, safe, body, self.size, (duration, moment) if theme.animated else None, place, align,
-                      extra)
+                      extra, transform)
         page = {'html': html, 'align': align, 'vars': variables, 'attrs': attributes, 'aspect': width / height,
                 'safe': safe, 'offset': offset, 'duration': duration, 'pad': PAD, 'place': place, 'direction': None,
-                'bidi': None, 'look': None, 'writing': None, **extra}
+                'bidi': None, 'look': None, 'writing': None, 'transform': transform, **extra}
         return key, {'key': key, 'size': self.size, 'page': page, 'style': self._style_key, 'template': str(template)}
 
     # --- layers ------------------------------------------------------------

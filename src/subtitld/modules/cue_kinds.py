@@ -21,7 +21,8 @@ out for the file, never kept.
 A title is text drawn by a title theme over the picture: a heading, a
 lower third, on-screen text. Its 'title_theme' is the theme's id and its
 'title_settings' only what this title changed of the theme's defaults
-(modules.title_themes).
+(modules.title_themes); its 'title_transform', when it has one, how it is
+moved, turned and sized on top of what the theme draws.
 
     {'kind': 'title', 'start': 3.0, 'end': 8.0, 'text': 'Lisbon, 1755',
      'title_theme': 'subtitld.plain', 'title_settings': {'font_size': 72}}

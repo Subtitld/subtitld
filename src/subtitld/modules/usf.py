@@ -97,6 +97,7 @@ SUBTITLDCC_CATEGORY = 'subtitldcc:category'
 SUBTITLDCC_OPEN_END = 'subtitldcc:open-end'
 SUBTITLDCC_TITLE_THEME = 'subtitldcc:title-theme'
 SUBTITLDCC_TITLE_SETTINGS = 'subtitldcc:title-settings'
+SUBTITLDCC_TITLE_TRANSFORM = 'subtitldcc:title-transform'
 SUBTITLDCC_TITLE_SLOTS = 'subtitldcc:title-slots'
 SUBTITLDCC_TITLE_SLOT_TRANSLATIONS = 'subtitldcc:title-slot-translations'
 SUBTITLDCC_MARK_CATEGORIES = 'mark-categories'
@@ -611,6 +612,13 @@ class USFReader():
             except ValueError:
                 settings = {}
             subtitle['title_settings'] = settings if isinstance(settings, dict) else {}
+            # Its own move, turn and size (title_themes.set_transform), when it has one.
+            try:
+                transform = json.loads(element.attrs.get(SUBTITLDCC_TITLE_TRANSFORM) or '{}')
+            except ValueError:
+                transform = {}
+            if isinstance(transform, dict) and transform:
+                subtitle['title_transform'] = transform
             # What it puts in its theme's other slots, and their translations.
             for attribute, key in ((SUBTITLDCC_TITLE_SLOTS, 'title_slots'),
                                    (SUBTITLDCC_TITLE_SLOT_TRANSLATIONS, 'title_slot_translations')):
@@ -919,6 +927,9 @@ class USFWriter():
             if subtitle.get('title_settings'):
                 new_sub[SUBTITLDCC_TITLE_SETTINGS] = json.dumps(subtitle['title_settings'], separators=(',', ':'),
                                                                 sort_keys=True)
+            if subtitle.get('title_transform'):
+                new_sub[SUBTITLDCC_TITLE_TRANSFORM] = json.dumps(subtitle['title_transform'], separators=(',', ':'),
+                                                                 sort_keys=True)
             if subtitle.get('title_slots'):
                 new_sub[SUBTITLDCC_TITLE_SLOTS] = json.dumps(subtitle['title_slots'], separators=(',', ':'),
                                                              sort_keys=True, ensure_ascii=False)
