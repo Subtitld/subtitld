@@ -112,8 +112,9 @@ def _kind_fields(cue):
     if cue_kinds.kind_of(cue) == cue_kinds.SUBTITLE:
         return None
     fields = {key: cue[key] for key in ('kind', 'category', 'title_theme') if key in cue}
-    if isinstance(cue.get('title_settings'), dict):
-        fields['title_settings'] = dict(cue['title_settings'])
+    for key in ('title_settings', 'title_transform'):
+        if isinstance(cue.get(key), dict):
+            fields[key] = dict(cue[key])
     return fields
 
 

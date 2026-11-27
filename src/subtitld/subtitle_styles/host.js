@@ -201,6 +201,15 @@
         // axis runs the other way, so x and z are negated.
         cue.style.transform = `perspective(1000px) rotateX(${-turnX}deg) rotateY(${turnY}deg) rotateZ(${-turnZ}deg)`;
       }
+      // A title's own move, turn and size (modules.title_themes), on top of
+      // what its theme draws: moved by a share of the picture, turned
+      // clockwise and sized about the cue's middle (the picture's, for a
+      // theme laid over the whole of it).
+      const own = job.transform;
+      if (own) {
+        const moved = `translate(${own.x / 100 * width}px, ${own.y / 100 * 1080}px) rotate(${own.rotate}deg) scale(${own.size / 100})`;
+        cue.style.transform = cue.style.transform ? `${moved} ${cue.style.transform}` : moved;
+      }
       // A theme that places itself (ignores_position) is laid over the whole
       // stage; any other where the cue's keypad number and margins say.
       if (slotted && job.free) {

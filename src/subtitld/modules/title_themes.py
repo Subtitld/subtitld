@@ -35,6 +35,12 @@ A select field named "placement" places the title where its value says
 (PLACEMENTS: a keypad number, as {\\anN} places a subtitle); the title's own
 margins (modules.position) move it from there.
 
+Whatever its theme, a title can also be moved, turned and sized as a whole,
+on top of what the theme draws ('title_transform', TRANSFORM_FIELDS): moved
+by a share of the picture's width and height (down for y), turned clockwise
+about its middle (a theme laid over the whole picture, about the picture's),
+and sized. It is kept switched off with its numbers until switched on again.
+
 Themes come from theme files of the title kind (modules.themes: Plain is
 one), then from folders in Subtitld itself (subtitld/title_themes) and the
 user's data folder (title_themes), as subtitle styles do. The theme new titles get
@@ -209,6 +215,64 @@ def set_value(title, key, value):
         settings[key] = coerced
     title['title_settings'] = settings
     return coerced
+
+
+# A title's own move, turn and size, as fields (subtitle_styles.coerce;
+# interface/title_panel.py draws their controls): x and y in % of the
+# picture, rotate in degrees clockwise, size in %.
+TRANSFORM_FIELDS = [
+    {'key': 'x', 'type': 'number', 'min': -100, 'max': 100, 'step': 1, 'unit': '%', 'default': 0},
+    {'key': 'y', 'type': 'number', 'min': -100, 'max': 100, 'step': 1, 'unit': '%', 'default': 0},
+    {'key': 'rotate', 'type': 'number', 'min': -360, 'max': 360, 'step': 1, 'unit': '°', 'default': 0},
+    {'key': 'size', 'type': 'int', 'min': 10, 'max': 400, 'step': 5, 'unit': '%', 'default': 100},
+]
+
+
+def transform_values(title):
+    """A title's move, turn and size: {'on', 'x', 'y', 'rotate', 'size'},
+    the defaults where it set none."""
+    saved = title.get('title_transform') if isinstance(title.get('title_transform'), dict) else {}
+    result = {'on': saved.get('on') is True}
+    for f in TRANSFORM_FIELDS:
+        value = coerce(f, saved[f['key']]) if f['key'] in saved else None
+        result[f['key']] = f['default'] if value is None else value
+    return result
+
+
+def set_transform(title, key, value):
+    """Switch a title's move, turn and size on or off ('on'), or set one of
+    its numbers; ValueError when it cannot hold `value`, KeyError for no such
+    key. Only what differs from the defaults is kept; nothing, when that is
+    nothing."""
+    if key == 'on':
+        if not isinstance(value, bool):
+            raise ValueError(f'on: {value!r} is not a bool')
+        coerced = value
+    else:
+        field_ = next((f for f in TRANSFORM_FIELDS if f['key'] == key), None)
+        if field_ is None:
+            raise KeyError(key)
+        coerced = coerce(field_, value)
+        if coerced is None:
+            raise ValueError(f'{key}: {value!r} is not a {field_["type"]}')
+    current = transform_values(title)
+    current[key] = coerced
+    kept = {'on': True} if current['on'] else {}
+    kept.update({f['key']: current[f['key']] for f in TRANSFORM_FIELDS if current[f['key']] != f['default']})
+    if kept:
+        title['title_transform'] = kept
+    else:
+        title.pop('title_transform', None)
+    return coerced
+
+
+def drawn_transform(title):
+    """What a title's move, turn and size does to its drawing ({'x', 'y',
+    'rotate', 'size'}), or None: switched off, or changing nothing."""
+    values_ = transform_values(title)
+    if not values_['on'] or all(values_[f['key']] == f['default'] for f in TRANSFORM_FIELDS):
+        return None
+    return {f['key']: values_[f['key']] for f in TRANSFORM_FIELDS}
 
 
 # A picture in an image slot: kept in the title as a data: URL (what a
@@ -434,7 +498,8 @@ def as_subtitle(title):
     if settings.get('italic'):
         body = f'<i>{body}</i>'
     copy = {key: value for key, value in title.items()
-            if key not in ('kind', 'title_theme', 'title_settings', 'title_slots', 'title_slot_translations')}
+            if key not in ('kind', 'title_theme', 'title_settings', 'title_transform', 'title_slots',
+                           'title_slot_translations')}
     copy['text'] = (lead or f'{{\\an{PLACEMENTS.get(settings.get("placement"), 5)}}}') + body
     look = {}
     if settings.get('font_family'):

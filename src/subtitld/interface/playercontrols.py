@@ -1,10 +1,11 @@
 import logging
 import os
+import shutil
 import time
 from bisect import bisect
 import subprocess
 
-from PySide6.QtWidgets import QApplication, QPushButton, QLabel, QDoubleSpinBox, QSlider, QSpinBox, QComboBox, QWidget, QStylePainter, QStyleOptionTab, QStyle, QTabBar, QColorDialog, QHBoxLayout, QSizePolicy, QVBoxLayout, QLayout, QGraphicsOpacityEffect
+from PySide6.QtWidgets import QApplication, QPushButton, QLabel, QDoubleSpinBox, QSlider, QSpinBox, QComboBox, QWidget, QStylePainter, QStyleOptionTab, QStyle, QTabBar, QColorDialog, QHBoxLayout, QSizePolicy, QVBoxLayout, QLayout, QGraphicsOpacityEffect, QMenu, QMessageBox
 from PySide6.QtCore import QPropertyAnimation, QEasingCurve, Qt, QRect, QPoint, QThread, QSize, Signal, QEvent, QTimer, QObject
 from PySide6.QtMultimedia import QMediaPlayer  # for the playback-state guard on the throttled timeline timer
 from PySide6.QtGui import QPainter, QColor
@@ -237,6 +238,10 @@ class MusicAudioExtractorThread(QObject):
     response = Signal(dict)
     original = Signal(str)
     error = Signal(str)
+    # separate_with(): the stems, still in the run's own folder; its progress (0..1); its failure.
+    run_stems_ready = Signal(dict)
+    run_progress = Signal(float)
+    run_error = Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -244,6 +249,7 @@ class MusicAudioExtractorThread(QObject):
         self._decode_thread: _OriginalDecodeThread | None = None
         self._active_provider = None
         self._connected_provider = None
+        self._run = None              # the separate_with() in flight: {'provider', 'dir'}
 
     def start(self):
         if not self.filename:
@@ -368,6 +374,78 @@ class MusicAudioExtractorThread(QObject):
             provider.separation_error.disconnect(self._on_separation_error)
         except (TypeError, RuntimeError):
             pass
+
+    # ------------------------------------------------------------------
+    # Separating the open video again with a separator picked for it
+    # ------------------------------------------------------------------
+    @property
+    def running(self) -> bool:
+        return self._run is not None
+
+    def _stem_path(self, kind: str) -> str:
+        return os.path.join(session.PATH_SUBTITLD_DATA_AUDIOSEPARATION,
+                            f'{utils.get_cache_key(self.filename)}_{kind}.flac')
+
+    def separate_with(self, provider) -> None:
+        """Separate `self.filename` again with `provider`, whatever the default
+        separator is. The providers hand back stems already in their output
+        folder, so this run gets an empty folder of its own; `run_stems_ready`
+        brings the stems from there, and `install_stems` moves them into the
+        cache once the player has let go of the old ones."""
+        if self._run is not None or not self.filename:
+            return
+        run_dir = os.path.join(session.PATH_SUBTITLD_DATA_AUDIOSEPARATION,
+                               f'{utils.get_cache_key(self.filename)}_run')
+        shutil.rmtree(run_dir, ignore_errors=True)
+        os.makedirs(run_dir, exist_ok=True)
+        self._run = {'provider': provider, 'dir': run_dir}
+        provider.separation_ready.connect(self._on_run_ready)
+        provider.separation_error.connect(self._on_run_error)
+        provider.progress.connect(self._on_run_progress)
+        from subtitld.modules.addons import registry
+        provider.separate(self.filename, run_dir, options=registry.options_for(provider.id) or None)
+
+    def install_stems(self, stems: dict) -> dict:
+        """Move a run's stems into the cache, over the ones there, and give
+        back their paths there."""
+        paths = {}
+        for kind in ('vocals', 'background'):
+            paths[kind] = self._stem_path(kind)
+            os.replace(stems[kind], paths[kind])
+        shutil.rmtree(stems['dir'], ignore_errors=True)
+        return paths
+
+    def _run_is_for(self, input_path: str) -> bool:
+        return self._run is not None and not (input_path and os.path.abspath(input_path) != os.path.abspath(self.filename))
+
+    def _on_run_ready(self, input_path: str, vocals_path: str, background_path: str) -> None:
+        if not self._run_is_for(input_path):
+            return
+        run = self._end_run()
+        self.run_stems_ready.emit({'vocals': vocals_path, 'background': background_path,
+                                   'provider': run['provider'].id, 'dir': run['dir']})
+
+    def _on_run_error(self, input_path: str, message: str) -> None:
+        if not self._run_is_for(input_path):
+            return
+        shutil.rmtree(self._end_run()['dir'], ignore_errors=True)
+        self.run_error.emit(message)
+
+    def _on_run_progress(self, value: float, _message: str) -> None:
+        if self._run is not None:
+            self.run_progress.emit(value)
+
+    def _end_run(self) -> dict:
+        run, self._run = self._run, None
+        provider = run['provider']
+        for signal, slot in ((provider.separation_ready, self._on_run_ready),
+                             (provider.separation_error, self._on_run_error),
+                             (provider.progress, self._on_run_progress)):
+            try:
+                signal.disconnect(slot)
+            except (TypeError, RuntimeError):
+                pass
+        return run
         self._connected_provider = None
 
 
@@ -553,6 +631,98 @@ def load(self):
         setattr(self, name, key)
     self.playercontrols_widget_left_top_line.layout().addWidget(self.start_end_moving_frame, 0, Qt.AlignTop)
 
+    # The music ↔ voice balance is one painted piece; the music and voice icons at its ends are keys that nudge it.
+    self.music_voice_separation_box = player_widgets.BalanceSlider('music_voice_separation_box')
+    self.music_voice_separation_slider = self.music_voice_separation_box
+    self.music_voice_separation_slider.valueChanged.connect(lambda: music_voice_separation_slider_changed(self))
+    self.music_voice_separation_music_icon = self.music_voice_separation_box.music_key
+    self.music_voice_separation_music_icon.clicked.connect(lambda: music_voice_separation_music_icon_clicked(self))
+    self.music_voice_separation_voice_icon = self.music_voice_separation_box.voice_key
+    self.music_voice_separation_voice_icon.clicked.connect(lambda: music_voice_separation_voice_icon_clicked(self))
+
+    def music_voice_separation_thread_finished(response):
+        pending_volume = session.VIDEO.pop('music_voice_separation_volume_pending', None)
+        if pending_volume is not None:
+            try:
+                response['volume'] = float(pending_volume)
+            except (TypeError, ValueError):
+                pass
+        session.VIDEO['music_voice_separation'] = response
+        self.preview_panel_player._audio_device.original_track.enabled = False
+        music_voice_separation_drop_tracks(self)   # a separation run again replaces the tracks of the last
+
+        background_source = self.preview_panel_player._audio_device.load_audio(session.VIDEO['music_voice_separation']['background'])
+        background_clip = self.preview_panel_player._audio_device.load_clip(background_source)
+        self.preview_panel_player._audio_device.background_sound = self.preview_panel_player._audio_device.generate_track()
+        self.preview_panel_player._audio_device.background_sound.add_clip(background_clip)
+        self.preview_panel_player._audio_device.add_track(self.preview_panel_player._audio_device.background_sound)
+
+        vocals_source = self.preview_panel_player._audio_device.load_audio(session.VIDEO['music_voice_separation']['vocals'])
+        vocals_clip = self.preview_panel_player._audio_device.load_clip(vocals_source)
+        self.preview_panel_player._audio_device.vocals_sound = self.preview_panel_player._audio_device.generate_track()
+        self.preview_panel_player._audio_device.vocals_sound.add_clip(vocals_clip)
+        self.preview_panel_player._audio_device.add_track(self.preview_panel_player._audio_device.vocals_sound)
+
+        # Background/vocals tracks now exist — (re)apply any background/voice
+        # audio effects to them.
+        try:
+            self.preview_panel_player._audio_device.apply_effects()
+        except Exception:
+            pass
+
+        music_voice_separation_box_update(self)
+
+        # Re-run the timeline's onset detector now that the vocals
+        # track exists — it picks up far more plosives on vocals-only
+        # audio than on the full mix. Idempotent: if a vocals-onset
+        # cache from a prior session is already loaded, this just
+        # re-reads it.
+        try:
+            self.timeline_widget.on_vocals_separation_ready()
+        except Exception:
+            pass
+
+    def music_voice_separation_thread_original_extracted(response):
+        audio_source = self.preview_panel_player._audio_device.load_audio(response)
+        clip = self.preview_panel_player._audio_device.load_clip(audio_source)
+        self.preview_panel_player._audio_device.original_track = self.preview_panel_player._audio_device.generate_track()
+        self.preview_panel_player._audio_device.original_track.add_clip(clip)
+        self.preview_panel_player._audio_device.add_track(self.preview_panel_player._audio_device.original_track)
+        self.preview_panel_player.hand_sound_to_engine()
+
+    self.music_voice_separation_thread = MusicAudioExtractorThread(parent=self)
+    self.music_voice_separation_thread.response.connect(lambda response: music_voice_separation_thread_finished(response))
+    self.music_voice_separation_thread.original.connect(lambda response: music_voice_separation_thread_original_extracted(response))   
+
+    def music_voice_separation_run_stems_ready(stems):
+        # The player lets go of the old stems before the new ones take their place in the cache.
+        music_voice_separation_drop_tracks(self)
+        try:
+            response = self.music_voice_separation_thread.install_stems(stems)
+        except OSError as exc:
+            shutil.rmtree(stems['dir'], ignore_errors=True)
+            music_voice_separation_run_error(self, str(exc))
+            response = dict(session.VIDEO.get('music_voice_separation') or {})
+            if not response.get('vocals'):
+                return
+        else:
+            response['provider'] = stems['provider']
+            # The onsets found in the old vocals are found again in the new.
+            onsets_cache = self.timeline_widget._background_onsets_cache_path(source='vocals')
+            if onsets_cache and os.path.exists(onsets_cache):
+                os.remove(onsets_cache)
+        response['volume'] = (session.VIDEO.get('music_voice_separation') or {}).get('volume', .5)
+        music_voice_separation_thread_finished(response)
+        self.music_voice_separation_box.setToolTip('')
+        music_voice_separation_slider_changed(self)   # the new tracks take the balance as it is
+
+    self.music_voice_separation_thread.run_stems_ready.connect(music_voice_separation_run_stems_ready)
+    self.music_voice_separation_thread.run_progress.connect(lambda value: music_voice_separation_run_progress(self, value))
+    self.music_voice_separation_thread.run_error.connect(lambda message: music_voice_separation_run_error(self, message))
+    self.music_voice_separation_box.menu_requested.connect(lambda pos: music_voice_separation_menu(self, pos))
+
+    self.playercontrols_widget_left_top_line.layout().addWidget(self.music_voice_separation_box, 0, Qt.AlignTop)
+
     self.change_playback_speed = player_widgets.SlantFrameButton('right', 'playback_speed.svg')
     self.change_playback_speed.setObjectName('change_playback_speed')
     self.change_playback_speed.setCheckable(True)
@@ -721,70 +891,6 @@ def load(self):
 
     self.playercontrols_widget_right_top_line.layout().addWidget(self.repeat_playback, 0, Qt.AlignTop)
 
-    # The music ↔ voice balance is one painted piece; the music and voice icons at its ends are keys that nudge it.
-    self.music_voice_separation_box = player_widgets.BalanceSlider('music_voice_separation_box')
-    self.music_voice_separation_slider = self.music_voice_separation_box
-    self.music_voice_separation_slider.valueChanged.connect(lambda: music_voice_separation_slider_changed(self))
-    self.music_voice_separation_music_icon = self.music_voice_separation_box.music_key
-    self.music_voice_separation_music_icon.clicked.connect(lambda: music_voice_separation_music_icon_clicked(self))
-    self.music_voice_separation_voice_icon = self.music_voice_separation_box.voice_key
-    self.music_voice_separation_voice_icon.clicked.connect(lambda: music_voice_separation_voice_icon_clicked(self))
-
-    def music_voice_separation_thread_finished(response):
-        pending_volume = session.VIDEO.pop('music_voice_separation_volume_pending', None)
-        if pending_volume is not None:
-            try:
-                response['volume'] = float(pending_volume)
-            except (TypeError, ValueError):
-                pass
-        session.VIDEO['music_voice_separation'] = response
-        self.preview_panel_player._audio_device.original_track.enabled = False
-
-        background_source = self.preview_panel_player._audio_device.load_audio(session.VIDEO['music_voice_separation']['background'])
-        background_clip = self.preview_panel_player._audio_device.load_clip(background_source)
-        self.preview_panel_player._audio_device.background_sound = self.preview_panel_player._audio_device.generate_track()
-        self.preview_panel_player._audio_device.background_sound.add_clip(background_clip)
-        self.preview_panel_player._audio_device.add_track(self.preview_panel_player._audio_device.background_sound)
-
-        vocals_source = self.preview_panel_player._audio_device.load_audio(session.VIDEO['music_voice_separation']['vocals'])
-        vocals_clip = self.preview_panel_player._audio_device.load_clip(vocals_source)
-        self.preview_panel_player._audio_device.vocals_sound = self.preview_panel_player._audio_device.generate_track()
-        self.preview_panel_player._audio_device.vocals_sound.add_clip(vocals_clip)
-        self.preview_panel_player._audio_device.add_track(self.preview_panel_player._audio_device.vocals_sound)
-
-        # Background/vocals tracks now exist — (re)apply any background/voice
-        # audio effects to them.
-        try:
-            self.preview_panel_player._audio_device.apply_effects()
-        except Exception:
-            pass
-
-        music_voice_separation_box_update(self)
-
-        # Re-run the timeline's onset detector now that the vocals
-        # track exists — it picks up far more plosives on vocals-only
-        # audio than on the full mix. Idempotent: if a vocals-onset
-        # cache from a prior session is already loaded, this just
-        # re-reads it.
-        try:
-            self.timeline_widget.on_vocals_separation_ready()
-        except Exception:
-            pass
-
-    def music_voice_separation_thread_original_extracted(response):
-        audio_source = self.preview_panel_player._audio_device.load_audio(response)
-        clip = self.preview_panel_player._audio_device.load_clip(audio_source)
-        self.preview_panel_player._audio_device.original_track = self.preview_panel_player._audio_device.generate_track()
-        self.preview_panel_player._audio_device.original_track.add_clip(clip)
-        self.preview_panel_player._audio_device.add_track(self.preview_panel_player._audio_device.original_track)
-        self.preview_panel_player.hand_sound_to_engine()
-
-    self.music_voice_separation_thread = MusicAudioExtractorThread(parent=self)
-    self.music_voice_separation_thread.response.connect(lambda response: music_voice_separation_thread_finished(response))
-    self.music_voice_separation_thread.original.connect(lambda response: music_voice_separation_thread_original_extracted(response))   
-
-    self.playercontrols_widget_right_top_line.layout().addWidget(self.music_voice_separation_box, 0, Qt.AlignTop)
-
     # Add gap · duration · remove gap: one painted piece, the duration field hanging in it as a notch.
     self.gap_subtitle_duration = QDoubleSpinBox()
     self.gap_subtitle_duration.setObjectName('gap_subtitle_duration')
@@ -797,6 +903,17 @@ def load(self):
     self.gap_remove_subtitle_button.clicked.connect(lambda: gap_remove_subtitle_button_clicked(self))
 
     self.playercontrols_widget_right_top_line.layout().addWidget(self.gap_hbox, 0, Qt.AlignTop)
+
+    # Add a mark · add a title at the playhead (modules.cue_kinds), as the M and T keys on the timeline do.
+    self.add_mark_title_frame = player_widgets.ActionStrip('add_mark_title_frame', [
+        ('add_mark_button', 'add_mark_icon.svg', None),
+        ('add_title_button', 'add_title_icon.svg', None),
+    ])
+    self.add_mark_button = self.add_mark_title_frame.key('add_mark_button')
+    self.add_mark_button.clicked.connect(lambda: add_mark(self, session.SUBTITLE.position or 0))
+    self.add_title_button = self.add_mark_title_frame.key('add_title_button')
+    self.add_title_button.clicked.connect(lambda: add_title(self, session.SUBTITLE.position or 0))
+    self.playercontrols_widget_right_top_line.layout().addWidget(self.add_mark_title_frame, 0, Qt.AlignTop)
 
     self.add_remove_subtitle_frame = QWidget()
     self.add_remove_subtitle_frame.setLayout(QHBoxLayout())
@@ -2831,6 +2948,65 @@ def music_voice_separation_activate_button_clicked(self):
     self.music_voice_separation_thread.start()
 
 
+def music_voice_separation_menu(self, global_pos):
+    """The separators there are for the open video, when the default is the
+    built-in one and an add-on separates too: picking one separates this video
+    again with it, the default staying as it is."""
+    from subtitld.modules import addons
+    from subtitld.modules.addons.provider import TASK_AUDIO_SEPARATE
+
+    manager = addons.get_manager()
+    providers = manager.providers_for_task(TASK_AUDIO_SEPARATE)
+    default = manager.default_for_task(TASK_AUDIO_SEPARATE)
+    if default is None or not default.is_builtin or not any(not provider.is_builtin for provider in providers):
+        return
+    if not session.VIDEO or not session.VIDEO.get('filepath'):
+        return
+    providers.sort(key=lambda provider: (not provider.is_builtin, provider.display_name.lower()))
+    current = (session.VIDEO.get('music_voice_separation') or {}).get('provider') or default.id
+    running = self.music_voice_separation_thread.running
+
+    menu = QMenu(self.music_voice_separation_box)
+    title = menu.addAction(_('playercontrols.separate_with'))
+    title.setEnabled(False)
+    for provider in providers:
+        action = menu.addAction(provider.display_name)
+        action.setCheckable(True)
+        action.setChecked(provider.id == current)
+        action.setEnabled(not running)
+        action.triggered.connect(lambda _checked=False, provider=provider: music_voice_separation_separate_with(self, provider))
+    menu.exec(global_pos)
+
+
+def music_voice_separation_separate_with(self, provider):
+    thread = self.music_voice_separation_thread
+    thread.filename = session.VIDEO['filepath']
+    thread.separate_with(provider)
+    if thread.running:
+        self._separation_run_name = provider.display_name
+        music_voice_separation_run_progress(self, 0.0)
+
+
+def music_voice_separation_run_progress(self, value):
+    self.music_voice_separation_box.setToolTip(_('playercontrols.separating_with').format(
+        name=getattr(self, '_separation_run_name', ''), percent=int(max(0.0, min(1.0, value)) * 100)))
+
+
+def music_voice_separation_run_error(self, message):
+    self.music_voice_separation_box.setToolTip('')
+    QMessageBox.warning(self, _('playercontrols.music_voice_separation'),
+                        _('playercontrols.separation_failed').format(name=getattr(self, '_separation_run_name', ''), message=message))
+
+
+def music_voice_separation_drop_tracks(self):
+    """Take the separated background and vocals out of the player."""
+    audio_device = self.preview_panel_player._audio_device
+    for name in ('background_sound', 'vocals_sound'):
+        track = getattr(audio_device, name, None)
+        if track is not None and track in audio_device.tracks:
+            audio_device.tracks.remove(track)
+
+
 def music_voice_separation_music_icon_clicked(self):
     if not 'volume' in session.VIDEO.get('music_voice_separation', {}):
         session.VIDEO['music_voice_separation']['volume'] = .5    
@@ -2870,6 +3046,9 @@ def music_voice_separation_slider_changed(self):
     session.set_unsaved()
 
     music_voice_separation_buttons_update(self)
+    # the timelines draw the background and the voice as loud as they play
+    if hasattr(self, 'timeline_widget'):
+        self.timeline_widget._waveforms_changed()
 
     audio_device = self.preview_panel_player._audio_device
     original_track = getattr(audio_device, 'original_track', None)
@@ -2969,6 +3148,8 @@ def translate(self):
     self.playercontrols_play_from_last_start_button.setToolTip(_('playercontrols.play_from_last_start'))
     self.playercontrols_play_from_next_start_button.setToolTip(_('playercontrols.play_from_next_start'))
     self.repeat_playback.setToolTip(_('playercontrols.repeat_playback'))
+    self.add_mark_button.setToolTip(_('shortcuts.add_mark_to_current_position'))
+    self.add_title_button.setToolTip(_('shortcuts.add_title_to_current_position'))
     self.gap_add_subtitle_button.setToolTip(_('playercontrols.gap_add_subtitle'))
     self.gap_remove_subtitle_button.setToolTip(_('playercontrols.gap_remove_subtitle'))
     self.add_subtitle_button.setToolTip(_('playercontrols.add_subtitle'))

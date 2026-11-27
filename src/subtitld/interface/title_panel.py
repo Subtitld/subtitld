@@ -8,8 +8,10 @@ the title themes' cards (interface/html_theme_browser.py). In the
 dialog each of the theme's fields gets the control its type asks for
 (subtitle_style_panel.field_control); a bool other fields are
 `visible_if` is a group that can be switched off, those fields inside it.
-A change is the title's own: what it sets apart from the theme's
-defaults; Reset takes them all back to the theme's.
+Last, for any theme, a group switched off at first that moves, turns and
+sizes the title as a whole (title_themes.TRANSFORM_FIELDS). A change is
+the title's own: what it sets apart from the theme's defaults; Reset
+takes them all back to the theme's, and the title where its theme puts it.
 
 Labels come from the locale files when they have
 `title_themes.<theme id>.<key>` (`.name` for the theme's own name,
@@ -89,6 +91,7 @@ class TitleSettingsDialog(utils.SimpleDialog):
             if field['key'] in switches:
                 inside = [f for f in theme.fields if f.get('visible_if') == field['key']]
                 self.fields_widget.layout().addWidget(self._group(theme, field, inside, values))
+        self.fields_widget.layout().addWidget(self._transform_group())
         self.scroll.setWidget(self.fields_widget)
         if self.isVisible():
             self.fit()
@@ -114,9 +117,12 @@ class TitleSettingsDialog(utils.SimpleDialog):
 
     def _group(self, theme, switch, fields, values):
         group = QGroupBox(field_label(theme, switch) if switch else '')
+        # The stylesheet's padding is the group's only inset; with no title
+        # it needs no room on top for one.
+        group.setProperty('untitled', switch is None)
         grid = QGridLayout()
-        grid.setContentsMargins(10, 10, 10, 10)
-        grid.setHorizontalSpacing(20)
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setHorizontalSpacing(16)
         grid.setVerticalSpacing(10)
         group.setLayout(grid)
         if switch is not None:
@@ -131,6 +137,35 @@ class TitleSettingsDialog(utils.SimpleDialog):
         grid.setColumnStretch(COLUMNS, 1)
         return group
 
+    def _transform_group(self):
+        """The title moved, turned and sized as a whole, whatever its theme."""
+        values = title_themes.transform_values(self.title)
+        group = QGroupBox(_('title_panel.transform'))
+        group.setObjectName('title_transform_group')
+        group.setCheckable(True)
+        group.setChecked(values['on'])
+        group.toggled.connect(lambda on: self._set_transform('on', on))
+        grid = QGridLayout()
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setHorizontalSpacing(16)
+        grid.setVerticalSpacing(10)
+        group.setLayout(grid)
+        for number, field in enumerate(title_themes.TRANSFORM_FIELDS):
+            column, _control = field_control(field, values[field['key']], _(f'title_panel.transform_{field["key"]}'),
+                                             lambda option: str(option), self._set_transform, self)
+            grid.addLayout(column, number // COLUMNS, number % COLUMNS, Qt.AlignLeft | Qt.AlignTop)
+        grid.setColumnStretch(COLUMNS, 1)
+        return group
+
+    def _set_transform(self, key, value):
+        history.history_append()
+        try:
+            value = title_themes.set_transform(self.title, key, value)
+        except (KeyError, ValueError):
+            return None
+        self.changed.emit()
+        return value
+
     def _set(self, key, value):
         history.history_append()
         try:
@@ -141,9 +176,10 @@ class TitleSettingsDialog(utils.SimpleDialog):
         return value
 
     def reset(self):
-        if self.title.get('title_settings'):
+        if self.title.get('title_settings') or self.title.get('title_transform'):
             history.history_append()
             self.title['title_settings'] = {}
+            self.title.pop('title_transform', None)
             self.build()
             self.changed.emit()
 
@@ -180,7 +216,6 @@ class TitlePanel(EditorSelector):
         self.setLabel(_('title_panel.theme'))
         self.settings_button.setToolTip(_('title_panel.settings'))
         self.settings_button.setAccessibleName(_('title_panel.settings'))
-        self.settings_button.setEnabled(bool(current.fields))
         self.combobox.blockSignals(True)
         self.combobox.clear()
         for available in title_themes.available().values():

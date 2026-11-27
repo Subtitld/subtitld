@@ -5,5 +5,5 @@ recursive-include src/subtitld/locale *.json
 recursive-include src/subtitld/ftfy *.dat
 recursive-include src/subtitld/models *
 recursive-include src/subtitld/subtitle_styles *
-recursive-include src/subtitld/timeline_themes *.json
+recursive-include src/subtitld/timeline_themes *.json *.png *.md
 recursive-include src/subtitld/themes *.html *.md *.png

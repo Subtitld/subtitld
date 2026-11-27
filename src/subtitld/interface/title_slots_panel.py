@@ -1,8 +1,10 @@
 """A title's other parts, in the subtitles panel's editor under its text:
 one field for each slot its theme has besides "main" (modules.title_themes),
-those its settings show. A text slot is a line (a box, where the slot is
-multiline), a list slot a box of one item a line, an image slot a picture
-with buttons to choose and remove it. Where translations are shown, each
+those its settings show. Each slot is a bordered group, its label on top and
+its field under it. A text slot is a line (a box, where the slot is
+multiline), a list slot a box of one item a line, an image slot a small
+preview (a placeholder while there is none) that is its button: hovered, it
+offers to choose a picture, or, once the title has its own, to remove it. Where translations are shown, each
 text and list slot has its translation under it, in the language the
 translation goes to.
 
@@ -12,14 +14,16 @@ Labels come from the locale files when they have
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QPixmap
-from PySide6.QtWidgets import (QFileDialog, QHBoxLayout, QLabel, QLineEdit, QPlainTextEdit, QPushButton,
+from PySide6.QtWidgets import (QFileDialog, QFrame, QHBoxLayout, QLabel, QLineEdit, QPlainTextEdit, QPushButton,
                                QSizePolicy, QVBoxLayout, QWidget)
 
 from subtitld.interface.subtitle_style_panel import _text
+from subtitld.interface import theme as look
 from subtitld.interface.translation import _
 from subtitld.modules import history, session, title_themes
 
 THUMBNAIL = 40
+BUTTON = 26          # a normal button's height
 
 
 def slot_label(theme, slot):
@@ -30,6 +34,27 @@ def translation_language():
     """The language translations are shown in, or None when they are not."""
     options = (session.CONFIG.get('translation') or {}).get('engine_options') or {}
     return options.get('target_language') if options.get('show_translations') else None
+
+
+class PreviewButton(QPushButton):
+    """A button over an image slot's preview. Its icon shows on hover, and
+    on focus only when it came from the keyboard: focus that lands on it
+    after the file dialog, or as the other button hides, would otherwise
+    show it with the mouse elsewhere."""
+
+    def focusInEvent(self, event):
+        self._set_tabbed(event.reason() in (Qt.TabFocusReason, Qt.BacktabFocusReason))
+        super().focusInEvent(event)
+
+    def focusOutEvent(self, event):
+        self._set_tabbed(False)
+        super().focusOutEvent(event)
+
+    def _set_tabbed(self, tabbed):
+        if self.property('tabbed') != tabbed:
+            self.setProperty('tabbed', tabbed)
+            self.style().unpolish(self)
+            self.style().polish(self)
 
 
 class TitleSlotsPanel(QWidget):
@@ -43,7 +68,7 @@ class TitleSlotsPanel(QWidget):
         self.setObjectName('title_slots_panel')
         self.title = title
         self.setLayout(QVBoxLayout())
-        self.layout().setContentsMargins(0, 4, 0, 4)
+        self.layout().setContentsMargins(14, 10, 14, 12)
         self.layout().setSpacing(6)
         self.rows = []
         self.editing = None          # the field whose edit has its undo step already
@@ -81,14 +106,16 @@ class TitleSlotsPanel(QWidget):
 
     # --- building ----------------------------------------------------------
     def _row(self, theme, slot, language):
-        row = QWidget()
-        row.setObjectName('title_slot_row')
+        row = QFrame()
+        row.setObjectName('title_slot_group')
+        row.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
         row.slot = slot
         row.setLayout(QVBoxLayout())
-        row.layout().setContentsMargins(0, 0, 0, 0)
+        row.layout().setContentsMargins(6, 4, 6, 6)
         row.layout().setSpacing(2)
         label = QLabel(slot_label(theme, slot))
-        label.setProperty('class', 'properties_timing_labels')
+        label.setObjectName('title_slot_label')
+        label.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         row.layout().addWidget(label)
         if slot['type'] == 'image':
             row.layout().addLayout(self._image(row, slot, label.text()))
@@ -98,7 +125,8 @@ class TitleSlotsPanel(QWidget):
         row.translated = None
         if language:
             note = QLabel(_('title_slots.translation').format(language=language))
-            note.setProperty('class', 'properties_timing_labels')
+            note.setObjectName('title_slot_label')
+            note.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
             row.layout().addWidget(note)
             row.translated = self._text_field(slot, language, f'{label.text()} ({language})')
             row.layout().addWidget(row.translated)
@@ -129,21 +157,19 @@ class TitleSlotsPanel(QWidget):
 
     def _image(self, row, slot, name):
         line = QHBoxLayout()
-        line.setContentsMargins(0, 0, 0, 0)
-        line.setSpacing(6)
+        line.setContentsMargins(0, 2, 0, 0)
+        line.setSpacing(4)
         row.thumbnail = QLabel()
         row.thumbnail.setObjectName('title_slot_thumbnail')
         row.thumbnail.setFixedSize(THUMBNAIL, THUMBNAIL)
         row.thumbnail.setAlignment(Qt.AlignCenter)
         line.addWidget(row.thumbnail)
-        row.choose = QPushButton(_('title_slots.choose_image'))
-        row.choose.setAccessibleName(f'{name}: {_("title_slots.choose_image")}')
+        # Over the preview, one at a time: their icons show on hover (or
+        # focus), so the picture is seen whole the rest of the time.
+        row.choose = self._preview_button(row.thumbnail, 'title_slot_choose', 'title_slots.choose_image', name)
         row.choose.clicked.connect(lambda: self._choose(row, slot['key']))
-        line.addWidget(row.choose)
-        row.remove = QPushButton(_('title_slots.remove_image'))
-        row.remove.setAccessibleName(f'{name}: {_("title_slots.remove_image")}')
+        row.remove = self._preview_button(row.thumbnail, 'title_slot_remove', 'title_slots.remove_image', name)
         row.remove.clicked.connect(lambda: self._set(slot['key'], None))
-        line.addWidget(row.remove)
         row.problem = QLabel()
         row.problem.setObjectName('title_slot_problem')
         row.problem.setWordWrap(True)
@@ -152,6 +178,16 @@ class TitleSlotsPanel(QWidget):
         line.addWidget(row.problem, 1)
         line.addStretch()
         return line
+
+    def _preview_button(self, preview, object_name, text, name):
+        button = PreviewButton(preview)
+        button.setObjectName(object_name)
+        inset = (THUMBNAIL - BUTTON) // 2
+        button.setGeometry(inset, inset, BUTTON, BUTTON)
+        button.setCursor(Qt.PointingHandCursor)
+        button.setToolTip(_(text))
+        button.setAccessibleName(f'{name}: {_(text)}')
+        return button
 
     # --- showing -----------------------------------------------------------
     def _fill(self, title, slots, language):
@@ -164,9 +200,10 @@ class TitleSlotsPanel(QWidget):
                     row.thumbnail.setPixmap(pixmap.scaled(THUMBNAIL, THUMBNAIL, Qt.KeepAspectRatio,
                                                           Qt.SmoothTransformation))
                 else:
-                    row.thumbnail.clear()
+                    row.thumbnail.setPixmap(look.pixmap('title_slot_image_placeholder.svg', 16))
                 own = (title.get('title_slots') or {}).get(key)
-                row.remove.setEnabled(bool(own))
+                row.choose.setVisible(not own)
+                row.remove.setVisible(bool(own))
                 continue
             for field, lang in ((row.field, None), (row.translated, language)):
                 if field is None or field.hasFocus():
