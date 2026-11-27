@@ -142,9 +142,9 @@ check('not one from subtitld.cc', (theme_store.share_id_from('subtitld.classic')
       (None, None))
 
 print('browsing')
-answer = theme_store.browse('subtitle', sort='top', q='box')
+answer = theme_store.browse('subtitle', sort='liked', q='box')
 check('only that kind, by name', [entry['share_id'] for entry in answer['results']], ['Boxed000000'])
-check('asked of subtitld.cc so', asked[-1], {'kind': 'subtitle', 'sort': 'top', 'q': 'box'})
+check('asked of subtitld.cc so', asked[-1], {'kind': 'subtitle', 'sort': 'liked', 'q': 'box'})
 check('nothing installed yet', theme_store.file_state(SITE['Boxed000000'][0]), 'install')
 
 print('installing')

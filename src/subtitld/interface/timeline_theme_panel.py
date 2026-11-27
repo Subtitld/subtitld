@@ -18,7 +18,7 @@ from PySide6.QtWidgets import QGridLayout, QLabel, QVBoxLayout, QWidget
 
 from subtitld.interface import utils
 from subtitld.interface.subtitle_style_panel import _text, field_control
-from subtitld.interface.timeline_theme_browser import ThemeCard, failure_text, install, remote
+from subtitld.interface.timeline_theme_browser import ThemeCard, failure_text, install, remote, take_part
 from subtitld.interface.translation import _
 from subtitld.modules import theme_store, timeline_style, timeline_themes
 from subtitld.modules import subtitldcc_service as service
@@ -189,6 +189,9 @@ class TimelineThemePanel(QWidget):
                 'removable': not theme.builtin,
                 'state': 'in_use' if current is not None and current.id == theme.id else 'use',
                 'update': listed['version'] if listed and installed and listed['version'] > installed else None,
+                'version': installed,
+                'likes': listed.get('likes') if listed else None,
+                'liked': listed.get('liked') if listed else None,
             }
             card = ThemeCard(info, [] if picture(theme) else key_colors(theme))
             card.set_preview(picture(theme))
@@ -198,6 +201,9 @@ class TimelineThemePanel(QWidget):
 
     def _act(self, info, action):
         theme_id = info['theme_id']
+        if action in ('like', 'report'):
+            take_part(self, next(card for card in self.cards if card.info['theme_id'] == theme_id), action)
+            return
         if action == 'use':
             theme_store.use(theme_id)
         elif action == 'remove':

@@ -4,22 +4,27 @@ A card is drawn like an add-on's: the look the theme is drawn for on the slanted
 band, the theme's picture from edge to edge under it, who made it, and the footer: a globe to its page on
 subtitld.cc, then, at the right, its options, an update, the trash (while the pointer is on the card) and
 the slanted tab in the corner: Use, Install, or, for the theme the timeline wears, a quiet In use mark in
-its place. The Timeline tab lists the installed themes so (interface/timeline_theme_panel.py) and, under
-them, this section: the public themes on subtitld.cc not installed here, by look, popular, new or best
-rated, or by name.
+its place. A theme from subtitld.cc has, beside the globe, a heart with its likes, to like it (or take the
+like back), and, with the trash, a flag to report a problem with it to subtitld.cc's moderators; both are
+kept with the person's subtitld.cc account, so signed out they offer to sign in first. The Timeline tab
+lists the installed themes so (interface/timeline_theme_panel.py) and, under them, this section: the
+public themes on subtitld.cc not installed here, by look, popular, new or most liked, or by name.
 
 A subtitld:// theme link (subtitldcc_open.open_link) shows that theme and its pair in the section, or,
 with no editor open, in a dialog holding the same section.
 
 Everything from subtitld.cc comes in the background (subtitldcc_service.call), once the section's head
-first comes into sight; nothing needs signing in.
+first comes into sight; nothing but liking and reporting needs signing in.
 """
+
+import platform
 
 from PySide6.QtCore import QRectF, QSize, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QColor, QDesktopServices, QLinearGradient, QPainter, QPixmap
-from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QPushButton, QScrollArea, QSizePolicy, QVBoxLayout,
-                               QWidget)
+from PySide6.QtWidgets import (QButtonGroup, QFrame, QHBoxLayout, QLabel, QPlainTextEdit, QPushButton,
+                               QRadioButton, QScrollArea, QSizePolicy, QVBoxLayout, QWidget)
 
+from subtitld import __version__
 from subtitld.interface import shapes, theme, utils
 from subtitld.interface.addons_dialog import _AddonCard, _ElidedLabel, _graphic
 from subtitld.interface.translation import _
@@ -27,13 +32,16 @@ from subtitld.modules import subtitldcc_service as service
 from subtitld.modules import theme_store
 
 LOOKS = ('', 'dark', 'light')
-SORTS = ('popular', 'new', 'top')
+SORTS = ('popular', 'new', 'liked')
+# What a theme can be reported for, as subtitld.cc names it (its API's /themes/{id}/reports).
+REPORT_REASONS = ('broken', 'version', 'abuse', 'license', 'other')
 PREVIEW_RATIO = 2 / 9                   # the pictures Subtitld draws of a theme are 9:2
 CHECK = 8                               # the squares under a transparent picture, and their colours
 CHECK_COLORS = (QColor('#6b6f75'), QColor('#55595e'))
 _previews = {}                          # (share_id, version) -> QPixmap, for as long as Subtitld runs
 remote = {}                             # share_id -> what subtitld.cc said of it last
-
+knowns = [remote]                       # each such record (the subtitle and title themes' too): a like is
+                                        # written into all of them
 
 class _Preview(QWidget):
     """The theme's picture, as wide as the card and 9:2 (or `ratio`, height to width); its key colours in
@@ -107,12 +115,13 @@ class _Head(QWidget):
 class ThemeCard(_AddonCard):
     """A theme as a card, drawn as an add-on card is (band, slanted label, contact line, corner tab).
 
-    `info`: title, owner (or author), look, counterpart, rating, downloads, url (its page on subtitld.cc),
-    and state: 'install', 'update', 'use' or 'in_use'; with `options` (it has some), `removable` and
-    `update` (subtitld.cc has a newer version of an installed one). A subtitle or title theme's has `mark`
-    (said on the slanted label in the look's place: that it is animated) and `slots` (a title's texts).
-    `ratio`: its picture's height to its width. `act(info, action)`: 'install', 'update', 'use', 'remove'
-    or 'options'."""
+    `info`: title, owner (or author), look, counterpart, downloads, url (its page on subtitld.cc), and
+    state: 'install', 'update', 'use' or 'in_use'; with `options` (it has some), `removable` and `update`
+    (subtitld.cc has a newer version of an installed one). One from subtitld.cc has its `share_id`, and
+    `likes` and `liked` when subtitld.cc said (liked: None signed out). A subtitle or title theme's has
+    `mark` (said on the slanted label in the look's place: that it is animated) and `slots` (a title's
+    texts). `ratio`: its picture's height to its width. `act(info, action)`: 'install', 'update', 'use',
+    'remove', 'options', 'like' (or take the like back) or 'report'."""
 
     act = Signal(dict, str)
     COLOURS = {**_AddonCard.COLOURS, 'in_use': ('#33475a', '#4a6880')}
@@ -162,8 +171,6 @@ class ThemeCard(_AddonCard):
             about.append(_('theme_store.both_looks'))
         if info.get('slots'):
             about.append(_('html_theme_store.slots').format(slots=', '.join(info['slots'])))
-        if info.get('rating'):
-            about.append(f"★ {info['rating']['average']:.1f}")
         if 'downloads' in info:
             about.append(_('theme_store.downloads').format(count=info['downloads']))
         meta = QLabel(' · '.join(part for part in about if part))
@@ -183,6 +190,16 @@ class ThemeCard(_AddonCard):
             self.site = self._button('theme_card_site.svg', _('theme_store.on_site'),
                                      lambda: QDesktopServices.openUrl(QUrl(info['url'])))
             footer.layout().addWidget(self.site, 0, Qt.AlignVCenter)
+        self.like = self.report = None
+        if info.get('share_id'):
+            self.like = QPushButton()
+            self.like.setObjectName('theme_card_like')
+            self.like.setProperty('class', 'theme_card_like')
+            self.like.setIconSize(QSize(16, 16))
+            self.like.setFixedHeight(26)
+            self.like.clicked.connect(lambda: self.act.emit(self.info, 'like'))
+            footer.layout().addWidget(self.like, 0, Qt.AlignVCenter)
+            self.set_liked(info.get('liked'), info.get('likes'))
         footer.layout().addStretch()
         self._hover_buttons = []
         self.update_button = self.options = self.remove = None
@@ -194,6 +211,11 @@ class ThemeCard(_AddonCard):
             self.options = self._button('theme_card_options.svg', _('theme_store.options'),
                                         lambda: self.act.emit(self.info, 'options'))
             footer.layout().addWidget(self.options, 0, Qt.AlignVCenter)
+        if info.get('share_id'):
+            self.report = self._button('theme_card_report.svg', _('theme_store.report'),
+                                       lambda: self.act.emit(self.info, 'report'))
+            self._hover_buttons.append(self.report)
+            footer.layout().addWidget(self.report, 0, Qt.AlignVCenter)
         if info.get('removable'):
             self.remove = self._button('addon_card_remove.svg', _('theme_store.remove'),
                                        lambda: self.act.emit(self.info, 'remove'))
@@ -236,6 +258,17 @@ class ThemeCard(_AddonCard):
         button.clicked.connect(slot)
         return button
 
+    def set_liked(self, liked, likes):
+        """The heart: filled when the person likes it, with its likes beside it when subtitld.cc said."""
+        self.info = {**self.info, 'liked': liked, 'likes': likes}
+        self.like.setIcon(_graphic('theme_card_liked.svg' if liked else 'theme_card_like.svg'))
+        self.like.setText(str(likes) if likes is not None else '')
+        text = _('theme_store.liked' if liked else 'theme_store.like')
+        if likes is not None:
+            text = f"{text} · {_('theme_store.likes').format(count=likes)}"
+        self.like.setToolTip(text)
+        self.like.setAccessibleName(text)
+
     def set_busy(self, text):
         if isinstance(self.main, QPushButton):
             self.main.setEnabled(False)
@@ -266,6 +299,162 @@ def install(owner, card, share_id, done, use=True):
 
     owner.calls.append(service.call(lambda: theme_store.fetch(share_id), installed,
                                     lambda error: owner.install_failed(card, error)))
+
+
+# --- Likes and reports ------------------------------------------------------------------------------
+
+
+def _cards(owner):
+    """Every card `owner` (a Timeline tab, a store section) shows: its list's and its installed ones."""
+    return list(getattr(owner, 'cards', [])) + list(getattr(owner, 'mine', []))
+
+
+def _alive(widget):
+    try:
+        widget.objectName()
+    except RuntimeError:            # rebuilt while subtitld.cc answered: gone
+        return False
+    return True
+
+
+def _say(owner, text):
+    owner.status.setText(text)
+    owner.status.show()
+
+
+def take_part(owner, card, action):
+    """A card's heart ('like': like the theme, or take the like back) or flag ('report'). Both are kept
+    with the person's subtitld.cc account: signed out, a dialog offers to sign in first, then goes on.
+    `owner` has `calls` and a `status` label, where what went wrong is said."""
+    if not service.is_connected():
+        ask_to_sign_in(owner, lambda: take_part(owner, card, action))
+        return
+    if action == 'report':
+        ReportDialog(owner, card.info, owner.window()).exec()
+        return
+    share_id = card.info['share_id']
+    liked = bool(card.info.get('liked'))
+    card.like.setEnabled(False)
+
+    def done(answer):
+        for known in knowns:
+            if share_id in known:
+                known[share_id] = {**known[share_id], 'likes': answer['likes'], 'liked': answer['liked']}
+        for other in _cards(owner):
+            if _alive(other) and other.like is not None and other.info.get('share_id') == share_id:
+                other.like.setEnabled(True)
+                other.set_liked(answer['liked'], answer['likes'])
+
+    def failed(error):
+        if _alive(card):
+            card.like.setEnabled(True)
+        if service.error_code(error) == 'unauthorized':
+            service.forget_account()
+        _say(owner, _('theme_store.like_failed').format(error=failure_text(error)))
+
+    function = service.client().unlike_theme if liked else service.client().like_theme
+    owner.calls.append(service.call(lambda: function(share_id), done, failed))
+
+
+def ask_to_sign_in(owner, then):
+    """Say why signing in is needed and offer to; once signed in (in the browser), `then()`."""
+    dialog = utils.SimpleDialog(owner.window(), title=_('theme_store.sign_in_title'))
+    text = QLabel(_('theme_store.sign_in_text'))
+    text.setWordWrap(True)
+    dialog.content.layout().addWidget(text)
+    dialog.accept_button.setText(_('theme_store.sign_in'))
+    if not dialog.exec():
+        return
+    _say(owner, _('theme_store.signing_in'))
+
+    def signed_in(me):
+        service.remember_account(me)
+        owner.status.hide()
+        then()
+
+    def failed(error):
+        if service.error_code(error) == 'canceled':
+            owner.status.hide()
+        else:
+            _say(owner, service.error_message(error, _))
+
+    owner.calls.append(service.call(lambda: service.sign_in(None), signed_in, failed))
+
+
+def sent_from(info):
+    """What a report says it was sent from, shown before it is sent: "Subtitld 26.12 · Linux · version 3
+    of the theme"."""
+    parts = [f'Subtitld {__version__}', platform.system() or 'Unknown']
+    if info.get('version'):
+        parts.append(_('theme_store.report_theme_version').format(version=info['version']))
+    return ' · '.join(parts)
+
+
+class ReportDialog(utils.SimpleDialog):
+    """Report a problem with a theme to subtitld.cc's moderators: what's wrong, a few words, and, said
+    before it goes, what it is sent from. Sent once it is accepted; `owner` says how it went."""
+
+    def __init__(self, owner, info, parent=None):
+        super().__init__(parent, title=_('theme_store.report_title').format(name=info['title']))
+        self.owner, self.info = owner, info
+        self.setObjectName('theme_report_dialog')
+        layout = self.content.layout()
+        layout.setContentsMargins(15, 14, 15, 14)
+        layout.setSpacing(8)
+        intro = QLabel(_('theme_store.report_text'))
+        intro.setWordWrap(True)
+        layout.addWidget(intro)
+        self.reasons = QButtonGroup(self)
+        for reason in REPORT_REASONS:
+            radio = QRadioButton(_(f'theme_store.report_reason_{reason}'))
+            radio.setObjectName(f'theme_report_{reason}')
+            radio.setProperty('reason', reason)
+            self.reasons.addButton(radio)
+            layout.addWidget(radio)
+            hint = QLabel(_(f'theme_store.report_reason_{reason}_help'))
+            hint.setProperty('class', 'addon_card_aside')
+            hint.setWordWrap(True)
+            hint.setContentsMargins(24, 0, 0, 4)
+            layout.addWidget(hint)
+        self.details = QPlainTextEdit()
+        self.details.setObjectName('theme_report_details')
+        self.details.setPlaceholderText(_('theme_store.report_details'))
+        self.details.setFixedHeight(80)
+        layout.addWidget(self.details)
+        self.client = sent_from(info)
+        sent = QLabel(_('theme_store.report_sent_with').format(details=self.client))
+        sent.setObjectName('theme_report_sent_with')
+        sent.setProperty('class', 'addon_card_aside')
+        sent.setWordWrap(True)
+        layout.addWidget(sent)
+        self.accept_button.setText(_('theme_store.report_send'))
+        self.accept_button.setEnabled(False)
+        self.reasons.buttonClicked.connect(lambda _button: self.accept_button.setEnabled(True))
+
+    def reason(self):
+        button = self.reasons.checkedButton()
+        return button.property('reason') if button is not None else None
+
+    def accept(self):
+        reason = self.reason()
+        if reason is None:
+            return
+        share_id, version, details = self.info['share_id'], self.info.get('version'), self.details.toPlainText()
+        client = self.client
+        owner = self.owner
+
+        def sent(_answer):
+            _say(owner, _('theme_store.report_sent'))
+
+        def failed(error):
+            if service.error_code(error) == 'unauthorized':
+                service.forget_account()
+            _say(owner, _('theme_store.report_failed').format(error=failure_text(error)))
+
+        owner.calls.append(service.call(
+            lambda: service.client().report_theme(share_id, reason, details[:2000], version=version, client=client),
+            sent, failed))
+        super().accept()
 
 
 def failure_text(error):
@@ -551,7 +740,9 @@ class ThemeBrowser(QWidget):
 
     def _act(self, info, action):
         card = next(card for card in self.cards if card.info['share_id'] == info['share_id'])
-        if action == 'use':
+        if action in ('like', 'report'):
+            take_part(self, card, action)
+        elif action == 'use':
             theme_store.use(theme_store.theme_id(info['share_id']))
             self._changed()
         elif action in ('install', 'update'):

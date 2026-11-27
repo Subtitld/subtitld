@@ -5,17 +5,17 @@ Drawn as the timeline's themes are (interface/timeline_theme_browser.py), from t
 in its own tab of the Interface panel beside the Timeline tab: Subtitles and Titles. Each holds, first,
 every theme of its kind there is here, Subtitld's own first: Use (or a quiet In use mark for the one drawn
 with: the project's subtitle style, or the theme new titles get), and for one installed from subtitld.cc
-an update when subtitld.cc has a newer version, the globe to its page and the trash while the pointer is on
-the card. Then, under its head, the public themes on subtitld.cc not installed here, popular, new or best
-rated, or by name, each with Install; an installed theme goes up among the others and into the pickers,
-to be chosen there or with Use.
+an update when subtitld.cc has a newer version, the globe to its page, the heart with its likes, and the
+trash and the flag (to report a problem) while the pointer is on the card. Then, under its head, the public
+themes on subtitld.cc not installed here, popular, new or most liked, or by name, each with Install; an
+installed theme goes up among the others and into the pickers, to be chosen there or with Use.
 
 A card's picture is the still of the theme drawn by Subtitld's own drawing, 16:9 (the timeline's are 9:2):
 shipped beside Subtitld's own themes, kept from subtitld.cc for those installed from there; an animated
 theme says so on the card's slanted label, where a timeline theme names its look.
 
 Everything from subtitld.cc comes in the background (subtitldcc_service.call), once the section's head
-first comes into sight; nothing needs signing in.
+first comes into sight; nothing but liking and reporting needs signing in.
 """
 
 from PySide6.QtCore import QUrl, Signal
@@ -23,7 +23,7 @@ from PySide6.QtGui import QDesktopServices, QPixmap
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
 from subtitld.interface.subtitle_style_panel import style_name
-from subtitld.interface.timeline_theme_browser import ThemeBrowser, ThemeCard, failure_text
+from subtitld.interface.timeline_theme_browser import ThemeBrowser, ThemeCard, failure_text, knowns, take_part
 from subtitld.interface.title_panel import theme_name as title_theme_name
 from subtitld.interface.translation import _
 from subtitld.modules import theme_store, themes
@@ -33,6 +33,7 @@ PREVIEW_RATIO = 9 / 16                  # subtitld.cc draws subtitle and title t
 HEADINGS = {'subtitle': 'html_theme_store.subtitle_title', 'title': 'html_theme_store.title_title'}
 remote = {}                             # share_id -> what subtitld.cc said of it last
 _pictures = {}                          # (path, mtime) -> QPixmap
+knowns.append(remote)
 
 
 def picture(theme):
@@ -88,6 +89,8 @@ def installed_info(theme):
         'removable': removable,
         'state': 'in_use' if theme_store.file_in_use(theme.id) else 'use',
         'update': listed['version'] if listed and version and listed['version'] > version else None,
+        'likes': listed.get('likes') if listed else None,
+        'liked': listed.get('liked') if listed else None,
     }
 
 
@@ -176,6 +179,10 @@ class HtmlThemeBrowser(ThemeBrowser):
         self.installed_box.setVisible(bool(self.mine))
 
     def _act_installed(self, info, action):
+        if action in ('like', 'report'):
+            card = next(card for card in self.mine if card.info['theme_id'] == info['theme_id'])
+            take_part(self, card, action)
+            return
         if action == 'use':
             theme_store.use_file(info['theme_id'])
             self.used.emit()
@@ -214,7 +221,9 @@ class HtmlThemeBrowser(ThemeBrowser):
 
     def _act(self, info, action):
         card = next(card for card in self.cards if card.info['share_id'] == info['share_id'])
-        if action == 'use':
+        if action in ('like', 'report'):
+            take_part(self, card, action)
+        elif action == 'use':
             theme_store.use_file(theme_store.theme_id(info['share_id']))
             self.used.emit()
             self._changed()
