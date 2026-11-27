@@ -165,6 +165,30 @@ with tempfile.TemporaryDirectory() as tmp:
         platforms.active_packages = lambda: {'python3.14', 'onnxruntime_python3.14'}
         check('Haiku: installs once the packages are there',
               installer.install_from_zip(Path(tmp) / 'modes.zip'), 'modes')
+        real_run, real_repo = platforms._run_pkgman, platforms._has_subtitld_repo
+        calls = []
+
+        def fake_pkgman(args, on_line):
+            calls.append(args)
+            if len(args) > 3:  # several packages at once
+                raise RuntimeError('*** Failed to download package b_python3.14: Interrupted system call')
+
+        platforms._run_pkgman, platforms._has_subtitld_repo = fake_pkgman, lambda: True
+        try:
+            platforms.install_packages(['a_python3.14', 'b_python3.14'])
+            check('Haiku: when pkgman fails on several packages, it installs them one at a time', calls,
+                  [['install', '-y', 'a_python3.14', 'b_python3.14'],
+                   ['install', '-y', 'a_python3.14'], ['install', '-y', 'b_python3.14']])
+            calls.clear()
+            platforms._run_pkgman = lambda args, on_line: (_ for _ in ()).throw(RuntimeError('no such package'))
+            try:
+                platforms.install_packages(['c_python3.14'])
+                failed = None
+            except RuntimeError as exc:
+                failed = str(exc)
+            check('Haiku: one package that fails still fails', failed, 'no such package')
+        finally:
+            platforms._run_pkgman, platforms._has_subtitld_repo = real_run, real_repo
         platforms.is_haiku = lambda: False
         platforms.active_packages = lambda: set()
         check('elsewhere haiku_packages are ignored', platforms.missing_packages(manifest), [])
