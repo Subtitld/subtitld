@@ -8,6 +8,8 @@ browser can offer an update when subtitld.cc has a newer one.
 
 Installing a theme installs its counterpart too, when it has one: Subtitld swaps between the two when the
 interface's look changes. The network calls block; run them with subtitldcc_service.call().
+
+Subtitle and title themes (modules.themes) come from subtitld.cc too; their part is at the end.
 """
 
 import base64
@@ -159,7 +161,9 @@ def _save_config():
 
 # --- Subtitle and title themes (modules.themes) ----------------------------------------------------------
 # One from subtitld.cc names itself cc.<share ID in hex> too, so a project that names a theme it does not
-# carry can fetch it by that id alone. Which version is installed is kept in CONFIG['themes']['installed'].
+# carry can fetch it by that id alone. Which version is installed is kept in CONFIG['themes']['installed']
+# ({theme id: {'share_id', 'version', 'owner'}}), beside the file the picture subtitld.cc drew of it
+# (<theme id>.png), for its card.
 
 def share_id_from(theme_id):
     """The subtitld.cc share ID of a theme from there, by its id; None for any other theme."""
@@ -180,20 +184,117 @@ def _installed_files():
     return installed
 
 
-def fetch_file(theme_id):
-    """Download a subtitle or title theme from subtitld.cc by its id. Blocking. Returns
-    (share_id, version, data, owner)."""
+def _user_file(theme_id):
+    """The user's own installed file of a theme, as modules.themes lists it; None when there is none (not
+    installed, one of Subtitld's, or only carried by the open project's file)."""
+    from subtitld.modules import themes
+
+    theme = themes.available().get(theme_id)
+    if theme is None or theme.builtin or theme.carried or theme.path is None:
+        return None
+    return theme if theme.path.parent == themes.folders()[1][0] else None
+
+
+def browse(kind, sort='popular', q='', cursor=None):
+    """One page of the public subtitle or title themes on subtitld.cc ({results, next_cursor, total}).
+    Blocking."""
+    return service.client().themes(kind=kind, sort=sort, q=q, cursor=cursor)
+
+
+def installed_files(kind):
+    """The subtitle or title themes installed here from subtitld.cc, as modules.themes lists them."""
+    from subtitld.modules import themes
+
+    return [theme for theme_id, theme in themes.available(kind).items()
+            if theme_id in _installed_files() and _user_file(theme_id) is not None]
+
+
+def file_record(theme_id):
+    """What is kept of a theme installed from subtitld.cc ({'share_id', 'version', 'owner'}), or {}."""
+    record = _installed_files().get(theme_id)
+    return record if isinstance(record, dict) else {}
+
+
+def file_version(share_id):
+    """The subtitld.cc version of the subtitle or title theme installed here, or None (not installed, or
+    its file is gone)."""
+    installed = theme_id(share_id)
+    if _user_file(installed) is None:
+        return None
+    return file_record(installed).get('version')
+
+
+def file_in_use(installed):
+    """Whether a subtitle or title theme (by its id) is the one in use: the project's subtitle style, or
+    the theme new titles get."""
+    from subtitld.modules import subtitle_styles, themes, title_themes
+
+    theme = themes.available().get(installed)
+    if theme is None:
+        return False
+    if theme.kind == 'title':
+        return title_themes.current_id() == installed
+    return subtitle_styles.current_id() == installed
+
+
+def file_state(info):
+    """What the browser offers for a subtitle or title theme subtitld.cc lists: 'install', 'update', 'use'
+    or 'in_use'."""
+    version = file_version(info['share_id'])
+    if version is None:
+        return 'install'
+    if info.get('version') and version < info['version']:
+        return 'update'
+    return 'in_use' if file_in_use(theme_id(info['share_id'])) else 'use'
+
+
+def use_file(chosen):
+    """Draw with a subtitle or title theme (by its id): the project's subtitles, or the titles made from
+    now on."""
+    from subtitld.modules import subtitle_styles, themes, title_themes
+
+    theme = themes.available().get(chosen)
+    if theme is None:
+        return
+    if theme.kind == 'title':
+        title_themes.set_current(chosen)
+    else:
+        subtitle_styles.set_current(chosen)
+    _save_config()
+
+
+def fetch_file(theme_id, version=None):
+    """Download a subtitle or title theme from subtitld.cc by its id: the version given, or its latest.
+    Blocking. Returns (share_id, version, data, owner)."""
     share_id = share_id_from(theme_id)
     if share_id is None:
         raise StoreError(f'{theme_id} is not a theme from subtitld.cc')
     connection = service.client()
     info = connection.theme(share_id)
-    return share_id, info['version'], connection.download_theme(share_id, info['version']), info.get('owner') or ''
+    version = version or info['version']
+    return share_id, version, connection.download_theme(share_id, version), info.get('owner') or ''
 
 
-def save_file(share_id, version, data, owner=''):
-    """Install a subtitle or title theme subtitld.cc sent (bytes) among the user's own. Returns the
-    modules.themes.Theme."""
+def fetch_preview(share_id, version=None):
+    """The picture subtitld.cc drew of a theme (PNG), or b'' when it has none. Blocking."""
+    try:
+        return service.client().theme_preview(share_id, version)
+    except Exception:  # a theme without its picture still installs
+        return b''
+
+
+def preview_file(installed):
+    """Where the picture of a subtitle or title theme installed from subtitld.cc is, or None."""
+    theme = _user_file(installed)
+    if theme is None:
+        return None
+    path = theme.path.with_suffix('.png')
+    return path if path.is_file() else None
+
+
+def save_file(share_id, version, data, owner='', preview=b''):
+    """Install a subtitle or title theme subtitld.cc sent (bytes) among the user's own, with its picture
+    (PNG) beside it when there is one. Returns the modules.themes.Theme."""
     from subtitld.modules import themes
 
     try:
@@ -207,7 +308,29 @@ def save_file(share_id, version, data, owner=''):
     folder = themes.folders()[1][0]
     folder.mkdir(parents=True, exist_ok=True)
     (folder / f'{theme.id}{themes.EXTENSION}').write_bytes(data)
+    picture = folder / f'{theme.id}.png'
+    if preview:
+        picture.write_bytes(preview)
+    else:
+        picture.unlink(missing_ok=True)
     _installed_files()[theme.id] = {'share_id': share_id, 'version': version, 'owner': owner or ''}
     _save_config()
     themes.reload_looks()
     return themes.available()[theme.id]
+
+
+def remove_file(removed):
+    """Remove a subtitle or title theme installed from subtitld.cc, by its id, with its picture; never one
+    of Subtitld's, nor one the open project's file carries. A project that draws with it keeps naming it
+    (Subtitld's own draw in its place until it is here again)."""
+    from subtitld.modules import themes
+
+    theme = _user_file(removed)
+    if theme is None or not removed.startswith(PREFIX):
+        return False
+    theme.path.unlink(missing_ok=True)
+    theme.path.with_suffix('.png').unlink(missing_ok=True)
+    _installed_files().pop(removed, None)
+    _save_config()
+    themes.reload_looks()
+    return True

@@ -208,32 +208,63 @@ class Client:
         params = {"format": fmt, "version": version}
         return self.request("GET", f"/assets/{share_id}/download", params=params, raw=True)
 
-    # --- Timeline themes (public; no sign-in needed) -----------------------------------------------------
+    # --- Themes (public; no sign-in needed, but for likes and reports) -----------------------------------
 
     def themes(
         self,
         *,
+        kind: str = "",
         look: str = "",
         sort: str = "popular",
         q: str = "",
         cursor: str | None = None,
         limit: int = 24,
     ) -> dict:
-        """One page of public timeline themes: {results, next_cursor, total}. ``look``: dark or light;
-        ``sort``: popular, new or top. Each result's ``theme_id`` is the id its file installs under."""
-        params = {"look": look or None, "sort": sort, "q": q or None, "cursor": cursor, "limit": limit}
+        """One page of public themes: {results, next_cursor, total}. ``kind``: timeline (the default),
+        subtitle or title; ``look``: dark or light (timeline themes); ``sort``: popular, new or liked. Each
+        result's ``theme_id`` is the id its file installs under; ``likes`` counts its likes and ``liked``
+        says whether the person signed in likes it (null when signed out)."""
+        params = {
+            "kind": kind or None,
+            "look": look or None,
+            "sort": sort,
+            "q": q or None,
+            "cursor": cursor,
+            "limit": limit,
+        }
         return self.request("GET", "/themes", params=params)
 
     def theme(self, share_id: str) -> dict:
         return self.request("GET", f"/themes/{share_id}")
 
     def download_theme(self, share_id: str, version: int | None = None) -> bytes:
-        """The theme file, ready to import (it names itself cc.<share ID in hex>, its theme_id)."""
+        """The theme file, ready to import (it names itself cc.<share ID in hex>, its theme_id): JSON for a
+        timeline theme, HTML for a subtitle or title theme."""
         return self.request("GET", f"/themes/{share_id}/download", params={"version": version}, raw=True)
 
     def theme_preview(self, share_id: str, version: int | None = None) -> bytes:
         """The preview subtitld.cc drew of the theme (PNG)."""
         return self.request("GET", f"/themes/{share_id}/preview", params={"version": version}, raw=True)
+
+    def theme_video(self, share_id: str, version: int | None = None) -> bytes:
+        """The short video subtitld.cc drew of an animated subtitle or title theme (WebM)."""
+        return self.request("GET", f"/themes/{share_id}/video", params={"version": version}, raw=True)
+
+    def like_theme(self, share_id: str) -> dict:
+        """Like a theme (signed in, "rate" scope; not your own: ApiError "cannot_like"). {likes, liked}."""
+        return self.request("PUT", f"/themes/{share_id}/like")
+
+    def unlike_theme(self, share_id: str) -> dict:
+        return self.request("DELETE", f"/themes/{share_id}/like")
+
+    def report_theme(
+        self, share_id: str, reason: str, details: str = "", *, version: int | None = None, client: str = ""
+    ) -> dict:
+        """Tell subtitld.cc's moderators of a problem with a theme (signed in, "rate" scope). ``reason``:
+        broken, version, abuse, license or other; ``client``: where it is sent from ("Subtitld 26.12 ·
+        Linux"). Once a day per theme: another answers ApiError "already_reported"."""
+        body = {"reason": reason, "details": details, "version": version, "client": client}
+        return self.request("POST", f"/themes/{share_id}/reports", json_body=body)
 
     # --- Publishing --------------------------------------------------------------------------------------
 

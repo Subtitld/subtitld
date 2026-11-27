@@ -42,7 +42,7 @@ manifest = {'format': 1, 'id': 'test.boxed', 'kind': 'subtitle', 'name': 'Boxed'
     '</head><body></body></html>')
 session.CONFIG = config.Config(Path(tempfile.mkdtemp()) / 'c.config')
 session.SUBTITLE = Subtitle(segments=[])
-check('both themes there', sorted(styles.available(reload=True)), ['subtitld.classic', 'test.boxed'])
+check('both themes there', {'subtitld.classic', 'test.boxed'} <= set(styles.available(reload=True)), True)
 
 print('a project that says nothing: the app\'s')
 session.CONFIG['subtitle_style'] = {'current': 'subtitld.classic', 'settings': {'subtitld.classic': {'font_size': 60}}}

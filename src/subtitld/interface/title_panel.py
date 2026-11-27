@@ -3,8 +3,10 @@ panel's editor where a subtitle has its speaker, and its settings, in a
 dialog the button beside it opens.
 
 The theme is picked from those there are, and becomes the one new titles
-get. In the dialog each of the theme's fields gets the control its type
-asks for (subtitle_style_panel.field_control); a bool other fields are
+get; that one is also chosen in the Interface panel's Titles tab, among
+the title themes' cards (interface/html_theme_browser.py). In the
+dialog each of the theme's fields gets the control its type asks for
+(subtitle_style_panel.field_control); a bool other fields are
 `visible_if` is a group that can be switched off, those fields inside it.
 Last, for any theme, a group switched off at first that moves, turns and
 sizes the title as a whole (title_themes.TRANSFORM_FIELDS). A change is
@@ -17,7 +19,8 @@ Labels come from the locale files when they have
 """
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import QFrame, QGridLayout, QGroupBox, QPushButton, QScrollArea, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (QFrame, QGridLayout, QGroupBox, QPushButton, QScrollArea, QVBoxLayout,
+                               QWidget)
 
 from subtitld.interface import theme, utils
 from subtitld.interface.editor_selector import EditorSelector

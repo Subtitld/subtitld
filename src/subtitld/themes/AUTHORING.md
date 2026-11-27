@@ -82,7 +82,7 @@ here is refused.
 | `version` | no | Numbers and dots, like `"26.12.1"`. Raise it with every change you share. Where two copies of the same id meet, the higher version wins. |
 | `min_subtitld` | no | The oldest Subtitld that can use the theme, like `"26.12"`. Older versions skip it. |
 | `author`, `licence`, `description` | no | Text. Write the licence as an SPDX identifier where one exists (`CC-BY-4.0`, `CC0-1.0`, `MIT`). |
-| `timing` | no | `{"intro": ms, "outro": ms}`, whole milliseconds from 0 to 60000. Having it is what makes a theme **animated**; see [Animation](#animation). |
+| `timing` | no | `{"intro": ms, "outro": ms}`, whole milliseconds from 0 to 60000, and for a subtitle theme that moves each word as it is sung, `"sung": ms` (up to 3000). Having it is what makes a theme **animated**; see [Animation](#animation) and [Sung words](#sung-words-karaoke). |
 | `ignores_position` | no | `true` if the theme places itself on the whole picture; see [Placing a theme](#placing-a-theme). Default `false`. |
 | `slice` | no | How far text slots are cut: `"none"`, `"lines"`, `"words"` (the default) or `"chars"`. See [Slots](#slots-where-the-text-and-pictures-go). |
 | `slots` | titles | The theme's texts and pictures. A subtitle theme has one slot, `main`, and can leave this out. |
@@ -238,6 +238,9 @@ cue's own formatting as `<b>`, `<i>`, `<u>`, `<s>`, `<sub>`, `<sup>`,
 - The cue's own colours and formatting are written inline on the `main`
   slot's element, so they win over the theme's CSS.
 - Every text slot is sliced, not only `main`.
+- In a subtitle timed word by word (karaoke), each `.word` and `.char` also
+  gets `--k-at`, the moment it is sung, and the slot gets `data-timed`.
+  See [Sung words](#sung-words-karaoke).
 - Because lines are blocks, anything you add to the slot element itself
   with `::before` or `::after` (quote marks, a dash) lands on a line of its
   own. Put it on the first or last line instead:
@@ -387,6 +390,10 @@ exit take, in milliseconds.
   theme cannot do.
 - In Subtitld's timeline, the intro and outro show as shaded ends of the
   cue. A cue shorter than intro plus outro is marked in red.
+- **`"sung"`** is the one exception to a still middle: in a subtitle timed
+  word by word, how long your theme moves a word once it is sung. Subtitld
+  draws a picture a frame through each word's first `sung` ms. See
+  [Sung words](#sung-words-karaoke).
 
 A full example:
 
@@ -521,6 +528,7 @@ never uses it. Try your own text and values with these options:
 |---|---|
 | `--text "…"` | The cue's text. Write `\n` for a new line. |
 | `--slot key="…"` | A title's other text slot. For a list slot, separate items with `\|`. |
+| `--sung` | A subtitle's text timed word by word, as karaoke is: the sheet adds moments as its first two words are sung. See [Sung words](#sung-words-karaoke). |
 | `--set key=value` | A field's value: `--set show_logo=false`, `--set placement=top`, `--set font_size=80`, `--set color='"#ffff0000"'`. The value is read as JSON where it can be, as text otherwise. |
 
 ```bash
@@ -721,6 +729,99 @@ The intro must cover the last word: with ten words at 120 ms, that is
 9 × 120 + 200 = 1280 ms. Words beyond the intro still light up in the
 preview, but freeze in an exported video. Pick an intro for the longest
 lines you expect, or keep the step short.
+
+### Sung words (karaoke)
+
+A subtitle can be timed word by word: by hand in Subtitld's editor, by a
+speech recognition add-on, or from a karaoke file. Subtitld then lights
+each word up in the theme's `karaoke_color` as it is sung (with the
+piece's own effect: all at once, wiping across, an outline or popping
+in). A theme can do more: move each word, or each letter, as it is sung.
+
+- The sung pieces are `<span class="subtitld-k">` elements with
+  `--k-start` (when the piece is sung, in ms from the cue's start) and
+  `--k-length` (how long it is sung).
+- Every `.word` and `.char` (see `slice`) gets **`--k-at`**: the moment it
+  is sung. A word takes its piece's start; the characters of a piece are
+  spread over its length, one after another, so a letter-by-letter
+  animation follows the singing. Words before the first sung piece get
+  `0ms`.
+- Every `.word` and `.char` also gets **`--k-for`**: how long it is sung
+  (its piece's length, a character's share of it). With it, a theme can
+  mark only the word being sung now, and let it go when the next one
+  starts: `animation: now var(--k-for) step-end both; animation-delay:
+  var(--k-at);` with `@keyframes now { from { background: gold; } }`.
+  For a subtitle that is not timed, settle everything within the intro,
+  as always: a highlight that walks through the words over the whole cue
+  freezes in an exported video.
+- The slot gets **`data-timed`**. Write the sung animation under it, and
+  keep your usual stagger by `--i` for subtitles that are not timed:
+  `[data-timed] .word { animation-delay: var(--k-at); }`.
+- Say how long a word moves once it is sung with **`"sung"`** in `timing`
+  (ms). Subtitld draws a picture a frame through it in an exported video;
+  after it, the word must hold still until the next one is sung. Without
+  `"sung"`, a word's change is drawn at its start only, like a colour.
+- Subtitld's own highlight still runs. To draw the sung word your own way
+  only, turn it off: `[data-timed] .subtitld-k { animation-name: none; }`.
+- Try it with `--sung`, which times the sample text word by word:
+  `subtitld --check-theme mine.html --preview sheet.png --sung`.
+
+Each word pops and turns gold as it is sung; a subtitle that is not timed
+gets its words in one after another:
+
+```html
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sung pop</title>
+<script type="application/json" id="subtitld-theme">
+{
+  "format": 1,
+  "id": "example.sung_pop",
+  "kind": "subtitle",
+  "name": "Sung pop",
+  "version": "1.0.0",
+  "licence": "CC0-1.0",
+  "description": "Each word pops as it is sung.",
+  "timing": {"intro": 300, "outro": 200, "sung": 300},
+  "slice": "words",
+  "fields": [
+    {"key": "karaoke_color", "type": "color", "label": "Sung", "default": "#ffffd23f"}
+  ],
+  "fallback": {"font_size": 56, "bold": true}
+}
+</script>
+<style>
+  :root { --karaoke-color: #ffd23f; }
+  html { background: #3a3a3a; }
+  body { min-height: 100vh; margin: 0; display: flex; align-items: flex-end; justify-content: center;
+         padding-bottom: 10vh; box-sizing: border-box; }
+
+  .text { font-family: sans-serif; font-weight: 900; font-size: 60px; text-align: center; color: #fff;
+          -webkit-text-stroke: 8px #000; paint-order: stroke fill; }
+
+  /* Not timed: the words come in one after another. */
+  .word { display: inline-block; animation: in 300ms ease-out both; animation-delay: calc(var(--i) * 40ms); }
+  /* Timed: each word pops as it is sung, in our own way only. */
+  [data-timed] .subtitld-k { animation-name: none; }
+  [data-timed] .word { animation: pop 300ms cubic-bezier(.3, 1.6, .5, 1) both; animation-delay: var(--k-at); }
+  .theme-out .text { animation: out 200ms both; }
+
+  @keyframes in { from { opacity: 0; transform: translateY(20px); } }
+  @keyframes pop {
+    0% { transform: scale(1); color: #fff; }
+    40% { transform: scale(1.35) rotate(-4deg); color: var(--karaoke-color); }
+    100% { transform: scale(1); color: var(--karaoke-color); }
+  }
+  @keyframes out { to { opacity: 0; } }
+</style>
+</head>
+<body>
+  <div class="text" data-slot="main">Every word pops</div>
+</body>
+</html>
+```
 
 ### Lower third
 
