@@ -42,7 +42,11 @@ dependencies = [
     "beautifulsoup4",
     # BeautifulSoup's XML parser ('lxml-xml'), which file_io and usf ask for
     # by name: theirs to list, not left to pycaption (gone) or python-docx.
-    "lxml",
+    # Under 6.2: with lxml 6.2.0 BeautifulSoup (4.15.0) reads namespaced
+    # names without their prefix (subtitldcc:id comes back as id, and a
+    # plain id beside it is lost), so a USF opens without Subtitld's own
+    # IDs, themes, titles and looks.
+    "lxml<6.2",
     "chardet==6.0.0",
     "pysubs2",
     "platformdirs",
