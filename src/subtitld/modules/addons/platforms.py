@@ -112,4 +112,17 @@ def install_packages(names: list[str], on_line: Callable[[str], None] | None = N
         return
     if not _has_subtitld_repo():
         _run_pkgman(['add-repo', HPKG_REPO_URL], on_line)
-    _run_pkgman(['install', '-y', *names], on_line)
+    try:
+        _run_pkgman(['install', '-y', *names], on_line)
+    except RuntimeError:
+        if len(names) == 1:
+            raise
+        # pkgman can fail to download one of several packages ("Interrupted
+        # system call") after it re-uses the copy an earlier transaction kept
+        # of another; one at a time they get through. pkgman installs all or
+        # nothing, so none of them is in yet, but check anyway.
+        log.warning('platforms: pkgman failed on %s together; installing them one at a time', ', '.join(names))
+        active = active_packages()
+        for name in names:
+            if name not in active:
+                _run_pkgman(['install', '-y', name], on_line)
