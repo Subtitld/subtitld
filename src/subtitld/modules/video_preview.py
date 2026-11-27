@@ -33,15 +33,20 @@ def moment(cue, at):
     return at if start <= at < end else (start + end) / 2.0
 
 
-def shifted(segments, start, length):
+def shifted(segments, start, length, clip=True):
     """The subtitles of the clip from `start`, `length` seconds long, with
-    their times counted from its start."""
+    their times counted from its start: cut to the clip, or (not `clip`)
+    whole, running from before it or past it, so a cue whose theme is
+    animated (modules.themes) is at the moment of its animation the clip
+    shows, not at its start again."""
     out = []
     for segment in segments or []:
         if float(segment['end']) <= start or float(segment['start']) >= start + length:
             continue
-        out.append(dict(segment, start=max(0.0, float(segment['start']) - start),
-                        end=min(length, float(segment['end']) - start)))
+        begin, end = float(segment['start']) - start, float(segment['end']) - start
+        if clip:
+            begin, end = max(0.0, begin), min(length, end)
+        out.append(dict(segment, start=begin, end=end))
     return out
 
 
@@ -77,7 +82,10 @@ def still(container, options, segments, cue, at, output, video=None, info=None, 
         holder = embedded_captions.CONTAINERS.get(container) or burned_video.CONTAINERS.get(container)
         extension = holder['extension'] if holder else _track_extension(container)
         clip = os.path.join(folder, 'clip.' + extension)
-        bounce.write_captioned_video(source, clip, container, options, shifted(segments, start, length),
+        # Drawn subtitles keep their own times; a format of captions or
+        # subtitles is given what lies inside the clip.
+        burned = burned_video.is_burned(container)
+        bounce.write_captioned_video(source, clip, container, options, shifted(segments, start, length, clip=not burned),
                                      dict(info, duration=length), language)
         vp9 = burned_video.is_burned(container) and \
             burned_video.codec_of(container, (options or {}).get('video_codec')) == 'vp9'

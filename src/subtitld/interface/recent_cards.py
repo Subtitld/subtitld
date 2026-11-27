@@ -20,6 +20,7 @@ from PySide6.QtWidgets import QWidget
 from subtitld.interface import theme
 from subtitld.interface import shapes
 from subtitld.interface import utils
+from subtitld.modules import cue_kinds
 from subtitld.modules import session
 
 BINS = 48                             # steps in a row's timeline
@@ -83,11 +84,11 @@ def remember(window, look_ahead=False):
         duration = 0.0
     if duration > 0:
         entry['duration'] = duration
-        entry['cues'] = summary(session.SUBTITLE.segments, duration)
+        entry['cues'] = summary(cue_kinds.subtitles(session.SUBTITLE.segments), duration)
     player = getattr(window, 'preview_panel_player', None)
     if player is None:
         return
-    segments = [s for s in session.SUBTITLE.segments if isinstance(s, dict)]
+    segments = [s for s in cue_kinds.subtitles(session.SUBTITLE.segments) if isinstance(s, dict)]
     position = float(session.SUBTITLE.position or 0.0)
     showing = _showing(segments, position)
     if showing is None and look_ahead:

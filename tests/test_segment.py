@@ -19,7 +19,7 @@ from PySide6.QtWidgets import QApplication
 app = QApplication([])
 from subtitld.modules import collab_client, export_options, file_io, history, karaoke, plaintext, quality_check, session, subtitles, subtitldcc_service
 from subtitld.modules.segment import (Segment, SegmentList, Subtitle, cut, hyphenator, join_pieces, joined, letters_of,
-                                      piece_words, set_effect, set_piece_text, set_text, split_piece, text_of, time_piece,
+                                      move_piece, piece_words, set_effect, set_piece_text, set_text, split_piece, text_of, time_piece,
                                       timed_by_words, timed_pieces)
 from subtitld.interface import left_panel, left_panel_autosave, left_panel_subtitldcc, top_bar
 
@@ -350,6 +350,14 @@ check('a start kept after the piece before', time_piece(segment, 1, start=0.2), 
 check('an end kept within the subtitle', time_piece(segment, 1, end=9.0), (1.0, 3.0))
 check('an end kept before the next piece', time_piece(segment, 0, end=5.0), (0.0, 1.0))
 check('a start past its end takes its end', time_piece(segment, 1, start=2.0), (2.0, 3.0))
+moving = Segment({'start': 0.0, 'end': 4.0, 'text': [
+    {'text': 'a ', 'start': 0.0, 'end': 1.0, 'level': 'word'},
+    {'text': 'b ', 'start': 1.5, 'end': 2.0, 'level': 'word'},
+    {'text': 'c', 'start': 3.0, 'end': 3.5, 'level': 'word'}]})
+check('a piece moved keeps its length', move_piece(moving, 1, 1.8), (1.8, 2.3))
+check('and stops at the next', move_piece(moving, 1, 2.9), (2.5, 3.0))
+check('and at the one before', move_piece(moving, 1, 0.2), (1.0, 1.5))
+check('the last stops at the subtitle\'s end', move_piece(moving, 2, 9.0), (3.5, 4.0))
 set_effect(segment, 0, 'wipe')
 check('an effect', segment.pieces()[0].get('effect'), 'wipe')
 set_effect(segment, 0, None)

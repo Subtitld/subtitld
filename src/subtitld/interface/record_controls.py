@@ -27,6 +27,7 @@ import secrets
 
 from PySide6.QtCore import QObject, Qt, QTimer
 
+from subtitld.modules import cue_kinds
 from subtitld.modules import cue_ids
 from subtitld.modules import live_peaks
 from subtitld.modules import session
@@ -1370,7 +1371,7 @@ class RecordController(QObject):
             end = min(natural_end if natural_end is not None else base + 3.0, cap)
             subtitles_mod.add_subtitle(position=base, duration=max(0.1, end - base), text='')
             subtitle = next(
-                (s for s in session.SUBTITLE.segments
+                (s for s in cue_kinds.subtitles(session.SUBTITLE.segments)
                  if abs(float(s.get('start', 0.0)) - base) < 0.05), None)
             if subtitle is None:
                 return
@@ -1406,14 +1407,14 @@ class RecordController(QObject):
     def _next_subtitle_start(self, base):
         """Start time of the earliest subtitle beginning after ``base``, or None."""
         starts = [float(s.get('start', 0.0))
-                  for s in session.SUBTITLE.segments
+                  for s in cue_kinds.subtitles(session.SUBTITLE.segments)
                   if isinstance(s, dict) and float(s.get('start', 0.0)) > base]
         return min(starts) if starts else None
 
     # -- helpers -----------------------------------------------------------
     def _subtitle_at(self, position):
         """The subtitle whose time range contains ``position`` (seconds), if any."""
-        for s in session.SUBTITLE.segments:
+        for s in cue_kinds.subtitles(session.SUBTITLE.segments):
             if isinstance(s, dict) and \
                     float(s.get('start', 0.0)) <= position <= float(s.get('end', 0.0)):
                 return s
@@ -1423,7 +1424,7 @@ class RecordController(QObject):
         """Trim a new-subtitle range so it can't overlap existing subtitles:
         push the start past any subtitle it lands inside, and cap the end at the
         next subtitle's start."""
-        segs = session.SUBTITLE.segments
+        segs = cue_kinds.subtitles(session.SUBTITLE.segments)
         for s in segs:
             s_start = float(s.get('start', 0.0))
             s_end = float(s.get('end', 0.0))

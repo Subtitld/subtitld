@@ -85,26 +85,27 @@ timeline_style.reset()
 check('reset: the defaults', timeline_style.changes(), {'timeline': {}, 'boxes': {}})
 
 print('kinds of cue')
-check('subtitles only, for now', list(timeline_style.KINDS), ['subtitle'])
-check('a cue of a kind not registered is a subtitle', timeline_style.kind_of({'kind': 'title', 'start': 0}), 'subtitle')
+check('subtitles, marks and titles', list(timeline_style.KINDS), ['subtitle', 'mark', 'title'])
+check('a cue of a kind not registered is a subtitle', timeline_style.kind_of({'kind': 'credits', 'start': 0}), 'subtitle')
+check('a mark is a mark', timeline_style.kind_of({'kind': 'mark', 'start': 0}), 'mark')
 timeline_style.set_values({'boxes': {'subtitle': {'corner_radius': 9, 'fill_color': '#ff112233'},
                                      'credits': {'corner_radius': 0}}})
 check('a kind this Subtitld does not know is kept, for the one that will',
       timeline_style.changes()['boxes']['credits'], {'corner_radius': 0})
-timeline_style.register_kind('title', {'fill_color': '#ff884400'})
-check('registered: its own', timeline_style.kind_of({'kind': 'title'}), 'title')
-title = timeline_style.values('title')
+timeline_style.register_kind('lowerthird', {'fill_color': '#ff884400'})
+check('registered: its own', timeline_style.kind_of({'kind': 'lowerthird'}), 'lowerthird')
+title = timeline_style.values('lowerthird')
 check('a kind: its defaults, the subtitles\' look for the rest', (title['fill_color'], title['corner_radius']),
       ('#ff884400', 9))
-timeline_style.set_value('corner_radius', 9, 'title')
-check('what it inherits is not saved for it', 'title' in timeline_style.changes()['boxes'], False)
-timeline_style.set_value('corner_radius', 20, 'title')
+timeline_style.set_value('corner_radius', 9, 'lowerthird')
+check('what it inherits is not saved for it', 'lowerthird' in timeline_style.changes()['boxes'], False)
+timeline_style.set_value('corner_radius', 20, 'lowerthird')
 timeline_style.set_value('corner_radius', 2, 'subtitle')
 check('what it sets stays when the subtitles change',
-      (timeline_style.values('title')['corner_radius'], timeline_style.values('subtitle')['corner_radius']), (20, 2))
-check('a look of its own', timeline_style.current().box('title')['corner_radius'], 20)
+      (timeline_style.values('lowerthird')['corner_radius'], timeline_style.values('subtitle')['corner_radius']), (20, 2))
+check('a look of its own', timeline_style.current().box('lowerthird')['corner_radius'], 20)
 timeline_style.reset()
-del timeline_style.KINDS['title']
+del timeline_style.KINDS['lowerthird']
 
 
 print('times as the ruler writes them')
@@ -240,16 +241,16 @@ check('the playhead in its colour, as wide as it is set', (pixel(598, 150), pixe
       ('#ffff00ff', '#ffff00ff', False))
 
 print('a kind of cue in a lane of its own')
-timeline_style.register_kind('title', {'fill_color': '#ffff8800', 'top': 30, 'bottom': 140})
+timeline_style.register_kind('credits', {'fill_color': '#ffff8800', 'top': 30, 'bottom': 140})
 session.SUBTITLE = Subtitle({'segments': [{'start': 1.0, 'end': 3.0, 'text': '', 'speaker': 'A'},
-                                          {'start': 1.0, 'end': 3.0, 'text': '', 'speaker': 'A', 'kind': 'title'}],
+                                          {'start': 1.0, 'end': 3.0, 'text': '', 'speaker': 'A', 'kind': 'credits'}],
                              'selected': None, 'position': 10.0})
 apply(look(fill_color=GREEN, corner_radius=0))
-check('its lane', widget.lane('title'), (30, height - 170))
+check('its lane', widget.lane('credits'), (30, height - 170))
 check('the subtitles\' where they were', widget.lane('subtitle'), (55, height - 80))
 check('a title in its colour, in its lane', pixel(150, 40), '#ffff8800')
 check('a subtitle in its own, in its own', pixel(150, 120), GREEN)
-del timeline_style.KINDS['title']
+del timeline_style.KINDS['credits']
 timeline_style.reset()
 session.SUBTITLE = Subtitle({'segments': [{'start': 1.0, 'end': 3.0, 'text': '', 'speaker': 'A'},
                                           {'start': 3.0, 'end': 5.0, 'text': '', 'speaker': 'A'}],
@@ -743,8 +744,8 @@ timeline_themes.forget_current()
 
 print('a theme\'s options')
 classic = timeline_themes.available()['subtitld.classic']
-check('Classic\'s six', [o['key'] for o in classic.options],
-      ['box_color', 'box_opacity', 'selected_box_color', 'text_size', 'playhead_color', 'waveform_color'])
+check('Classic\'s seven', [o['key'] for o in classic.options],
+      ['box_color', 'box_opacity', 'selected_box_color', 'title_color', 'text_size', 'playhead_color', 'waveform_color'])
 check('untouched, the theme\'s look as it was', timeline_style.clean(timeline_themes.look_of(classic)),
       timeline_style.clean(timeline_themes.resolved(classic)))
 
@@ -850,7 +851,7 @@ dialog = ThemeOptionsDialog(classic)
 dialog.changed.connect(lambda: picked.append(1))
 check('Classic\'s, labelled from the locale files',
       [l.text() for l in dialog.fields.findChildren(QLabel) if l.property('class') == 'widget_label'],
-      ['Subtitle color', 'Subtitle opacity', 'Selected subtitle color', 'Text size', 'Cursor color', 'Waveform color'])
+      ['Subtitle color', 'Subtitle opacity', 'Selected subtitle color', 'Title color', 'Text size', 'Cursor color', 'Waveform color'])
 check('a control each, and a reset', (sorted(dialog.controls), dialog.reject_button.text()),
       (sorted(o['key'] for o in classic.options), 'Reset'))
 dialog.controls['box_opacity'].setValue(40)
@@ -887,6 +888,30 @@ check('settings changed, no theme: their own look kept', (timeline_themes.use_de
       timeline_style.values()['cursor_color']), (False, None, '#ff00ff00'))
 timeline_style.reset()
 timeline_themes.forget_current()
+
+print('a look set from a theme before it drew marks and titles')
+before_block = json.loads(json.dumps(session.CONFIG['timeline']))
+timeline_themes.apply('subtitld.classic')
+kept = json.loads(json.dumps(session.CONFIG['timeline']))
+check('setting it keeps its fingerprint', bool(kept.get('theme_look')), True)
+# A look kept from before the theme drew marks (and before fingerprints).
+kept.pop('theme_look')
+for kind in ('mark', 'title'):
+    kept['style']['boxes'].pop(kind, None)
+session.CONFIG['timeline'] = kept
+timeline_style._changed()
+check('looks changed, its marks plain', (timeline_themes.changed(), timeline_style.values('mark')['frame_svg']), (True, ''))
+check('caught up as Subtitld starts', timeline_themes.catch_up(), True)
+check('the theme\'s marks now', (timeline_themes.changed(), bool(timeline_style.values('mark')['frame_svg'])), (False, True))
+timeline_style.set_value('corner_radius', 11, 'subtitle')
+session.CONFIG['timeline']['style']['boxes'].pop('mark', None)
+timeline_style._changed()
+check('a look changed by hand is left as it is', timeline_themes.catch_up(), False)
+timeline_themes.apply('subtitld.classic')
+timeline_style.set_value('corner_radius', 11, 'subtitle')
+check('one changed by hand since its fingerprint, too', timeline_themes.catch_up(), False)
+session.CONFIG['timeline'] = before_block
+timeline_style._changed()
 
 print('a theme and its counterpart for the other look')
 check('the light look from the start: Classic Light', (timeline_themes.use_default('light'), timeline_themes.current().id),

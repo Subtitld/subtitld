@@ -12,6 +12,7 @@ from subtitld.interface import left_panel
 from subtitld.interface.translation import _
 from subtitld.interface.scope_selector import ScopeFooter
 
+from subtitld.modules import cue_kinds
 from subtitld.modules import session
 from subtitld.modules import subtitles
 from subtitld.modules import addons
@@ -221,7 +222,7 @@ def _release_lines_following(speaker_name, voice, voice_speaker=None):
     anything else was set in the per-subtitle panel and keeps it."""
     if not voice:
         return
-    for subtitle in session.SUBTITLE.segments:
+    for subtitle in cue_kinds.subtitles(session.SUBTITLE.segments):
         overrides = subtitle.get('dubbing_options')
         if (subtitle.get('speaker', 'A') != speaker_name or not overrides
                 or overrides.get('voice') != voice):
@@ -316,7 +317,8 @@ def _speaker_scoped_segments(widget, speaker_name):
     subtitle only when it actually belongs to this speaker — the panel
     synthesizes one speaker's voice, and generating it over someone else's
     line would put the wrong voice on it."""
-    segments = session.SUBTITLE.segments
+    # Only subtitles are spoken: not marks, not titles (modules.cue_kinds).
+    segments = cue_kinds.subtitles(session.SUBTITLE.segments)
     speaker_segments = [s for s in segments if s.get('speaker', 'A') == speaker_name]
     selector = getattr(widget, 'scope_selector', None)
     if selector is None:

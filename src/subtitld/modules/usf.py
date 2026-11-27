@@ -33,6 +33,7 @@ import re
 
 from bs4 import BeautifulSoup, NavigableString
 
+from subtitld.modules import cue_kinds
 from subtitld.modules import karaoke
 from subtitld.modules import look as subtitld_look
 from subtitld.modules import markup
@@ -83,6 +84,29 @@ SUBTITLDCC_WRITING = 'subtitldcc:writing'
 # subtitldcc:level="syllable">.
 SUBTITLDCC_EFFECT = 'subtitldcc:effect'
 SUBTITLDCC_LEVEL = 'subtitldcc:level'
+# Marks and titles (modules.cue_kinds) are subtitles of another kind, which
+# USF has no word for: <subtitle subtitldcc:kind="mark"
+# subtitldcc:category="chapter" subtitldcc:open-end="true">, <subtitle
+# subtitldcc:kind="title" subtitldcc:title-theme="subtitld.plain"
+# subtitldcc:title-settings='{"font_size":72}'>. The categories its marks
+# use, with their names and colours, are in <metadata>:
+# <subtitldcc:mark-categories><subtitldcc:category id="chapter"
+# name="Chapter" color="#ffe5a823"/></subtitldcc:mark-categories>.
+SUBTITLDCC_KIND = 'subtitldcc:kind'
+SUBTITLDCC_CATEGORY = 'subtitldcc:category'
+SUBTITLDCC_OPEN_END = 'subtitldcc:open-end'
+SUBTITLDCC_TITLE_THEME = 'subtitldcc:title-theme'
+SUBTITLDCC_TITLE_SETTINGS = 'subtitldcc:title-settings'
+SUBTITLDCC_TITLE_TRANSFORM = 'subtitldcc:title-transform'
+SUBTITLDCC_TITLE_SLOTS = 'subtitldcc:title-slots'
+SUBTITLDCC_TITLE_SLOT_TRANSLATIONS = 'subtitldcc:title-slot-translations'
+SUBTITLDCC_MARK_CATEGORIES = 'mark-categories'
+# The subtitle theme the project is drawn with, and what was set of it
+# (modules.subtitle_styles.project_table): <subtitldcc:theme id="…"
+# version="…">{"values": …, "speakers": …}</subtitldcc:theme> in
+# <metadata>; a subtitle drawn with another names it.
+SUBTITLDCC_THEME_TABLE = 'theme'
+SUBTITLDCC_THEME = 'subtitldcc:theme'
 # Where a <k> goes, in the text as it is written into elements and read back.
 _K_MARK = karaoke.MARK
 # What the file says about itself. USF's <metadata> has a title, an author
@@ -372,6 +396,8 @@ class USFReader():
         self.speakers = {}
         self.origin = None
         self.source_language = None
+        self.mark_categories = {}
+        self.theme = None
         self.has_embedded_images = False
         self.has_embedded_audio_clips = False
         self._styles = {}
@@ -411,6 +437,20 @@ class USFReader():
             spoken = meta.find(SUBTITLDCC_SOURCE_LANGUAGE)
             if spoken is not None and spoken.namespace == SUBTITLDCC_NAMESPACE and spoken.attrs.get('code'):
                 self.source_language = self.language_of(spoken.attrs['code'], spoken.text.strip())
+            theme = meta.find(SUBTITLDCC_THEME_TABLE)
+            if theme is not None and theme.namespace == SUBTITLDCC_NAMESPACE and theme.attrs.get('id'):
+                try:
+                    body = json.loads(theme.text or '{}')
+                except ValueError:
+                    body = {}
+                body = body if isinstance(body, dict) else {}
+                self.theme = dict(body, id=theme.attrs['id'], version=theme.attrs.get('version') or '')
+            table = meta.find(SUBTITLDCC_MARK_CATEGORIES)
+            if table is not None and table.namespace == SUBTITLDCC_NAMESPACE:
+                for entry in table.find_all('category'):
+                    if entry.attrs.get('id'):
+                        self.mark_categories[entry.attrs['id']] = {'name': entry.attrs.get('name') or entry.attrs['id'],
+                                                                   'color': entry.attrs.get('color') or ''}
 
         for style in soup.select('styles > style'):
             name = style.attrs.get('name')
@@ -485,12 +525,12 @@ class USFReader():
                 subtitles_list.append(entry)
         subtitles_list.sort(key=lambda sub: sub['start'])
 
-        # Each other language's subtitles go to the first's that start with
-        # them (as Subtitld writes them), else the ones they overlap most:
-        # blocks need not hold the same number.
+        # Each other language's subtitles go to the first's of their kind
+        # that start with them (as Subtitld writes them), else the ones they
+        # overlap most: blocks need not hold the same number.
         by_start = {}
         for primary_sub in subtitles_list:
-            by_start.setdefault(round(primary_sub['start'], 3), primary_sub)
+            by_start.setdefault((cue_kinds.kind_of(primary_sub), round(primary_sub['start'], 3)), primary_sub)
         ordered = sorted(subtitles_list, key=lambda sub: sub['start'])
         starts = [sub['start'] for sub in ordered]
 
@@ -505,10 +545,12 @@ class USFReader():
                 translated = self._parse_subtitle(tr_sub, dubs=False)
                 if not translated or not translated['text']:
                     continue
-                best = by_start.get(round(translated['start'], 3))
+                kind = cue_kinds.kind_of(translated)
+                best = by_start.get((kind, round(translated['start'], 3)))
                 if best is None:
-                    nearby = ordered[max(0, bisect.bisect_right(starts, translated['start']) - 1):
-                                     bisect.bisect_left(starts, translated['end'])]
+                    nearby = [sub for sub in ordered[max(0, bisect.bisect_right(starts, translated['start']) - 1):
+                                                     bisect.bisect_left(starts, translated['end'])]
+                              if cue_kinds.kind_of(sub) == kind]
                     best = max(nearby, key=lambda sub: overlap(sub, translated), default=None)
                     if best is not None and overlap(best, translated) <= 0:
                         best = None
@@ -554,6 +596,38 @@ class USFReader():
                 subtitld_look.store(subtitle, json.loads(element.attrs[SUBTITLDCC_LOOK]))
             except (ValueError, TypeError):
                 pass
+        if element.attrs.get(SUBTITLDCC_THEME):
+            subtitle['theme'] = element.attrs[SUBTITLDCC_THEME]
+        kind = element.attrs.get(SUBTITLDCC_KIND)
+        if kind == cue_kinds.MARK:
+            subtitle['kind'] = kind
+            subtitle['category'] = element.attrs.get(SUBTITLDCC_CATEGORY) or cue_kinds.DEFAULT_CATEGORY
+            if _yes(element.attrs.get(SUBTITLDCC_OPEN_END)):
+                subtitle['open_end'] = True
+        elif kind == cue_kinds.TITLE:
+            subtitle['kind'] = kind
+            subtitle['title_theme'] = element.attrs.get(SUBTITLDCC_TITLE_THEME) or ''
+            try:
+                settings = json.loads(element.attrs.get(SUBTITLDCC_TITLE_SETTINGS) or '{}')
+            except ValueError:
+                settings = {}
+            subtitle['title_settings'] = settings if isinstance(settings, dict) else {}
+            # Its own move, turn and size (title_themes.set_transform), when it has one.
+            try:
+                transform = json.loads(element.attrs.get(SUBTITLDCC_TITLE_TRANSFORM) or '{}')
+            except ValueError:
+                transform = {}
+            if isinstance(transform, dict) and transform:
+                subtitle['title_transform'] = transform
+            # What it puts in its theme's other slots, and their translations.
+            for attribute, key in ((SUBTITLDCC_TITLE_SLOTS, 'title_slots'),
+                                   (SUBTITLDCC_TITLE_SLOT_TRANSLATIONS, 'title_slot_translations')):
+                try:
+                    value = json.loads(element.attrs.get(attribute) or '{}')
+                except ValueError:
+                    value = {}
+                if isinstance(value, dict) and value:
+                    subtitle[key] = value
 
         # Its texts, each formatted by the named style it uses unless that
         # style is its speaker's, as Subtitld names them (that one gives the
@@ -585,7 +659,8 @@ class USFReader():
             # Timed, the one karaoke of a subtitle; among other texts, its words.
             timed = _karaoke_pieces(subtitle['text'], marks) if len(texts) == 1 else None
             subtitle['text'] = timed or subtitle['text'].replace(_K_MARK, '')
-        subtitle['speaker'] = speaker or 'A'
+        if 'kind' not in subtitle:
+            subtitle['speaker'] = speaker or 'A'
         if not dubs:
             return subtitle
 
@@ -648,7 +723,8 @@ class USFWriter():
         super(USFWriter, self).__init__(*args, **kwargs)
 
     def write(self, subtitles, speakers=None, language=None, metadata=None,
-              embed_audio_clips=False, origin=None, names=None, source_language=None):
+              embed_audio_clips=False, origin=None, names=None, source_language=None, mark_categories=None,
+              theme=None):
         """Serialize subtitles to USF XML.
 
         Parameters:
@@ -670,6 +746,10 @@ class USFWriter():
           source_language: the language spoken in the media, when it is
                      known (it is not `language` once a translation is
                      inverted).
+          mark_categories: {id: {'name', 'color'}} of the categories its
+                     marks use (modules.cue_kinds.project_table).
+          theme:     the subtitle theme it is drawn with and what was set
+                     of it (modules.subtitle_styles.project_table).
         """
         speakers = speakers or {}
         metadata = metadata or {}
@@ -709,7 +789,8 @@ class USFWriter():
             rights = usf.new_tag(SUBTITLDCC_COPYRIGHT, namespace=SUBTITLDCC_NAMESPACE, nsprefix='subtitldcc')
             rights.string = str(metadata['copyright']).strip()
             meta_tag.append(rights)
-        if (origin and origin.get('share_id')) or any(subtitle.get('id') or subtitle.get('forced')
+        if (origin and origin.get('share_id')) or mark_categories or theme or any(subtitle.get('id') or subtitle.get('forced')
+                                                      or subtitle.get('kind')
                                                       or subtitle.get('hidden') or subtitle.get('look')
                                                       or subtitle.get('direction') or subtitle.get('bidi')
                                                       or subtitld_position.writing(subtitle)
@@ -725,6 +806,19 @@ class USFWriter():
         if source_language:
             meta_tag.append(language_tag(source_language, SUBTITLDCC_SOURCE_LANGUAGE,
                                          namespace=SUBTITLDCC_NAMESPACE, nsprefix='subtitldcc'))
+        if theme and theme.get('id'):
+            theme_tag = usf.new_tag(SUBTITLDCC_THEME_TABLE, namespace=SUBTITLDCC_NAMESPACE, nsprefix='subtitldcc',
+                                    attrs={'id': theme['id'], 'version': str(theme.get('version') or '')})
+            body = {key: theme[key] for key in ('values', 'speakers') if theme.get(key)}
+            theme_tag.string = json.dumps(body, separators=(',', ':'), sort_keys=True)
+            meta_tag.append(theme_tag)
+        if mark_categories:
+            table = usf.new_tag(SUBTITLDCC_MARK_CATEGORIES, namespace=SUBTITLDCC_NAMESPACE, nsprefix='subtitldcc')
+            for category_id, values in mark_categories.items():
+                table.append(usf.new_tag('category', namespace=SUBTITLDCC_NAMESPACE, nsprefix='subtitldcc',
+                                         attrs={'id': category_id, 'name': str(values.get('name') or category_id),
+                                                'color': str(values.get('color') or '')}))
+            meta_tag.append(table)
 
         # No "Default" style: one would override the player's own look for
         # every subtitle (Subtitld's used to be pale blue, outlined in blue).
@@ -817,9 +911,35 @@ class USFWriter():
             new_sub[SUBTITLDCC_WRITING] = subtitld_position.writing(subtitle)
         if text_override is None and subtitld_look.of(subtitle):
             new_sub[SUBTITLDCC_LOOK] = json.dumps(subtitld_look.of(subtitle), separators=(',', ':'), sort_keys=True)
+        kind = cue_kinds.kind_of(subtitle)
+        if text_override is None and kind == cue_kinds.SUBTITLE and subtitle.get('theme'):
+            new_sub[SUBTITLDCC_THEME] = subtitle['theme']
+        if kind != cue_kinds.SUBTITLE:
+            # In a translation's block too: it is matched to its kind's.
+            new_sub[SUBTITLDCC_KIND] = kind
+        if text_override is None and kind == cue_kinds.MARK:
+            new_sub[SUBTITLDCC_CATEGORY] = subtitle.get('category') or cue_kinds.DEFAULT_CATEGORY
+            if subtitle.get('open_end'):
+                new_sub[SUBTITLDCC_OPEN_END] = 'true'
+        elif text_override is None and kind == cue_kinds.TITLE:
+            if subtitle.get('title_theme'):
+                new_sub[SUBTITLDCC_TITLE_THEME] = subtitle['title_theme']
+            if subtitle.get('title_settings'):
+                new_sub[SUBTITLDCC_TITLE_SETTINGS] = json.dumps(subtitle['title_settings'], separators=(',', ':'),
+                                                                sort_keys=True)
+            if subtitle.get('title_transform'):
+                new_sub[SUBTITLDCC_TITLE_TRANSFORM] = json.dumps(subtitle['title_transform'], separators=(',', ':'),
+                                                                 sort_keys=True)
+            if subtitle.get('title_slots'):
+                new_sub[SUBTITLDCC_TITLE_SLOTS] = json.dumps(subtitle['title_slots'], separators=(',', ':'),
+                                                             sort_keys=True, ensure_ascii=False)
+            if subtitle.get('title_slot_translations'):
+                new_sub[SUBTITLDCC_TITLE_SLOT_TRANSLATIONS] = json.dumps(
+                    subtitle['title_slot_translations'], separators=(',', ':'), sort_keys=True, ensure_ascii=False)
 
         text_tag = usf.new_tag('text')
-        speaker = subtitle.get('speaker', 'A')
+        # Marks and titles are nobody's lines.
+        speaker = subtitle.get('speaker', 'A') if kind == cue_kinds.SUBTITLE else None
         if speaker:
             text_tag['speaker'] = speaker
             if speaker in speakers:

@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Plain</title>
+<script type="application/json" id="subtitld-theme">
+{
+  "format": 1,
+  "id": "subtitld.plain",
+  "kind": "title",
+  "name": "Plain",
+  "version": "26.12.1",
+  "author": "Subtitld",
+  "licence": "GPL-3.0-or-later",
+  "description": "A title in one font and colour where its placement puts it, with a shadow, a box or an accent bar.",
+  "fallback": {
+    "placement": "center",
+    "font_size": 72,
+    "bold": true,
+    "color": "#ffffffff"
+  },
+  "slots": [
+    {
+      "key": "main",
+      "type": "text",
+      "label": "Title"
+    }
+  ],
+  "fields": [
+    {
+      "key": "placement",
+      "type": "select",
+      "label": "Place",
+      "default": "center",
+      "options": [
+        {
+          "value": "top",
+          "label": "At the top"
+        },
+        {
+          "value": "upper_third",
+          "label": "Upper third"
+        },
+        {
+          "value": "center",
+          "label": "In the middle"
+        },
+        {
+          "value": "lower_third",
+          "label": "Lower third"
+        },
+        {
+          "value": "bottom",
+          "label": "At the bottom"
+        }
+      ]
+    },
+    {
+      "key": "font_family",
+      "type": "font",
+      "label": "Font",
+      "default": "Montserrat"
+    },
+    {
+      "key": "font_size",
+      "type": "int",
+      "label": "Size",
+      "default": 72,
+      "min": 8,
+      "max": 400,
+      "unit": "px"
+    },
+    {
+      "key": "font_weight",
+      "type": "select",
+      "label": "Weight",
+      "default": "700",
+      "options": [
+        {
+          "value": "400",
+          "label": "Regular"
+        },
+        {
+          "value": "700",
+          "label": "Bold"
+        },
+        {
+          "value": "900",
+          "label": "Black"
+        }
+      ]
+    },
+    {
+      "key": "uppercase",
+      "type": "bool",
+      "label": "Capitals",
+      "default": false
+    },
+    {
+      "key": "letter_spacing",
+      "type": "number",
+      "label": "Letter spacing",
+      "default": 0,
+      "min": -0.2,
+      "max": 1,
+      "step": 0.01,
+      "unit": "em"
+    },
+    {
+      "key": "color",
+      "type": "color",
+      "label": "Color",
+      "default": "#ffffffff"
+    },
+    {
+      "key": "shadow_enabled",
+      "type": "bool",
+      "label": "Shadow",
+      "default": true
+    },
+    {
+      "key": "shadow_color",
+      "type": "color",
+      "label": "Shadow color",
+      "default": "#aa000000",
+      "visible_if": "shadow_enabled"
+    },
+    {
+      "key": "box_enabled",
+      "type": "bool",
+      "label": "Background box",
+      "default": false
+    },
+    {
+      "key": "box_color",
+      "type": "color",
+      "label": "Box color",
+      "default": "#cc000000",
+      "visible_if": "box_enabled"
+    },
+    {
+      "key": "box_padding",
+      "type": "int",
+      "label": "Padding",
+      "default": 24,
+      "min": 0,
+      "max": 200,
+      "unit": "px",
+      "visible_if": "box_enabled"
+    },
+    {
+      "key": "box_radius",
+      "type": "int",
+      "label": "Border radius",
+      "default": 4,
+      "min": 0,
+      "max": 200,
+      "unit": "px",
+      "visible_if": "box_enabled"
+    },
+    {
+      "key": "accent_enabled",
+      "type": "bool",
+      "label": "Accent bar",
+      "default": false
+    },
+    {
+      "key": "accent_color",
+      "type": "color",
+      "label": "Accent color",
+      "default": "#ffe5a823",
+      "visible_if": "accent_enabled"
+    }
+  ]
+}
+</script>
+<style>
+  /* The settings' defaults, for this file opened in a browser; Subtitld
+     sets the title's on the root element. */
+  :root {
+    --font-family: "Montserrat"; --font-size: 72px; --font-weight: 700; --letter-spacing: 0em;
+    --color: #ffffff; --shadow-color: rgba(0, 0, 0, 0.667);
+    --box-color: rgba(0, 0, 0, 0.8); --box-padding: 24px; --box-radius: 4px; --accent-color: #e5a823;
+  }
+  /* Only in a browser: Subtitld takes the sample out and puts the title on
+     its own stage. */
+  html { background: #3a3a3a; }
+  .sample { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
+
+  /* Plain: the title's text where its placement puts it, in its font,
+     size, weight and colour, with a soft shadow; a box behind it and a bar
+     of accent beside it, when asked. Lengths are pixels of a 1080p picture
+     (host.js); the settings arrive as CSS custom properties, bools and
+     selects as attributes of the root element too (title_themes). */
+  .cue {
+    font-family: var(--font-family);
+    font-size: var(--font-size);
+    font-weight: var(--font-weight);
+    letter-spacing: var(--letter-spacing);
+    line-height: 1.15;
+    color: var(--color);
+    max-width: 100%;
+    box-sizing: border-box;
+    white-space: pre-wrap;
+    text-shadow: 0 2px 12px var(--shadow-color), 0 1px 3px var(--shadow-color);
+  }
+  :root[data-uppercase="1"] .cue { text-transform: uppercase; }
+  :root[data-shadow-enabled="0"] .cue { text-shadow: none; }
+  :root[data-box-enabled="1"] .cue {
+    background: var(--box-color);
+    padding: var(--box-padding);
+    border-radius: var(--box-radius);
+  }
+  :root[data-accent-enabled="1"] .cue {
+    border-left: calc(var(--font-size) * 0.12) solid var(--accent-color);
+    padding-left: calc(var(--font-size) * 0.35);
+  }
+  :root[data-accent-enabled="1"][data-box-enabled="1"] .cue {
+    padding-left: calc(var(--box-padding) + var(--font-size) * 0.2);
+  }
+</style>
+</head>
+<body>
+  <div class="sample"><div class="cue">A title</div></div>
+</body>
+</html>

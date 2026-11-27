@@ -313,6 +313,10 @@ def load(self):
     self.usfx_include_original_video_checkbox.stateChanged.connect(lambda: usfx_option_changed(self, 'include_original_video', self.usfx_include_original_video_checkbox.isChecked()))
     self.left_panel_global_tab_usfx.layout().addWidget(self.usfx_include_original_video_checkbox, 0, Qt.AlignLeft)
 
+    self.usfx_include_themes_checkbox = QCheckBox()
+    self.usfx_include_themes_checkbox.stateChanged.connect(lambda: usfx_option_changed(self, 'include_themes', self.usfx_include_themes_checkbox.isChecked()))
+    self.left_panel_global_tab_usfx.layout().addWidget(self.usfx_include_themes_checkbox, 0, Qt.AlignLeft)
+
     self.left_panel_global_tab_usfx.layout().addStretch()
 
     # --- Add-ons tab ---
@@ -386,6 +390,7 @@ USFX_OPTION_DEFAULTS = {
     'include_original_audio': False,
     'include_processed_audio': False,
     'include_original_video': False,
+    'include_themes': False,
 }
 
 
@@ -520,6 +525,7 @@ def update(self):
         ('include_original_audio', self.usfx_include_original_audio_checkbox),
         ('include_processed_audio', self.usfx_include_processed_audio_checkbox),
         ('include_original_video', self.usfx_include_original_video_checkbox),
+        ('include_themes', self.usfx_include_themes_checkbox),
     ):
         checkbox.blockSignals(True)
         checkbox.setChecked(bool(options.get(key, False)))
@@ -578,6 +584,7 @@ def translate(self):
     self.usfx_include_original_audio_checkbox.setText(_('global_panel.usfx_include_original_audio'))
     self.usfx_include_processed_audio_checkbox.setText(_('global_panel.usfx_include_processed_audio'))
     self.usfx_include_original_video_checkbox.setText(_('global_panel.usfx_include_original_video'))
+    self.usfx_include_themes_checkbox.setText(_('global_panel.usfx_include_themes'))
     self.global_panel_general_appimage_menu.setText(_('appimage.menu_entry'))
     self.global_panel_general_minimum_duration_label.setText(_('global_panel.minimum_duration'))
     self.global_panel_general_minimum_duration_seconds_label.setText(_('units.seconds'))

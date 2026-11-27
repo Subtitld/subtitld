@@ -11,6 +11,8 @@ from PySide6.QtGui import QPainter, QPen, QColor, QFont, QPainterPath, QLinearGr
 from PySide6.QtCore import Qt, QRect, QRectF, QPointF, QLineF, QThread, Signal, QMarginsF, QTimer, QMargins
 
 from subtitld.interface import theme
+from subtitld.modules import cue_kinds
+from subtitld.modules import themes
 from subtitld.modules import config
 from subtitld.modules import session
 from subtitld.modules import markup
@@ -1431,7 +1433,23 @@ class Timeline(QWidget):
         if session.SUBTITLE.segments:
             painter.setOpacity(1)
 
-            ordered_segments = list(session.SUBTITLE.segments)
+            # The first mark or title made (or the last removed) moves the
+            # subtitles' lane.
+            if widget._present_kinds() != getattr(widget, '_kinds_present', None):
+                widget._apply_geometry()
+            # The kinds of cue hidden from the timeline (its buttons).
+            hidden_kinds = {kind for kind in (cue_kinds.MARK, cue_kinds.TITLE) if not cue_kinds.shown(kind)}
+            # Each theme's timing looked up once a paint.
+            timings = {}
+
+            def animation_of(cue):
+                own = cue.get('title_theme') if cue_kinds.kind_of(cue) == cue_kinds.TITLE else cue.get('theme')
+                key = (cue_kinds.kind_of(cue), own)
+                if key not in timings:
+                    timings[key] = themes.animation(cue)
+                return timings[key]
+            ordered_segments = [cue for cue in session.SUBTITLE.segments
+                                if not hidden_kinds or cue_kinds.kind_of(cue) not in hidden_kinds]
             selected_subtitle = session.SUBTITLE.selected
             if selected_subtitle in ordered_segments:
                 ordered_segments.remove(selected_subtitle)
@@ -1452,6 +1470,12 @@ class Timeline(QWidget):
             # checks iterating visible subtitles — cheap.
             visible_start_sec = scroll_position / wpp
             visible_end_sec = visible_right / wpp
+            # Where each mark is, across the timeline, where the look says
+            # so: a line from its top edge down through the mark, fading out
+            # by the middle, behind the boxes (their own start line is drawn
+            # with each mark).
+            if cue_kinds.MARK not in hidden_kinds and look.box(timeline_style.MARK)['start_line'] == 'across':
+                widget._paint_mark_lines(painter, ordered_segments, visible_start_sec, visible_end_sec)
             speakers_keys = list(session.SPEAKERS.keys()) if widget.show_speaker_tracks and session.SPEAKERS else []
             speakers_index = {name: i for i, name in enumerate(speakers_keys)}
             speakers_count = len(speakers_keys)
@@ -1494,13 +1518,14 @@ class Timeline(QWidget):
                 # Skip subtitles whose speaker is hidden via the eye toggle
                 # in the speakers panel — keeps them in the model but stops
                 # rendering them on the timeline.
-                speaker_name = subtitle.get('speaker', 'A')
-                speaker_data = session.SPEAKERS.get(speaker_name) or {}
+                # Marks and titles are nobody's: no speaker hides or colours them.
+                kind = timeline_style.kind_of(subtitle)
+                speaker_name = subtitle.get('speaker', 'A') if kind == timeline_style.SUBTITLE else None
+                speaker_data = (session.SPEAKERS.get(speaker_name) or {}) if speaker_name else {}
                 if speaker_data.get('hidden'):
                     continue
                 speaker_color_str = speaker_data.get('color')
 
-                kind = timeline_style.kind_of(subtitle)
                 if kind != painted_kind:
                     painted_kind = kind
                     if kind not in box_paints:
@@ -1514,9 +1539,12 @@ class Timeline(QWidget):
                     # The kind's frames place the speaker's colour: no strip of the timeline's.
                     kind_places_speaker = timeline_frames.places_speaker(box_look)
                     painter.setFont(subtitle_font)
+                    if kind == timeline_style.MARK:
+                        # A mark's text: on one line, from its start.
+                        text_flags = (text_flags & ~(Qt.AlignHorizontal_Mask | Qt.TextWordWrap)) | Qt.AlignLeft
 
                 subtitle_track = [0, 1]
-                if speakers_count:
+                if speakers_count and speaker_name:
                     subtitle_track = [speakers_index.get(speaker_name, 0), speakers_count]
 
                 subtitle_rect = QRectF(
@@ -1525,6 +1553,9 @@ class Timeline(QWidget):
                     (subtitle['end'] - subtitle['start']) * widget.width_proportion,
                     lane_height / subtitle_track[1]
                 )
+                if kind == timeline_style.MARK and not cue_kinds.has_end(subtitle):
+                    # A mark with no end is its label alone.
+                    subtitle_rect.setWidth(widget.mark_width(subtitle))
 
                 # Wholly outside what is being painted (while the video plays,
                 # a strip around the playhead): none of it shows, but for a
@@ -1534,6 +1565,9 @@ class Timeline(QWidget):
                     continue
 
                 subtitle_locked = subtitle.get('locked', False)
+                # The selected subtitle's pieces moved with Shift: it is
+                # drawn locked, its pieces as ever.
+                held_still = not subtitle_locked and timeline_pieces.held(widget, subtitle)
                 full_subtitle_rect = QRectF(subtitle_rect)
 
                 # The box as the look draws it: the gap off its sides (never
@@ -1547,7 +1581,9 @@ class Timeline(QWidget):
                 qc_approved = quality_check.check_subtitle(subtitle)[0] if quality_check_enabled else True
                 # The state's SVG frame, if the kind's look has one: drawn in
                 # place of the fill and the border.
-                if is_current:
+                if held_still:
+                    frame_state = 'locked'
+                elif is_current:
                     frame_state = 'selected'
                 elif not qc_approved:
                     frame_state = 'failed'
@@ -1558,16 +1594,23 @@ class Timeline(QWidget):
                 frame_name = box_look.frame_name(frame_state)
                 frame = timeline_frames.get(frame_name)
                 painter.setPen(selected_box_pen if is_current else box_pen)
+                fill_now = selected_fill if is_current else unselected_fill
+                if kind == timeline_style.MARK:
+                    fill_now = _category_fill(subtitle, fill_now, is_current)
                 if fill_gradient:
                     box_fill = QLinearGradient(0, box_rect.top(), 0, box_rect.bottom())
                     box_fill.setColorAt(0, selected_fill if is_current else unselected_fill)
                     box_fill.setColorAt(1, selected_fill_end if is_current else unselected_fill_end)
                     painter.setBrush(QBrush(box_fill))
                 else:
-                    painter.setBrush(selected_fill if is_current else unselected_fill)
+                    painter.setBrush(fill_now)
                 if subtitle_locked:
                     painter.save()
                     painter.setOpacity(0.18)
+                elif held_still:
+                    # Only its box, not the pieces drawn on it.
+                    painter.save()
+                    painter.setOpacity(0.35)
 
                 # A recorder placeholder still waiting for its transcript is a
                 # real subtitle (selectable, editable) drawn in the faded
@@ -1587,11 +1630,25 @@ class Timeline(QWidget):
                     if box_rect.intersects(dirty_rect):
                         speaker_hex = QColor(speaker_color_str).name(QColor.HexRgb) \
                             if widget.show_speaker_color and speaker_color_str else None
-                        box_color = selected_fill if is_current else unselected_fill
+                        box_color = fill_now
                         timeline_frames.paint(painter, frame, box_rect, box_color.name(QColor.HexRgb),
                                               widget.devicePixelRatioF(), frame_name, speaker_hex, box_color.alphaF())
                 else:
                     painter.drawRoundedRect(box_rect, box_radius, box_radius, Qt.AbsoluteSize)
+                if held_still:
+                    painter.restore()
+                # An animated theme's intro and outro (modules.themes): a
+                # fade over the box from each end for as long as they take,
+                # in a warning red where the cue is shorter than both.
+                timing = animation_of(subtitle) if kind != timeline_style.MARK else None
+                if timing and box_rect.intersects(dirty_rect):
+                    _paint_animation_zones(painter, box_rect, box_radius, timing,
+                                           float(subtitle['end']) - float(subtitle['start']), widget.width_proportion)
+                if kind == timeline_style.MARK and box_look['start_line'] != 'none':
+                    # Where the mark is: its start, a line in its colour, darker.
+                    edge_color = QColor(fill_now.darker(170))
+                    edge_color.setAlpha(255)
+                    painter.fillRect(QRectF(box_rect.left(), box_rect.top(), 2, box_rect.height()), edge_color)
 
                 if subtitle.get('dubbing') and dubbing_enabled:
                     dub = subtitle['dubbing'][0]
@@ -2218,6 +2275,9 @@ class Timeline(QWidget):
                     # locking, etc.) rather than duplicating that geometry.
                     _live_target_rect = QRectF(subtitle_rect)
                 subtitle_rect -= QMarginsF(padding_x, padding_y, padding_x, padding_y)
+                # The text's own 5 px off the top and bottom, but in a band
+                # too thin for them (a mark's).
+                text_margin = 5 if subtitle_rect.height() > 24 else 0
 
                 painter.setFont(subtitle_font)
 
@@ -2237,7 +2297,7 @@ class Timeline(QWidget):
                             painter.setPen(smart_splice_line_color)
                             painter.drawLine(pos, subtitle_rect.top() - 6, pos, subtitle_rect.bottom() + 6)
                     else:
-                        text_or_pieces(original_subtitle_rect - QMarginsF(0, 5, 0, 5), markup.plain(text_of(subtitle)))
+                        text_or_pieces(original_subtitle_rect - QMarginsF(0, text_margin, 0, text_margin), markup.plain(text_of(subtitle)))
 
                     translated_subtitle_rect = subtitle_rect - QMarginsF(0, subtitle_rect.height()*.5, 0, 0)
 
@@ -2246,13 +2306,13 @@ class Timeline(QWidget):
                     else:
                         painter.setPen(text_color_unselected)
 
-                    painter.drawText(translated_subtitle_rect - QMarginsF(0, 5, 0, 5), text_flags, markup.plain(subtitle.get('translations', {}).get(translation_target_lang, '')))
+                    painter.drawText(translated_subtitle_rect - QMarginsF(0, text_margin, 0, text_margin), text_flags, markup.plain(subtitle.get('translations', {}).get(translation_target_lang, '')))
 
                     painter.setPen(translation_separator_color)
                     painter.setBrush(Qt.NoBrush)
                     painter.drawLine(translated_subtitle_rect.left(), translated_subtitle_rect.top(), translated_subtitle_rect.right(), translated_subtitle_rect.top())
                 else:
-                    original_subtitle_rect = subtitle_rect - QMarginsF(0, 5, 0, 5)
+                    original_subtitle_rect = subtitle_rect - QMarginsF(0, text_margin, 0, text_margin)
                     if widget.is_smart_splicing and isinstance(widget.is_smart_splicing, dict) and 'position' in widget.is_smart_splicing and (subtitle_rect.x() < widget.is_smart_splicing.get('position', original_subtitle_rect.x() + (original_subtitle_rect.width() / 2)) < (subtitle_rect.x() + subtitle_rect.width())):
                         pos = widget.is_smart_splicing.get('position', original_subtitle_rect.x() + (original_subtitle_rect.width() / 2))
                         if 'left' in widget.is_smart_splicing and 'right' in widget.is_smart_splicing:
@@ -2270,7 +2330,7 @@ class Timeline(QWidget):
 
                 # The start and end edges, as the kind's box look draws them:
                 # the one under the mouse, or every box's both.
-                if not subtitle_locked and box_rect.width() > 40:
+                if not subtitle_locked and not held_still and box_rect.width() > 40:
                     edge_hovered = widget.subtitle_edge_hovered
                     hovered_side = None
                     if subtitle == widget.subtitle_under_the_cursor and widget.show_limiters \
@@ -2282,12 +2342,12 @@ class Timeline(QWidget):
                             timeline_edges.paint(painter, edge_box, box_rect, side, box_radius)
 
                 lock_shape, lock_width = timeline_shapes.natural_shape(widget, box_look['lock_svg'], text_color_selected) \
-                    if subtitle_locked else (None, 0.0)
+                    if subtitle_locked or held_still else (None, 0.0)
+                if subtitle_locked:
+                    painter.restore()
                 if lock_shape is not None:
-                    painter.restore()
                     timeline_shapes.draw(painter, lock_shape, full_subtitle_rect.right() - lock_width - 4.0, full_subtitle_rect.top() + 4.0)
-                elif subtitle_locked:
-                    painter.restore()
+                elif subtitle_locked or held_still:
                     badge_size = 10.0
                     badge_margin = 4.0
                     badge_rect = QRectF(
@@ -2709,16 +2769,7 @@ class Timeline(QWidget):
             elif (subtitle['end']) / session.VIDEO.get('duration', 0.01) < (scroll_position / widget.width()):
                 continue
             elif widget.subtitle_under_the_cursor:
-                subtitle_track = [0, 1]
-                if widget.show_speaker_tracks and session.SPEAKERS:
-                    speakers_keys = list(session.SPEAKERS.keys())
-                    speaker_name = widget.subtitle_under_the_cursor.get('speaker', 'A')
-                    subtitle_track = [
-                        speakers_keys.index(speaker_name) if speaker_name in speakers_keys else 0,
-                        len(speakers_keys)
-                    ]
-                y = widget.subtitle_y + ((widget.subtitle_height / subtitle_track[1]) * subtitle_track[0])
-                h = widget.subtitle_height / subtitle_track[1]
+                y, h = widget.cue_row(widget.subtitle_under_the_cursor)
                 widget.show_limiters = bool(y < event.pos().y() < (y + h)) and widget._dub_hit_at_position(event.pos()) is None
 
                 if widget.show_limiters and subtitle == widget.subtitle_under_the_cursor:
@@ -2729,8 +2780,9 @@ class Timeline(QWidget):
                         # Outside its frame's click regions: the timeline under it.
                         break
                     session.SUBTITLE.selected = subtitle
-                    if subtitle.get('locked'):
-                        # Locked subtitles can be selected but not dragged / resized.
+                    if subtitle.get('locked') or timeline_pieces.held(widget, subtitle):
+                        # Locked subtitles (or the selected one's pieces moved
+                        # with Shift) can be selected but not dragged / resized.
                         break
                     if edge == 'end':
                         widget.subtitle_end_is_clicked = True
@@ -2900,7 +2952,9 @@ class Timeline(QWidget):
             widget.is_smart_splicing = False
             playercontrols.slice_selected_subtitle_button_update(widget.window())        
         widget.update()
-        if not subtitle_under_position:
+        # Let go where there is no cue, a mark or a title in its band, or a
+        # subtitle in its lane (modules.cue_kinds): nothing selected.
+        if not subtitle_under_position and not widget._subtitle_at(event.pos()):
             session.SUBTITLE.selected = None
             left_panel.update(widget.window())
         event.accept()
@@ -3158,20 +3212,12 @@ class Timeline(QWidget):
             widget.show_tug_of_war = False
 
         if widget.subtitle_under_the_cursor:
-            subtitle_track = [0, 1]
-            if widget.show_speaker_tracks and session.SPEAKERS:
-                speakers_keys = list(session.SPEAKERS.keys())
-                speaker_name = widget.subtitle_under_the_cursor.get('speaker', 'A')
-                subtitle_track = [
-                    speakers_keys.index(speaker_name) if speaker_name in speakers_keys else 0,
-                    len(speakers_keys)
-                ]
-            y = widget.subtitle_y + ((widget.subtitle_height / subtitle_track[1]) * subtitle_track[0])
-            h = widget.subtitle_height / subtitle_track[1]
+            y, h = widget.cue_row(widget.subtitle_under_the_cursor)
             widget.show_limiters = bool(y < event.pos().y() < (y + h)) and widget._dub_hit_at_position(event.pos()) is None
 
             new_edge_hover = None
-            if not widget.is_cursor_pressing and widget.show_limiters and not widget.subtitle_under_the_cursor.get('locked'):
+            if not widget.is_cursor_pressing and widget.show_limiters and not widget.subtitle_under_the_cursor.get('locked') \
+                    and not timeline_pieces.held(widget, widget.subtitle_under_the_cursor):
                 edge = widget.edge_under(widget.subtitle_under_the_cursor, event.pos())
                 if edge == 'start':
                     widget.setCursor(widget._left_arrow_cursor)
@@ -3378,11 +3424,33 @@ class Timeline(QWidget):
         widget.lanes = {}
         for kind in timeline_style.KINDS:
             box = look.box(kind)
-            top, bottom = (0, 0) if box['full_height'] else (box['top'], box['bottom'])
-            widget.lanes[kind] = (top, max(10, height - top - bottom))
+            if box['full_height']:
+                widget.lanes[kind] = (0, max(10, height))
+            elif box['height']:
+                widget.lanes[kind] = (box['top'], box['height'])
+            else:
+                widget.lanes[kind] = (box['top'], max(10, height - box['top'] - box['bottom']))
+        # A band of marks or titles above the subtitles' middle pushes their
+        # lane down below it, while it is shown and has cues in it: a
+        # project without marks or titles keeps its subtitles where they were.
+        widget._kinds_present = present = widget._present_kinds()
+        top, lane_height = widget.lanes[timeline_style.SUBTITLE]
+        bottom = top + lane_height
+        for kind, (band_top, band_height) in widget.lanes.items():
+            if kind not in present or not cue_kinds.shown(kind) or band_height >= height:
+                continue
+            if band_top < (top + bottom) / 2 and band_top + band_height + 2 > top:
+                top = band_top + band_height + 2
+        widget.lanes[timeline_style.SUBTITLE] = (top, max(10, bottom - top))
         widget.subtitle_y, widget.subtitle_height = widget.lanes[timeline_style.SUBTITLE]
         widget.waveform_y = look['waveform_top']
         widget.waveform_height = max(0, height - look['waveform_top'] - look['waveform_bottom'])
+
+    @staticmethod
+    def _present_kinds():
+        """The kinds of cue other than subtitles the project has."""
+        return frozenset(kind for kind in (cue_kinds.MARK, cue_kinds.TITLE)
+                         if any(cue_kinds.kind_of(cue) == kind for cue in session.SUBTITLE.segments))
 
     def lane(widget, kind):
         """The top and height of the band a kind of cue's boxes are in."""
@@ -3394,17 +3462,21 @@ class Timeline(QWidget):
         kind = timeline_style.kind_of(subtitle)
         lane_y, lane_height = widget.lane(kind)
         row, rows = 0, 1
-        if widget.show_speaker_tracks and session.SPEAKERS:
+        if widget.show_speaker_tracks and session.SPEAKERS and kind == timeline_style.SUBTITLE:
             speakers = list(session.SPEAKERS.keys())
             rows = len(speakers)
             row = speakers.index(subtitle.get('speaker', 'A')) if subtitle.get('speaker', 'A') in speakers else 0
         rect = QRectF(subtitle['start'] * widget.width_proportion, lane_y + lane_height / rows * row,
                       (subtitle['end'] - subtitle['start']) * widget.width_proportion, lane_height / rows)
+        if kind == timeline_style.MARK and not cue_kinds.has_end(subtitle):
+            rect.setWidth(widget.mark_width(subtitle))
         inset = min(timeline_style.current().box(kind)['gap'] / 2.0, rect.width() / 4.0)
         return rect.adjusted(inset, 0, -inset, 0)
 
     def frame_state(widget, subtitle):
         """Which of its look's frames a cue's box is drawn with now."""
+        if timeline_pieces.held(widget, subtitle):
+            return 'locked'
         if subtitle is session.SUBTITLE.selected:
             return 'selected'
         box = timeline_style.current().box(timeline_style.kind_of(subtitle))
@@ -3764,14 +3836,64 @@ class Timeline(QWidget):
         own; None when every subtitle is on the one line."""
         return subtitles.speaker_lane(widget.show_speaker_tracks)
 
+    def _paint_mark_lines(widget, painter, cues, first, last):
+        """Each mark's line at its start, in its category's colour darkened:
+        from the timeline's top edge, solid down to the bottom of the
+        marks' band, then fading to nothing by the middle of the
+        timeline."""
+        band_top, band_height = widget.lane(timeline_style.MARK)
+        solid_until = band_top + band_height
+        fade_until = max(solid_until + 1.0, widget.height() * 0.5)
+        painter.save()
+        painter.setPen(Qt.NoPen)
+        for cue in cues:
+            if cue_kinds.kind_of(cue) != cue_kinds.MARK or not first - 1 <= cue['start'] <= last:
+                continue
+            color = QColor(cue_kinds.category(cue.get('category'))['color']).darker(170)
+            color.setAlpha(255)
+            clear = QColor(color)
+            clear.setAlpha(0)
+            x = cue['start'] * widget.width_proportion
+            gradient = QLinearGradient(0, 0, 0, fade_until)
+            gradient.setColorAt(0.0, color)
+            gradient.setColorAt(solid_until / fade_until, color)
+            gradient.setColorAt(1.0, clear)
+            painter.fillRect(QRectF(x, 0, 2, fade_until), QBrush(gradient))
+        painter.restore()
+
+    def mark_width(widget, mark):
+        """How wide a mark with no end is drawn: its text, in its look's
+        font, and the look's padding either side."""
+        box = timeline_style.current().box(timeline_style.MARK)
+        text = markup.plain(text_of(mark)).replace('\n', ' ').strip()
+        return max(12.0, QFontMetrics(box.font).horizontalAdvance(text) + 2 * box['padding_x'] + 2)
+
+    def cue_row(widget, cue):
+        """(top, height) of the row a cue's box is in: its kind's lane, and
+        for a subtitle its speaker's track when speakers have tracks."""
+        rect = widget.box_rect(cue)
+        return rect.top(), rect.height()
+
     def _subtitle_at(widget, pos):
-        """The subtitle under pos: with speaker tracks, the one on the track
-        under the pointer, as subtitles of two speakers can overlap."""
+        """The cue under pos: a mark or title in its band, else the subtitle
+        there; with speaker tracks, the one on the track under the pointer,
+        as subtitles of two speakers can overlap. Kinds hidden from the
+        timeline are not there to take."""
         position = pos.x() / widget.width_proportion
+        for kind in (timeline_style.MARK, timeline_style.TITLE):
+            band_top, band_height = widget.lane(kind)
+            if not cue_kinds.shown(kind) or not band_top <= pos.y() < band_top + band_height:
+                continue
+            found = [item for item in session.SUBTITLE.segments
+                     if cue_kinds.kind_of(item) == kind and widget.box_rect(item).left() <= pos.x() < widget.box_rect(item).right()]
+            if found:
+                # The latest to start: an open-ended one under it is longer.
+                return max(found, key=lambda item: item['start'])
         lane = widget.subtitle_lane()
         if lane is not None and widget.subtitle_y <= pos.y() < widget.subtitle_y + widget.subtitle_height:
             track = int((pos.y() - widget.subtitle_y) / (widget.subtitle_height / len(session.SPEAKERS)))
-            found = next((item for item in session.SUBTITLE.segments if lane(item) == track and item['start'] <= position < item['end']), False)
+            found = next((item for item in cue_kinds.subtitles(session.SUBTITLE.segments)
+                          if lane(item) == track and item['start'] <= position < item['end']), False)
             if found:
                 return found
         return subtitles.subtitle_under_current_position(position=position)
@@ -4120,7 +4242,7 @@ class Timeline(QWidget):
         from subtitld.modules import dub_clip, history
         hit = widget._dub_subclip_at_position(event.pos())
         if hit is None:
-            event.ignore()
+            widget._cue_menu(event)
             return
         menu = QMenu(widget)
         act_split = menu.addAction(_('timeline.dub.split_here'))
@@ -4149,6 +4271,44 @@ class Timeline(QWidget):
 
         menu.exec(event.globalPos())
         event.accept()
+
+    def _cue_menu(widget, event):
+        """Right-click on the timeline away from a dub: a mark or a title
+        there (modules.cue_kinds); a mark's category, for the one under
+        the pointer."""
+        from PySide6.QtWidgets import QMenu
+        from subtitld.interface import playercontrols
+        window = widget.window()
+        position = max(0.0, event.pos().x() / widget.width_proportion)
+        under = widget._subtitle_at(event.pos())
+        menu = QMenu(widget)
+        add_marks = menu.addMenu(_('timeline.add_mark_here'))
+        for category_id in cue_kinds.categories():
+            action = add_marks.addAction(cue_kinds.display_name(category_id, _))
+            action.triggered.connect(lambda _checked=False, category_id=category_id:
+                                     playercontrols.add_mark(window, position, category_id))
+        menu.addAction(_('timeline.add_title_here')).triggered.connect(
+            lambda: playercontrols.add_title(window, position))
+        if under and cue_kinds.kind_of(under) == cue_kinds.MARK:
+            menu.addSeparator()
+            categories = menu.addMenu(_('timeline.mark_category'))
+            for category_id in cue_kinds.categories():
+                action = categories.addAction(cue_kinds.display_name(category_id, _))
+                action.setCheckable(True)
+                action.setChecked(category_id == under.get('category'))
+                action.triggered.connect(lambda _checked=False, category_id=category_id, mark=under:
+                                         widget._set_mark_category(mark, category_id))
+        menu.exec(event.globalPos())
+        event.accept()
+
+    def _set_mark_category(widget, mark, category_id):
+        from subtitld.modules import history
+        history.history_append(session.SUBTITLE.segments)
+        mark['category'] = category_id
+        session.CONFIG.setdefault('marks', {})['last_category'] = category_id
+        session.set_unsaved()
+        left_panel.update(widget.window())
+        widget.update()
 
     def _dub_cache_signature(widget, path):
         """Content-aware key for a dub file's peaks/onset caches.
@@ -4333,6 +4493,47 @@ def _box_paint(widget, box):
             box.color('text_color'), box.color('selected_text_color'), box.color('failed_check_text_color'),
             QPen(box.color('text_color'), 1), box.color('fill_color'), box.font,
             widget.subtitle_alignment | _VERTICAL_ALIGNMENT[box['text_vertical_alignment']] | Qt.TextWordWrap, box)
+
+
+ANIMATION_TINT = QColor(255, 255, 255, 70)
+ANIMATION_SHORT = QColor('#c8e0574f')
+
+
+def _paint_animation_zones(painter, box_rect, radius, timing, length, pixels_per_second):
+    """An animated cue's intro and outro over its box: each a fade from the
+    box's end inward, as wide as it lasts. Where the cue is shorter than the
+    two together, both in red."""
+    intro, outro = timing
+    short = length < intro + outro - 1e-6
+    tint = ANIMATION_SHORT if short else ANIMATION_TINT
+    clear = QColor(tint)
+    clear.setAlpha(0)
+    painter.save()
+    clip = QPainterPath()
+    clip.addRoundedRect(box_rect, radius, radius)
+    painter.setClipPath(clip, Qt.IntersectClip)
+    painter.setPen(Qt.NoPen)
+    for width, from_left in ((intro * pixels_per_second, True), (outro * pixels_per_second, False)):
+        width = min(width, box_rect.width())
+        if width < 1:
+            continue
+        zone = QRectF(box_rect.left() if from_left else box_rect.right() - width, box_rect.top(), width,
+                      box_rect.height())
+        fade = QLinearGradient(zone.left(), 0, zone.right(), 0)
+        fade.setColorAt(0, tint if from_left else clear)
+        fade.setColorAt(1, clear if from_left else tint)
+        painter.fillRect(zone, QBrush(fade))
+    painter.restore()
+
+
+def _category_fill(mark, look_fill, selected):
+    """A mark's fill: its category's colour (modules.cue_kinds) at the
+    look's opacity, lighter while it is selected."""
+    color = QColor(cue_kinds.category(mark.get('category'))['color'])
+    if selected:
+        color = color.lighter(125)
+    color.setAlphaF(color.alphaF() * look_fill.alphaF())
+    return color
 
 
 def _live_colors():

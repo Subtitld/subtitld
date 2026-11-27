@@ -11,7 +11,8 @@ import tempfile
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QStackedWidget,
                                QPushButton, QButtonGroup, QRadioButton, QCheckBox,
                                QLabel, QSizePolicy, QDialog, QGridLayout,
-                               QSpinBox, QDoubleSpinBox, QComboBox, QProgressBar, QPlainTextEdit)
+                               QSpinBox, QDoubleSpinBox, QComboBox, QProgressBar, QPlainTextEdit,
+                               QGraphicsOpacityEffect)
 from PySide6.QtCore import Qt, Signal, QTimer, QRectF
 from PySide6.QtGui import QTextCharFormat, QPixmap, QPainter, QPainterPath, QColor, QImage
 
@@ -21,6 +22,8 @@ from subtitld.interface.translation import _
 from subtitld.modules import audio_report
 from subtitld.modules import bdn
 from subtitld.modules import burned_video
+from subtitld.modules import chapters
+from subtitld.modules import cue_kinds
 from subtitld.modules import csv_export
 from subtitld.modules import dcp
 from subtitld.modules import documents
@@ -444,6 +447,23 @@ class _SubtitlesPanel(QWidget):
             self.delivery_combo.combobox.addItem(name, delivery)
         row.addWidget(self.delivery_combo, 1)
         self.layout().addWidget(self.ass_options)
+        # ASS and TTML can carry the titles too (modules.cue_kinds), in a
+        # style or region of their own; left out unless asked, they show in
+        # a burned-in video alone.
+        self.titles_check = QCheckBox(_('export_dialog.include_titles'))
+        self.titles_check.setChecked(bool(remembered.get('titles', False)))
+        self._has_titles = bool(cue_kinds.of_kind(session.SUBTITLE.segments, cue_kinds.TITLE))
+        self.layout().addWidget(self.titles_check)
+        # Titles whose theme has no look for these formats (no fallback,
+        # modules.title_themes.export_look) are left out, which it says.
+        from subtitld.modules import title_themes
+        self._drawn_only = sum(1 for title in cue_kinds.of_kind(session.SUBTITLE.segments, cue_kinds.TITLE)
+                               if not title_themes.exportable(title))
+        self.titles_note = QLabel(_('export_dialog.titles_drawn_only').format(count=self._drawn_only))
+        self.titles_note.setObjectName('export_dialog_titles_note')
+        self.titles_note.setWordWrap(True)
+        self.layout().addWidget(self.titles_note)
+        self.titles_check.toggled.connect(lambda _on: self._show_titles_note())
         # XMLDIALECT and JSONDIALECT: which dialect to write.
         self.dialect_options = QWidget()
         row = QHBoxLayout(self.dialect_options)
@@ -656,13 +676,15 @@ class _SubtitlesPanel(QWidget):
         # SBV, BCC, Avid SubCap and the DVD scripts but DVD Studio Pro's and
         # Avid DVD's (italics, and DVD Studio Pro's places) have no
         # formatting to keep.
-        self.formatting_combo.setVisible(fmt not in ('SBV', 'BCC', 'AVID', 'ENCORE', 'DVDARCHITECT', 'SCENARIST',
+        self.formatting_combo.setVisible(fmt not in ('SBV', 'SUBVIEWER2', 'BCC', 'AVID', 'ENCORE', 'DVDARCHITECT', 'SCENARIST',
                                                      'DVDPRODUCER', 'TEXTGRID', 'EAF', 'TRS', 'EXB', 'CHAT', 'CTM',
                                                      'AUDACITY', 'AENEAS', 'TMX'))
         # Karaoke formats and WebVTT keep the timing as it is.
         self.timed_combo.setVisible(self._has_timed and fmt not in export_options.KARAOKE_FORMATS
                                     + export_options.INLINE_TIMED_FORMATS)
         self.ass_options.setVisible(fmt in ('ASS', 'DFXP', 'TTML', 'IMSCMXF') or stpp)
+        self.titles_check.setVisible(self._has_titles and fmt in file_io.TITLE_FORMATS)
+        self._show_titles_note()
         # TTML has no shadow to give.
         self.look_combo.combobox.setItemText(1, _('export_dialog.ass_look_preview') if fmt == 'ASS'
                                              else _('export_dialog.ttml_look_preview'))
@@ -690,6 +712,10 @@ class _SubtitlesPanel(QWidget):
             if _select(self.dialect_combo, wanted):
                 break
 
+    def _show_titles_note(self):
+        self.titles_note.setVisible(bool(self._drawn_only) and not self.titles_check.isHidden()
+                                    and self.titles_check.isChecked())
+
     def _show_tunnel(self, *_args):
         """The CEA-608 tunnel is SMPTE-TT's alone, the recordings' choice
         DAPT's."""
@@ -701,7 +727,7 @@ class _SubtitlesPanel(QWidget):
         """What the TTML this export writes would break in its profile:
         the file written as it will be, then read back by ttml.check."""
         fmt = self.format_combo.currentText()
-        segments = session.SUBTITLE.segments
+        segments = cue_kinds.subtitles(session.SUBTITLE.segments)
         if fmt == 'CDG':
             # Drawn with QPainter, which every build has.
             self.check_label.setText(_('export_dialog.cdg_note'))
@@ -760,6 +786,7 @@ class _SubtitlesPanel(QWidget):
             'line_ends': self.line_ends_combo.combobox.currentData(),
             'fps': self.fps_combo.combobox.currentData(),
             'look': self.look_combo.combobox.currentData(),
+            'titles': self.titles_check.isChecked(),
             'profile': self.profile_combo.combobox.currentData(),
             'tunnel_608': self.tunnel_608_check.isChecked(),
             'dapt_audio': self.dapt_audio_combo.combobox.currentData(),
@@ -858,12 +885,19 @@ class _SubtitlesPanel(QWidget):
         if fmt == 'USF':
             options.update(embed_speaker_images=choices['embed_speaker_images'],
                            embed_audio_clips=choices['embed_audio_clips'])
+        if fmt in file_io.TITLE_FORMATS and self._has_titles:
+            options['titles'] = choices['titles']
         if fmt in ('KAR', 'MIDI'):
             # The MIDI file the song was opened from, whose music is written
             # with its words.
             opened = session.FORMAT.get('options') if isinstance(session.FORMAT, dict) else None
             if (opened or {}).get('kar_source'):
                 options['kar_source'] = opened['kar_source']
+        if fmt == 'SUBVIEWER2':
+            # The header the SubViewer file opened had, written again.
+            opened = session.FORMAT.get('options') if isinstance(session.FORMAT, dict) else None
+            if (opened or {}).get('subviewer_header'):
+                options['subviewer_header'] = opened['subviewer_header']
         return fmt, choices, options
 
 
@@ -1127,6 +1161,107 @@ class _DocumentsPanel(QWidget):
         return {'category': 'documents', 'format': fmt, 'options': {'document': chosen}}
 
 
+class _MarksPanel(QWidget):
+    """The marks tab: the marks (modules.cue_kinds) as chapters or a marker
+    list (modules.chapters), of the categories chosen, in the language
+    chosen."""
+    changed = Signal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setLayout(QVBoxLayout())
+        self.layout().setContentsMargins(0, 0, 0, 0)
+        self.layout().setSpacing(10)
+        remembered = session.CONFIG.get('export_marks') or {}
+        marks = cue_kinds.of_kind(session.SUBTITLE.segments, cue_kinds.MARK)
+
+        self.format_combo = utils.HeaderComboBox()
+        self.format_combo.setLabel(_('export_dialog.format'))
+        for fmt in chapters.FORMATS:
+            self.format_combo.combobox.addItem(_(f'export_dialog.marks_{fmt.lower()}'), fmt)
+        self.format_combo.activated.connect(self._refresh)
+        self.layout().addWidget(self.format_combo)
+
+        self.empty_label = QLabel(_('export_dialog.marks_none'))
+        self.empty_label.setWordWrap(True)
+        self.empty_label.setVisible(not marks)
+        self.layout().addWidget(self.empty_label)
+
+        self.text_combo = utils.LabeledComboBox()
+        self.text_combo.setLabel(_('export_dialog.text'))
+        self.text_combo.combobox.addItem(_('export_dialog.text_original'), '')
+        names = {code: name for name, code in session.LANGUAGE_DICT_LIST.items()}
+        for language in export_options.translation_languages(marks):
+            self.text_combo.combobox.addItem(_('export_dialog.text_translation').format(language=names.get(language, language)),
+                                             language)
+        self.text_combo.setVisible(self.text_combo.combobox.count() > 1)
+        self.layout().addWidget(self.text_combo)
+
+        # The categories written: those the project's marks are in.
+        self.categories_label = QLabel(_('export_dialog.marks_categories'))
+        self.categories_label.setProperty('class', 'widget_label')
+        self.layout().addWidget(self.categories_label)
+        used = []
+        for mark in marks:
+            category_id = mark.get('category') or cue_kinds.DEFAULT_CATEGORY
+            if category_id not in used:
+                used.append(category_id)
+        self.category_checks = {}
+        for category_id in used:
+            check = QCheckBox(cue_kinds.display_name(category_id, _))
+            check.toggled.connect(self.changed)
+            self.category_checks[category_id] = check
+            self.layout().addWidget(check)
+        self.categories_label.setVisible(bool(used))
+
+        self.note_label = QLabel()
+        self.note_label.setWordWrap(True)
+        self.note_label.setProperty('class', 'hint')
+        self.layout().addWidget(self.note_label)
+        self.layout().addStretch()
+
+        self._chosen = dict(remembered.get('categories') or {})     # format -> categories last written
+        _select(self.format_combo, remembered.get('format'))
+        _select(self.text_combo, remembered.get('language', ''))
+        self.format_combo.combobox.currentIndexChanged.connect(self.changed)
+        self.text_combo.combobox.currentIndexChanged.connect(self.changed)
+        self.changed.connect(self._note)
+        self._refresh()
+
+    def _format(self):
+        return self.format_combo.combobox.currentData() or next(iter(chapters.FORMATS))
+
+    def _refresh(self, *_args):
+        """The categories the format was last written with, else its own."""
+        fmt = self._format()
+        wanted = self._chosen.get(fmt) or chapters.default_categories(fmt)
+        for category_id, check in self.category_checks.items():
+            check.blockSignals(True)
+            check.setChecked(category_id in wanted)
+            check.blockSignals(False)
+        self.changed.emit()
+
+    def _note(self):
+        """What would keep YouTube from showing the chapters."""
+        fmt, options = self.export_choices()
+        problems = []
+        if fmt == 'YOUTUBECHAPTERS':
+            problems = chapters.youtube_problems(chapters.marks_for(session.SUBTITLE.segments, options['categories']))
+        self.note_label.setText('\n'.join(_(f'export_dialog.marks_youtube_{problem}') for problem in problems))
+        self.note_label.setVisible(bool(problems))
+
+    def export_choices(self):
+        categories = [category_id for category_id, check in self.category_checks.items() if check.isChecked()]
+        return self._format(), {'categories': categories, 'language': self.text_combo.combobox.currentData() or '',
+                                'fps': float((session.VIDEO or {}).get('framerate') or 0) or None}
+
+    def get_config(self):
+        fmt, options = self.export_choices()
+        self._chosen[fmt] = options['categories']
+        session.CONFIG['export_marks'] = {'format': fmt, 'language': options['language'], 'categories': self._chosen}
+        return {'category': 'marks', 'format': fmt, 'options': {'marks': options}}
+
+
 class _ProjectPanel(QWidget):
     """The project tab: the program, then what goes on its timeline
     (modules.project_export): the video, its sound or the background
@@ -1220,6 +1355,8 @@ class _ProjectPanel(QWidget):
 # is teletext, 'TS', DVB subtitles, 'TS DVB', ARIB captions, 'TS ARIB', or
 # SCTE 27 subtitles, 'TS SCTE27', as its track format says).
 TS_TRACKS = ('TS', 'TS DVB', 'TS ARIB', 'TS SCTE27')
+# The kinds of file that hold chapters, which the chapter marks become.
+CHAPTER_FILES = ('MP4', 'MOV', 'MKV', 'WEBM')
 VIDEO_FILES = {
     'MP4': {'label': 'video_mp4_track', 'ways': {'cc': 'MP4 A53', 'track': 'MP4', 'burn': 'BURN MP4'}},
     'MOV': {'label': 'video_mov', 'ways': {'cc': 'MOV', 'track': 'MOV TEXT', 'burn': 'BURN MOV', 'alpha': 'ALPHA MOV'}},
@@ -1383,6 +1520,12 @@ class _VideoPanel(QWidget):
             self.style_combo.combobox.addItem(style.name, style.id)
         line.addWidget(self.style_combo, 1)
         self.burn_panel.layout().addWidget(row)
+        # Each subtitle is drawn in its own theme, else the project's
+        # (modules.subtitle_styles); asked, one style for all of them.
+        self.style_override = QCheckBox(_('export_dialog.style_override'))
+        self.style_override.setObjectName('export_dialog_style_override')
+        self.style_override.toggled.connect(self.style_combo.setEnabled)
+        self.burn_panel.layout().addWidget(self.style_override)
         self.quality_row = QWidget()
         line = QHBoxLayout(self.quality_row)
         line.setContentsMargins(0, 0, 0, 0)
@@ -1424,6 +1567,8 @@ class _VideoPanel(QWidget):
         self.burn_panel.layout().addWidget(self.alpha_options)
         self.burn_panel.layout().addStretch()
         _select(self.style_combo, remembered.get('style') or subtitle_styles.get().id)
+        self.style_override.setChecked(bool(remembered.get('style_override')))
+        self.style_combo.setEnabled(self.style_override.isChecked())
         _select(self.quality_combo, remembered.get('quality', burned_video.DEFAULT_QUALITY))
         if not all(video_size):
             _select(self.alpha_size_combo, remembered.get('size') or '{}x{}'.format(*burned_video.DEFAULT_SIZE))
@@ -1438,9 +1583,17 @@ class _VideoPanel(QWidget):
                       self.captions_codec_combo, self.tracks_codec_combo, self.tracks_ts_combo, self.codec_combo,
                       self.style_combo, self.quality_combo, self.alpha_size_combo, self.alpha_fps_combo):
             combo.combobox.currentIndexChanged.connect(self.changed)
-        for check in (self.captions_teletext, self.tracks_translations, self.tracks_forced):
+        for check in (self.captions_teletext, self.tracks_translations, self.tracks_forced, self.style_override):
             check.toggled.connect(self.changed)
         self.layout().addWidget(self.video_pages, 0)
+        # The chapter marks as the video's chapters (modules.chapters), in
+        # the files that hold chapters.
+        self._has_chapters = bool(chapters.marks_for(session.SUBTITLE.segments, [cue_kinds.DEFAULT_CATEGORY]))
+        self.chapters_check = QCheckBox(_('export_dialog.video_chapters'))
+        self.chapters_check.setChecked(bool(remembered.get('chapters', True)))
+        self.chapters_check.toggled.connect(self.changed)
+        self.layout().addWidget(self.chapters_check)
+        self._refresh_chapters()
 
 
     def choose(self, export):
@@ -1484,9 +1637,17 @@ class _VideoPanel(QWidget):
         self.way_combo.setVisible(len(ways) > 1)
         self._refresh_way()
 
+    def _chapters_offered(self):
+        return self._has_chapters and self._video_file() in CHAPTER_FILES
+
+    def _refresh_chapters(self):
+        if hasattr(self, 'chapters_check'):
+            self.chapters_check.setVisible(self._chapters_offered())
+
     def _refresh_way(self, *_args):
         """The options of the way chosen: the captions', a subtitle track's,
         or those of the subtitles drawn in the picture."""
+        self._refresh_chapters()
         self._ways[self._video_file()] = self.way_combo.combobox.currentData()
         container = self._container()
         if burned_video.is_burned(container):
@@ -1550,11 +1711,21 @@ class _VideoPanel(QWidget):
     def export_choices(self):
         """(format, the options it is written with), as chosen: nothing
         remembered."""
+        container, choices = self._choices()
+        if self._chapters_offered():
+            choices['chapters'] = self.chapters_check.isChecked()
+        return container, choices
+
+    def _choices(self):
         container = self._container()
         if burned_video.is_burned(container):
             choices = {'video_codec': burned_video.codec_of(container, self.codec_combo.combobox.currentData()),
-                       'style': self.style_combo.combobox.currentData() or subtitle_styles.DEFAULT_STYLE,
+                       'style_override': self.style_override.isChecked(),
                        'quality': self.quality_combo.combobox.currentData() or burned_video.DEFAULT_QUALITY}
+            # A style for every subtitle only where asked: otherwise each
+            # its own theme, or the project's.
+            if self.style_override.isChecked():
+                choices['style'] = self.style_combo.combobox.currentData() or subtitle_styles.DEFAULT_STYLE
             if burned_video.is_alpha(container):
                 size = str(self.alpha_size_combo.combobox.currentData() or '{}x{}'.format(*burned_video.DEFAULT_SIZE))
                 width, height = (int(value) for value in size.split('x'))
@@ -1934,6 +2105,21 @@ class _PreviewPanel(QWidget):
         self.crop = QLabel()
         self.crop.setVisible(False)
         file_page.layout().addWidget(self.crop)
+        # while a preview is being made (a video's still takes seconds): a
+        # bar that keeps moving and what is being done, the last picture
+        # dimmed above them until the new one comes
+        self.busy = QProgressBar()
+        self.busy.setObjectName('export_dialog_preview_busy')
+        self.busy.setRange(0, 0)
+        self.busy.setTextVisible(False)
+        self.busy.setFixedHeight(4)
+        self.busy.setVisible(False)
+        file_page.layout().addWidget(self.busy)
+        self.busy_note = QLabel()
+        self.busy_note.setObjectName('export_dialog_preview_busy_note')
+        self.busy_note.setWordWrap(True)
+        self.busy_note.setVisible(False)
+        file_page.layout().addWidget(self.busy_note)
         self.file = QPlainTextEdit()
         self.file.setObjectName('export_dialog_preview_file')
         self.file.setReadOnly(True)
@@ -1956,7 +2142,29 @@ class _PreviewPanel(QWidget):
         shadow.setAttribute(Qt.WA_TransparentForMouseEvents)
         self.layout().addWidget(shadow, 0, 0)
 
+    def show_busy(self, note):
+        """A preview on its way: the moving bar and `note`; the picture shown
+        before, if there is one, dimmed above them meanwhile."""
+        self.dashboard.setVisible(False)
+        self.project.setVisible(False)
+        self.crop.setVisible(False)
+        self.file.setVisible(False)
+        if not self.picture.isHidden():
+            dim = QGraphicsOpacityEffect(self.picture)
+            dim.setOpacity(0.35)
+            self.picture.setGraphicsEffect(dim)
+        self.busy_note.setText(note)
+        self.busy.setVisible(True)
+        self.busy_note.setVisible(True)
+
+    def _done(self):
+        """Whatever is shown next: no longer on its way."""
+        self.busy.setVisible(False)
+        self.busy_note.setVisible(False)
+        self.picture.setGraphicsEffect(None)
+
     def show_text(self, text):
+        self._done()
         self.dashboard.setVisible(False)
         self.project.setVisible(False)
         self.picture.setVisible(False)
@@ -1966,6 +2174,7 @@ class _PreviewPanel(QWidget):
 
     def show_note(self, note):
         """`note` in the well, faded: no file to show."""
+        self._done()
         self.dashboard.setVisible(False)
         self.project.setVisible(False)
         self.picture.setVisible(False)
@@ -1983,6 +2192,7 @@ class _PreviewPanel(QWidget):
         self.file.textCursor().insertText(note, faded)
 
     def show_nothing(self):
+        self._done()
         self.dashboard.setVisible(False)
         self.project.setVisible(False)
         self.picture.setVisible(False)
@@ -1993,6 +2203,7 @@ class _PreviewPanel(QWidget):
     def show_project(self, *report):
         """A project export's dashboard in place of the well (see
         _ProjectDashboard.show_project)."""
+        self._done()
         self.picture.setVisible(False)
         self.crop.setVisible(False)
         self.file.setVisible(False)
@@ -2002,6 +2213,7 @@ class _PreviewPanel(QWidget):
 
     def show_audio(self, facts, problems, loudness):
         """An audio export's dashboard in place of the well."""
+        self._done()
         self.picture.setVisible(False)
         self.crop.setVisible(False)
         self.file.setVisible(False)
@@ -2016,6 +2228,7 @@ class _PreviewPanel(QWidget):
         (width, height) pixels, scaled to the panel's width; under it, the
         picture itself; and under that, in the well, `text`: the file the
         pictures go with, when there is one."""
+        self._done()
         self.dashboard.setVisible(False)
         self.project.setVisible(False)
         margins = self.layout().itemAtPosition(0, 0).widget().layout().contentsMargins()
@@ -2045,6 +2258,7 @@ class _PreviewPanel(QWidget):
     def show_still(self, image):
         """`image`, a frame of the video as the export writes it, scaled to
         the panel's width; its clear parts, if it has them, checkered."""
+        self._done()
         self.dashboard.setVisible(False)
         self.project.setVisible(False)
         margins = self.layout().itemAtPosition(0, 0).widget().layout().contentsMargins()
@@ -2094,7 +2308,7 @@ class ExportDialog(utils.SimpleDialog):
     """Universal export dialog. Returns a config dict via
     `exec_and_get_values()` or None when cancelled."""
 
-    CATEGORY_KEYS = ['subtitles', 'audio', 'video', 'documents', 'project']
+    CATEGORY_KEYS = ['subtitles', 'audio', 'video', 'documents', 'marks', 'project']
 
     def __init__(self, parent=None, has_background=False, has_vocals=False, initial_category=None,
                  audio_engine=None):
@@ -2165,9 +2379,10 @@ class ExportDialog(utils.SimpleDialog):
         self.audio_panel = _AudioPanel(has_background=has_background, has_vocals=has_vocals)
         self.video_panel = _VideoPanel()
         self.documents_panel = _DocumentsPanel()
+        self.marks_panel = _MarksPanel()
         self.project_panel = _ProjectPanel()
         for panel in (self.subtitles_panel, self.audio_panel, self.video_panel, self.documents_panel,
-                      self.project_panel):
+                      self.marks_panel, self.project_panel):
             self._pages.addWidget(self._page(panel))
 
         for index, key in enumerate(self.CATEGORY_KEYS):
@@ -2181,6 +2396,7 @@ class ExportDialog(utils.SimpleDialog):
         self.subtitles_panel.changed.connect(self._preview_timer.start)
         self.video_panel.changed.connect(self._preview_timer.start)
         self.documents_panel.changed.connect(self._preview_timer.start)
+        self.marks_panel.changed.connect(self._preview_timer.start)
         self.project_panel.changed.connect(self._preview_timer.start)
         self.audio_panel.changed.connect(self._preview_timer.start)
         # A video export's still: a few seconds written in the background, one at a time.
@@ -2334,7 +2550,7 @@ class ExportDialog(utils.SimpleDialog):
         self._picture = None
         self._picture_timeout.stop()
         self._still_again = False
-        if self._current_category() == 'video' and session.SUBTITLE.segments:
+        if self._current_category() == 'video':
             self._preview_still()
             return
         if self._current_category() == 'audio':
@@ -2345,6 +2561,9 @@ class ExportDialog(utils.SimpleDialog):
             return
         if self._current_category() == 'documents' and session.SUBTITLE.segments:
             self._preview_document()
+            return
+        if self._current_category() == 'marks':
+            self._preview_marks()
             return
         if self._current_category() != 'subtitles' or not session.SUBTITLE.segments:
             self.preview_panel.show_nothing()
@@ -2457,13 +2676,28 @@ class ExportDialog(utils.SimpleDialog):
             losses.append(_('export_dialog.project_moved').format(count=moved))
         self.preview_panel.show_project(fmt, timeline, files, problems, losses)
 
+    def _preview_marks(self):
+        """The start of the marks' file, as chosen."""
+        if not cue_kinds.of_kind(session.SUBTITLE.segments, cue_kinds.MARK):
+            self.preview_panel.show_nothing()
+            return
+        fmt, options = self.marks_panel.export_choices()
+        try:
+            text = chapters.preview(fmt, session.SUBTITLE.segments, options,
+                                    duration=float((session.VIDEO or {}).get('duration') or 0) or None)
+        except Exception:
+            self.preview_panel.show_note(_('export_dialog.preview_failed'))
+            return
+        self.preview_panel.show_text(text or '')
+
     def _preview_document(self):
         """The document as chosen: the start of its text, or its first
         page as the PDF prints it."""
         fmt, chosen = self.documents_panel.export_choices()
         chosen = dict(chosen)
         content = chosen.pop('content')
-        segments = session.SUBTITLE.segments
+        # A document is of the subtitles (modules.cue_kinds), as the export writes it.
+        segments = cue_kinds.subtitles(session.SUBTITLE.segments)
         try:
             if content == documents.MARKERS:
                 self.preview_panel.show_text(csv_export.write(segments))
@@ -2497,17 +2731,14 @@ class ExportDialog(utils.SimpleDialog):
         if self._still is not None:
             self._still_again = True
             return
-        cue = self._picture_cue('', {})
-        if cue is None:
-            self.preview_panel.show_nothing()
-            return
+        cue = self._video_cue()
         captions.setdefault('speakers', (session.CONFIG.get('export_subtitles') or {}).get('speakers'))
         if self._still_folder is None:
             self._still_folder = tempfile.mkdtemp(prefix='subtitld-stills-')
         self._still_count += 1
         path = os.path.join(self._still_folder, f'{self._still_count}.png')
         self._still = (self._still_count, path)
-        self.preview_panel.show_note(_('export_dialog.preview_drawing'))
+        self.preview_panel.show_busy(_('export_dialog.preview_drawing'))
         video_preview.still_async(container, captions, copy.deepcopy(session.SUBTITLE.segments), cue,
                                   float(session.SUBTITLE.position or 0), path, self._still_done,
                                   language=session.SUBTITLE.language or '')
@@ -2538,11 +2769,27 @@ class ExportDialog(utils.SimpleDialog):
             shutil.rmtree(self._still_folder, ignore_errors=True)
             self._still_folder = None
 
+    def _video_cue(self):
+        """What the video export's still is taken at: the subtitle or title
+        under the timeline's cursor, else the next after it, else the last
+        before it; with none, the cursor itself (the video alone)."""
+        position = float(session.SUBTITLE.position or 0)
+        drawn = sorted((segment for segment in session.SUBTITLE.segments
+                        if cue_kinds.kind_of(segment) != cue_kinds.MARK and markup.plain(text_of(segment)).strip()),
+                       key=lambda segment: float(segment.get('start', 0)))
+        under = [segment for segment in drawn if float(segment['start']) <= position < float(segment['end'])]
+        after = [segment for segment in drawn if float(segment['start']) > position]
+        before = [segment for segment in drawn if float(segment['end']) <= position]
+        for found in (under, after, before[-1:]):
+            if found:
+                return dict(found[0])
+        return {'start': position, 'end': position + 0.04, 'text': ''}
+
     def _picture_cue(self, fmt, options):
         """The subtitle under the timeline's cursor, else the next after it,
         as the export writes it; None when there is none to draw."""
         position = float(session.SUBTITLE.position or 0)
-        segments = sorted(session.SUBTITLE.segments, key=lambda segment: float(segment.get('start', 0)))
+        segments = sorted(cue_kinds.subtitles(session.SUBTITLE.segments), key=lambda segment: float(segment.get('start', 0)))
         under = [segment for segment in segments if float(segment['start']) <= position < float(segment['end'])]
         after = [segment for segment in segments if float(segment['start']) > position]
         for segment in under + after:
@@ -2575,7 +2822,7 @@ class ExportDialog(utils.SimpleDialog):
         if fmt == 'BDN':
             # Its XML too, which says where each picture is and how large:
             # the first ones drawn for it, numbered as the export numbers them.
-            drawable = [segment for segment in export_options.prepare(session.SUBTITLE.segments, options)
+            drawable = [segment for segment in export_options.prepare(cue_kinds.subtitles(session.SUBTITLE.segments), options)
                         if markup.plain(text_of(segment)).strip()]
             wanted += [(self._renderer._job(segment, float(segment['start']), *style)[0], segment)
                        for segment in drawable[:self.BDN_EVENTS]]
@@ -2668,4 +2915,6 @@ class ExportDialog(utils.SimpleDialog):
             return cfg
         if category == 'project':
             return self.project_panel.get_config()
+        if category == 'marks':
+            return self.marks_panel.get_config()
         return self.documents_panel.get_config()

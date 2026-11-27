@@ -504,6 +504,33 @@ def _style_with_look(base, styling, height):
     return style
 
 
+def title_style(segment, height):
+    """The style a title (modules.cue_kinds) is written in: its theme's
+    export look as ASS can say it (modules.title_themes.export_look): the
+    font, its size and weight, the colour, where it is placed, a box behind
+    it or a shadow. Its look beyond that is its theme's, which ASS cannot
+    draw."""
+    from subtitld.modules import title_themes
+    settings = title_themes.export_look(segment) or dict(title_themes.EXPORT_DEFAULTS)
+    scale = height / 1080
+    style = pysubs2.SSAStyle(
+        fontname=str(settings.get('font_family') or 'Arial'), fontsize=round(float(settings.get('font_size') or 72) * scale),
+        primarycolor=_argb(settings.get('color'), '#ffffffff'), outlinecolor=pysubs2.Color(0, 0, 0, 0),
+        backcolor=_argb(settings.get('shadow_color'), '#aa000000'), outline=0,
+        shadow=round(2 * scale, 1) if settings.get('shadow_enabled') else 0, borderstyle=1,
+        bold=bool(settings.get('bold')), italic=bool(settings.get('italic')),
+        alignment=pysubs2.Alignment(title_themes.PLACEMENTS.get(settings.get('placement'), 5)),
+        marginl=round(96 * scale), marginr=round(96 * scale), marginv=round(54 * scale))
+    if settings.get('box_enabled'):
+        style.borderstyle = 3
+        style.outlinecolor = _argb(settings.get('box_color'), '#cc000000')
+        style.outline = round(float(settings.get('box_padding') or 0) * scale, 1)
+        style.shadow = 0
+    if settings.get('letter_spacing'):
+        style.spacing = round(float(settings['letter_spacing']) * float(settings.get('font_size') or 72) * scale, 1)
+    return style
+
+
 def _turn(degrees):
     return str(int(degrees)) if float(degrees).is_integer() else str(float(degrees))
 
@@ -528,12 +555,23 @@ def write(segments, width=None, height=None, fmt='ass', look='clean', preview=No
     # over: the file keeps the structure though the project holds a look
     # per subtitle.
     lookings = {}
+    titles = {}
     for segment in sorted(segments, key=lambda s: (float(s.get('start', 0)), float(s.get('end', 0)))):
-        raw = str(segment.get('text') or '').replace('\r\n', '\n').replace('\r', '\n')
+        raw = str(segment.get('text') or '')
+        if segment.get('kind') == 'title':
+            # Its other text slots too, a line each (modules.title_themes).
+            from subtitld.modules import title_themes
+            raw = title_themes.export_text(segment)
+        raw = raw.replace('\r\n', '\n').replace('\r', '\n')
         lead, rest = markup.split_lead(raw)
         rest = '\n'.join(line.strip() for line in rest.split('\n') if line.strip())
         if not markup.plain(rest).strip():
             continue
+        if segment.get('kind') == 'title':
+            # A title its theme writes in capitals, written so (its text has
+            # no formatting to keep from it).
+            if (title_themes.export_look(segment) or {}).get('uppercase'):
+                rest = markup.plain(rest).upper()
         text = markup.to_ass(lead + rest)
         if fmt == 'ssa':
             # SSA places a line with its own numbers: \a6 is top centre.
@@ -548,7 +586,16 @@ def write(segments, width=None, height=None, fmt='ass', look='clean', preview=No
         event = pysubs2.SSAEvent(start=int(round(start * 1000)), end=int(round(end * 1000)), text=text,
                                  name=str(segment.get('speaker') or '').strip())
         styling = subtitld_look.of(segment)
-        if styling:
+        if segment.get('kind') == 'title':
+            # A title in a style of its own, one for each way titles look.
+            styled = title_style(segment, height)
+            key = json.dumps(styled.as_dict(), sort_keys=True, default=str)
+            if key not in titles:
+                titles[key] = 'Title' if not titles else f'Title{len(titles) + 1}'
+                subfile.styles[titles[key]] = styled
+            event.style = titles[key]
+            event.name = ''
+        elif styling:
             key = json.dumps(styling, sort_keys=True)
             if key not in lookings:
                 styled = _style_with_look(subfile.styles['Default'], styling, height)

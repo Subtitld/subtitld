@@ -170,6 +170,11 @@ _BOX_FIELDS = [
      'hidden_if': 'full_height'},
     {'key': 'bottom', 'type': 'int', 'default': 25, 'min': 0, 'max': 400, 'unit': 'px', 'group': 'box',
      'hidden_if': 'full_height'},
+    # A band this tall from `top`, whatever the timeline's height (0: down
+    # to `bottom`). A band of another kind above the subtitles' middle
+    # pushes their lane down below it while it is shown.
+    {'key': 'height', 'type': 'int', 'default': 0, 'min': 0, 'max': 400, 'unit': 'px', 'group': 'box',
+     'hidden_if': 'full_height'},
     # Space between two boxes that touch: half of it off each side.
     {'key': 'gap', 'type': 'int', 'default': 0, 'min': 0, 'max': 20, 'unit': 'px', 'group': 'box'},
     {'key': 'corner_radius', 'type': 'int', 'default': 3, 'min': 0, 'max': 40, 'unit': 'px', 'group': 'box'},
@@ -223,6 +228,14 @@ _BOX_FIELDS = [
      'hidden_if': ['edge_style', 'none']},
     {'key': 'edge_end_color', 'type': 'color', 'default': '#ffffffff', 'group': 'edges',
      'hidden_if': ['edge_style', 'none']},
+    # The angle of the box's end side, as its frame draws it (90: upright;
+    # Classic's marks end in a 75° slant): the end's bar runs along it.
+    {'key': 'end_slant', 'type': 'int', 'default': 90, 'min': 45, 'max': 90, 'unit': '°', 'group': 'edges'},
+    # Where a box's start is marked (a mark's): not at all, a line inside
+    # the box, or that line across the timeline too, from its top edge
+    # fading out by the middle.
+    {'key': 'start_line', 'type': 'select', 'default': 'box', 'options': ['none', 'box', 'across'],
+     'group': 'edges'},
     # How near an edge the mouse grabs it, whatever is drawn there.
     {'key': 'edge_grab_width', 'type': 'int', 'default': 20, 'min': 4, 'max': 80, 'unit': 'px', 'group': 'edges'},
 ]
@@ -244,9 +257,11 @@ TIMELINE_DEFAULTS = {f['key']: f['default'] for f in TIMELINE_FIELDS}
 BOX_DEFAULTS = {f['key']: f['default'] for f in BOX_FIELDS}
 
 # The kinds of cue the timeline draws a box for, each with what its boxes
-# look like by default where that is not the subtitles' look. Subtitles
-# only, for now; titles, on-screen text and the rest register themselves.
+# look like by default where that is not the subtitles' look: subtitles,
+# and marks and titles (modules.cue_kinds), registered below.
 KINDS = {SUBTITLE: {}}
+MARK = 'mark'
+TITLE = 'title'
 
 
 def register_kind(kind, defaults=None):
@@ -495,3 +510,22 @@ def current():
     if _look is None:
         _look = Look()
     return _look
+
+
+# What a kind's boxes take of their own, not of the subtitles': where they
+# are, and none of the subtitles' frames (drawn for a taller box). A theme
+# that says nothing of marks or titles draws them so.
+_OWN_PLACE = {'full_height': False, 'bottom': 0, 'gap': 0, 'frame_svg': '', 'frame_selected_svg': '',
+              'frame_hover_svg': '', 'frame_locked_svg': '', 'frame_failed_svg': '', 'border_width': 0.0,
+              'fill_gradient': False, 'font_bold': False, 'text_vertical_alignment': 'center', 'padding_y': 0,
+              'edge_style': 'bar', 'edge_show': 'hover', 'edge_handle_thickness': 2.0, 'edge_grab_width': 8}
+# Marks: a thin strip under the ruler's labels (Classic's, 27 px down), each mark in its category's colour
+# (the fill's opacity is the look's); the text dark on it.
+register_kind(MARK, {**_OWN_PLACE, 'top': 41, 'height': 12, 'corner_radius': 2, 'font_size': 7, 'padding_x': 5,
+                     'fill_color': '#e6ffffff', 'selected_fill_color': '#ffffffff', 'text_color': '#ff1b1b1b',
+                     'selected_text_color': '#ff000000', 'selected_border_color': '#ffffffff',
+                     'edge_start_color': '#ff1b1b1b', 'edge_end_color': '#ff1b1b1b'})
+# Titles: a band over the subtitles, pushing them down while it shows.
+register_kind(TITLE, {**_OWN_PLACE, 'top': 55, 'height': 16, 'corner_radius': 3, 'font_size': 8, 'font_bold': True,
+                      'padding_x': 8, 'fill_color': '#e6d9c8f0', 'selected_fill_color': '#ff5b4a8c',
+                      'text_color': '#ff2a1f4d', 'selected_text_color': '#ffeee8ff'})

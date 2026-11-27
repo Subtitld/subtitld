@@ -3,12 +3,14 @@ syllable by syllable or letter by letter (modules.segment).
 
 They are chips where its text would be, each where it is sung, its words
 in it. On the selected subtitle, dragging the edge between two that touch
-moves both; with Alt, only one, opening a gap the way it is dragged. An
-edge of its own (a gap's, the first start, the last end) moves alone.
-Edges snap to the playhead and to the onsets heard in the audio, as the
-timeline's snapping is on. A click on a chip takes the playhead to where
+moves both; with Alt or Shift, only one, opening a gap the way it is
+dragged. An edge of its own (a gap's, the first start, the last end) moves
+alone. Edges snap to the playhead and to the onsets heard in the audio, as
+the timeline's snapping is on; with Shift, they don't. A click on a chip takes the playhead to where
 it starts, a drag from one moves the subtitle as a drag from its text
-would, and a double-click cuts it a level finer. With Ctrl held, a click
+would, and a double-click cuts it a level finer. With Shift held, a drag
+from a chip moves that piece alone, its length kept, between the ones
+beside it, and the subtitle is drawn locked: it stays where it is. With Ctrl held, a click
 cuts it in two where the pointer is, its time shared by letters. Each
 change is one undo step.
 
@@ -179,9 +181,26 @@ def _ctrl(event):
     return bool(event.modifiers() & Qt.ControlModifier)
 
 
-def _hover(widget, pos, ctrl):
+def _shift(event):
+    return bool(event.modifiers() & Qt.ShiftModifier)
+
+
+def held(widget, subtitle):
+    """Whether `subtitle` is drawn locked: the selected one, timed, while
+    Shift is held over the timeline."""
+    return bool(getattr(widget, '_pieces_shift', False)) and subtitle is _selected()
+
+
+def _hold(widget, shift):
+    if shift != getattr(widget, '_pieces_shift', False):
+        widget._pieces_shift = shift
+        widget.update()
+
+
+def _hover(widget, pos, ctrl, shift=False):
     """Show what a press at `pos` (None: nowhere) would do. Whether it is
-    the pieces' to show: an edge, or a cut."""
+    the pieces' to show: an edge, a cut, or with `shift` a piece to move."""
+    _hold(widget, shift)
     found = hit(widget, pos, ctrl) if pos is not None else None
     if found != getattr(widget, '_pieces_hover', None):
         widget._pieces_hover = found
@@ -189,20 +208,26 @@ def _hover(widget, pos, ctrl):
     if found is not None and found[0] in ('edge', 'cut'):
         widget.setCursor(Qt.SplitHCursor)
         return True
+    if found is not None and found[0] == 'piece' and shift:
+        widget.setCursor(Qt.SizeAllCursor)
+        return True
     return False
 
 
 def _watch(widget):
-    """While the pointer is over the timeline, Ctrl pressed or let go shows
-    again what a press would do, as a move of the pointer would."""
+    """While the pointer is over the timeline, Ctrl or Shift pressed or let
+    go shows again what a press would do, as a move of the pointer would."""
     watch = getattr(widget, '_pieces_ctrl', None)
     if watch is None:
         def changed(held):
             if widget.underMouse() and not QApplication.mouseButtons():
+                key = Qt.ShiftModifier if watch.key == Qt.Key_Shift else Qt.ControlModifier
+                modifiers = QApplication.keyboardModifiers() & (Qt.ControlModifier | Qt.ShiftModifier)
+                modifiers = (modifiers | key) if held else (modifiers & ~key)
                 at = widget.mapFromGlobal(QCursor.pos()).toPointF()
                 widget.mouseMoveEvent(QMouseEvent(QEvent.MouseMove, at, widget.mapToGlobal(at), Qt.NoButton,
-                                                  Qt.NoButton, Qt.ControlModifier if held else Qt.NoModifier))
-        watch = widget._pieces_ctrl = CtrlWatch(changed, widget)
+                                                  Qt.NoButton, modifiers))
+        watch = widget._pieces_ctrl = CtrlWatch(changed, widget, keys=(Qt.Key_Control, Qt.Key_Shift))
     watch.start()
 
 
@@ -210,6 +235,7 @@ def leave(widget):
     """The pointer left the timeline."""
     if getattr(widget, '_pieces_ctrl', None) is not None:
         widget._pieces_ctrl.stop()
+    _hold(widget, False)
     if getattr(widget, '_pieces_hover', None) is not None:
         widget._pieces_hover = None
         widget.update()
@@ -217,16 +243,24 @@ def leave(widget):
 
 def press(widget, event):
     """A press on the pieces: an edge starts a drag; with Ctrl, a chip is
-    cut there. On a chip, the press is the timeline's (a drag moves the
-    subtitle), and a click takes the playhead to it when let go (release).
-    Whether it took the press."""
+    cut there; with Shift, a drag from a chip moves its piece. Else on a
+    chip, the press is the timeline's (a drag moves the subtitle), and a
+    click takes the playhead to it when let go (release). Whether it took
+    the press."""
     found = hit(widget, event.position(), _ctrl(event))
     widget._pieces_click = None
     if found is None:
         return False
     if found[0] == 'piece':
         widget._pieces_click = (found[1], event.position().x())
-        return False
+        if not _shift(event):
+            return False
+        subtitle = _selected()
+        grab = event.position().x() / widget.width_proportion - float(subtitle['start'])
+        widget._pieces_drag = {'number': found[1], 'side': 'piece', 'x': event.position().x(),
+                               'grab': grab - segments.timed_pieces(subtitle)[found[1]]['start'], 'moved': False}
+        event.accept()
+        return True
     history.history_append()
     if found[0] == 'cut':
         if segments.split_piece(_selected(), found[1], found[2]):
@@ -235,7 +269,7 @@ def press(widget, event):
         _changed(widget)
     else:
         widget._pieces_drag = {'number': found[1], 'side': found[2], 'x': event.position().x(),
-                               'alone': bool(event.modifiers() & Qt.AltModifier), 'which': None}
+                               'alone': bool(event.modifiers() & (Qt.AltModifier | Qt.ShiftModifier)), 'which': None}
     widget.update()
     event.accept()
     return True
@@ -248,14 +282,26 @@ def move(widget, event):
     subtitle = _selected()
     if drag is None or subtitle is None:
         _watch(widget)
-        return _hover(widget, None if event.buttons() else event.position(), _ctrl(event))
-    time = _snapped(widget, subtitle, event.position().x() / widget.width_proportion - float(subtitle['start']))
+        return _hover(widget, None if event.buttons() else event.position(), _ctrl(event), _shift(event))
+    _hold(widget, _shift(event))
+    time = event.position().x() / widget.width_proportion - float(subtitle['start'])
+    if not _shift(event):
+        time = _snapped(widget, subtitle, time)
     number, side = drag['number'], drag['side']
     pieces = segments.timed_pieces(subtitle)
-    if side == 'between':
+    if side == 'piece':
+        if not drag['moved'] and abs(event.position().x() - drag['x']) <= _CLICK:
+            event.accept()
+            return True
+        if not drag['moved']:
+            # The undo step is pushed once it is a drag, not a click.
+            history.history_append()
+            drag['moved'] = True
+        segments.move_piece(subtitle, number, time - drag['grab'])
+    elif side == 'between':
         if drag['alone'] and drag['which'] is None and abs(event.position().x() - drag['x']) > 2:
-            # Alt: the piece on the side dragged towards moves, the other
-            # stays, and a gap opens between them.
+            # Alt or Shift: the piece on the side dragged towards moves, the
+            # other stays, and a gap opens between them.
             drag['which'] = 'after' if event.position().x() > drag['x'] else 'before'
         if drag['which'] == 'after':
             segments.time_piece(subtitle, number + 1, start=time)
@@ -277,6 +323,11 @@ def release(widget, event):
     to where it starts, the piece chosen in the subtitles list. Whether it
     took the release; a click's is the timeline's too."""
     click, widget._pieces_click = getattr(widget, '_pieces_click', None), None
+    drag = getattr(widget, '_pieces_drag', None)
+    if drag is not None and drag['side'] == 'piece' and not drag['moved']:
+        # A Shift-click that moved nothing: a click.
+        widget._pieces_drag = None
+        widget.update()
     if getattr(widget, '_pieces_drag', None) is None:
         subtitle = _selected()
         pieces = segments.timed_pieces(subtitle)

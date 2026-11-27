@@ -2,6 +2,7 @@
 
 """
 
+from subtitld.modules import cue_kinds
 from subtitld.modules import markup
 from subtitld.modules import session
 from subtitld.modules.segment import text_of
@@ -14,6 +15,10 @@ def check_subtitle(subtitle=[]):
     issues = []
 
     settings =  session.CONFIG.get('quality_check', {})
+
+    # Marks and titles are not read as subtitles are (modules.cue_kinds).
+    if subtitle and cue_kinds.kind_of(subtitle) != cue_kinds.SUBTITLE:
+        return approved, reasons, issues
 
     if subtitle and (subtitle['end'] - subtitle['start']):
         # Counted as the text reads: formatting tags are not characters.

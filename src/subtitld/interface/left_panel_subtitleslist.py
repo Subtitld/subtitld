@@ -1,6 +1,6 @@
-from PySide6.QtWidgets import QVBoxLayout, QWidget, QHBoxLayout, QSplitter, QPushButton, QListView, QStyledItemDelegate, QFrame, QLabel, QTextEdit, QSizePolicy, QLineEdit, QStyle, QDialog, QListWidget, QListWidgetItem, QAbstractScrollArea, QGraphicsOpacityEffect
+from PySide6.QtWidgets import QComboBox, QVBoxLayout, QWidget, QHBoxLayout, QSplitter, QPushButton, QListView, QStyledItemDelegate, QFrame, QLabel, QTextEdit, QSizePolicy, QLineEdit, QStyle, QDialog, QListWidget, QListWidgetItem, QAbstractScrollArea, QGraphicsOpacityEffect
 from PySide6.QtCore import Qt, QAbstractListModel, QRect, QMargins, QSize, Signal, QPoint, QPropertyAnimation, QEasingCurve, QObject, QEvent
-from PySide6.QtGui import QColor, QFontMetrics, QFont, QPixmap
+from PySide6.QtGui import QColor, QFontMetrics, QFont, QPainter, QPainterPath, QPixmap
 
 from subtitld.interface import theme
 from subtitld.interface import utils
@@ -8,10 +8,16 @@ from subtitld.interface import left_panel
 from subtitld.interface import preview_panel
 from subtitld.interface import subtitle_text_editor
 from subtitld.interface import timed_text_strip
+from subtitld.interface import editor_selector
+from subtitld.interface.editor_selector import EditorSelector
+from subtitld.interface.overflow_bar import OverflowBar
+from subtitld.interface.title_panel import TitlePanel
+from subtitld.interface.title_slots_panel import TitleSlotsPanel
 from subtitld.interface import word_alignment
 from subtitld.interface.translation import _
 
 from subtitld.modules import collab_service
+from subtitld.modules import cue_kinds
 from subtitld.modules import session
 from subtitld.modules import markup
 from subtitld.modules import subtitles
@@ -52,6 +58,54 @@ class _TextEditHistoryFilter(QObject):
 
 
 
+# Room for a mark's or a title's label above its text in the list.
+KIND_LABEL_HEIGHT = 14
+# The titles' colour in the list, as the timeline's default title boxes.
+TITLE_COLOR = '#ff8f7ad6'
+
+
+def kind_color(segment, for_text=False):
+    """The colour a mark (its category's) or a title is flagged in."""
+    if cue_kinds.kind_of(segment) == cue_kinds.MARK:
+        color = QColor(cue_kinds.category(segment.get('category'))['color'])
+    else:
+        color = QColor(TITLE_COLOR)
+    if not for_text:
+        color.setAlpha(200)
+    return color
+
+
+def kind_label(segment):
+    """What a mark or a title is called in the list: its category, "Title"."""
+    if cue_kinds.kind_of(segment) == cue_kinds.MARK:
+        return cue_kinds.display_name(segment.get('category'), _)
+    return _('subtitles_panel_widget_qlistwidget.title')
+
+
+def paint_kind_glyph(painter, rect, kind):
+    """A flag for a mark, a T for a title, in the middle of the number's
+    column at the row's top."""
+    painter.save()
+    painter.setRenderHint(QPainter.Antialiasing)
+    painter.setPen(Qt.NoPen)
+    painter.setBrush(QColor('#ffffff'))
+    x, y = rect.center().x() - 5, rect.y() + 10
+    path = QPainterPath()
+    if kind == cue_kinds.MARK:
+        path.addRect(x, y, 1.5, 12)
+        path.moveTo(x + 1.5, y)
+        path.lineTo(x + 10, y)
+        path.lineTo(x + 8, y + 3)
+        path.lineTo(x + 10, y + 6)
+        path.lineTo(x + 1.5, y + 6)
+        path.closeSubpath()
+    else:
+        path.addRect(x, y, 10, 2)
+        path.addRect(x + 4, y, 2, 11)
+    painter.drawPath(path)
+    painter.restore()
+
+
 TEXT_ALIGNMENTS = {
     'left' : Qt.AlignLeft,
     'center' : Qt.AlignHCenter,
@@ -84,6 +138,23 @@ class subtitles_panel_qlistwidget(QListView):
                 index = session.SUBTITLE.segments.index(subtitle)
                 return self.index(index)
 
+            def number(self, row):
+                """A subtitle's number counts subtitles alone, as an export
+                numbers them; a mark or a title has none."""
+                segments = session.SUBTITLE.segments
+                key = (id(segments), len(segments), tuple(cue_kinds.kind_of(s) for s in segments)) \
+                    if len(segments) < 5000 else (id(segments), len(segments))
+                if getattr(self, '_numbers_for', None) != key:
+                    numbers, count = [], 0
+                    for segment in segments:
+                        if cue_kinds.kind_of(segment) == cue_kinds.SUBTITLE:
+                            count += 1
+                            numbers.append(count)
+                        else:
+                            numbers.append(None)
+                    self._numbers_for, self._numbers = key, numbers
+                return self._numbers[row] if row < len(self._numbers) else None
+
             def rowCount(self, _):
                 return len(session.SUBTITLE.segments)
 
@@ -97,6 +168,8 @@ class subtitles_panel_qlistwidget(QListView):
 
             def get_text_height(self, option, index):
                 row_text = markup.plain(text_of(index.data(Qt.DisplayRole)))
+                # A mark's or a title's label above its text.
+                label = KIND_LABEL_HEIGHT if cue_kinds.kind_of(index.data(Qt.DisplayRole)) != cue_kinds.SUBTITLE else 0
                 width = option.rect.width()
                 if session.CONFIG['translation'].get('engine_options', {}).get('show_translations', False):
                     translated_text = markup.plain(index.data(Qt.DisplayRole).get('translations', {}).get(session.CONFIG['translation'].get('engine_options', {}).get('target_language', 'en-us'), ''))
@@ -105,7 +178,7 @@ class subtitles_panel_qlistwidget(QListView):
                     height = max(height_o, height_t)
                 else:
                     height = QFontMetrics(QFont('Montserrat', 10)).boundingRect(QRect(0, 0, width - (20 + 10 + self.get_number_width(index) + 10 + 10), 100), Qt.TextWordWrap, row_text).height()
-                return height
+                return height + label
 
             def paint(self, painter, option, index):
                 segment = index.data(Qt.DisplayRole)
@@ -130,19 +203,36 @@ class subtitles_panel_qlistwidget(QListView):
                 number_rect = QRect(0, option.rect.y(), 10 + number_width + 10, option.rect.height())
                 text_rect = QRect(number_rect.right(), option.rect.y(), option.rect.width() - number_rect.right(), option.rect.height())
 
+                kind = cue_kinds.kind_of(segment)
+                if kind != cue_kinds.SUBTITLE:
+                    # A mark in its category's colour, a title in the titles'.
+                    painter.setBrush(kind_color(segment))
                 painter.drawRect(number_rect)
 
                 painter.setPen(theme.ink(QColor(session.CONFIG.get('subtitle_list', {}).get('number_color', '#ffffff') if sub_is_ok else session.CONFIG.get('subtitle_list', {}).get('number_warning_color', '#ffffff'))))
 
-                number_rect = number_rect.marginsRemoved(QMargins(10, 10, 10, 10))
-
-                painter.setFont(QFont('Montserrat', 8))
-                painter.drawText(number_rect, 0, str(index.row() + 1))
+                if kind != cue_kinds.SUBTITLE:
+                    paint_kind_glyph(painter, number_rect, kind)
+                else:
+                    number_rect = number_rect.marginsRemoved(QMargins(10, 10, 10, 10))
+                    painter.setFont(QFont('Montserrat', 8))
+                    painter.drawText(number_rect, 0, str(index.model().number(index.row()) or ''))
 
                 painter.setPen(Qt.NoPen)
                 painter.setBrush(theme.color(QColor(session.CONFIG.get('subtitle_list', {}).get('text_background_color', '#102e3e4c') if sub_is_ok else session.CONFIG.get('subtitle_list', {}).get('text_background_warning_color', '#109e1a1a'))))
 
                 painter.drawRect(text_rect)
+
+                if kind != cue_kinds.SUBTITLE:
+                    # What it is, above its text: the mark's category, "Title".
+                    label_rect = QRect(text_rect.x() + 10, text_rect.y() + 6, text_rect.width() - 20, KIND_LABEL_HEIGHT)
+                    painter.setPen(theme.ink(kind_color(segment, for_text=True)))
+                    label_font = QFont('Montserrat', 7)
+                    label_font.setBold(True)
+                    label_font.setCapitalization(QFont.AllUppercase)
+                    painter.setFont(label_font)
+                    painter.drawText(label_rect, Qt.AlignLeft | Qt.AlignTop, kind_label(segment))
+                    text_rect = text_rect.adjusted(0, KIND_LABEL_HEIGHT, 0, 0)
 
                 painter.setPen(theme.ink(QColor(session.CONFIG.get('subtitle_list', {}).get('text_color', '#ffffff') if sub_is_ok else session.CONFIG.get('subtitle_list', {}).get('text_warning_color', '#9e1a1a'))))
                 painter.setFont(QFont('Montserrat', 10))
@@ -205,6 +295,12 @@ class subtitles_panel_qlistwidget(QListView):
     def item_selected(widget, index):
         session.SUBTITLE.selected = session.SUBTITLE.segments[index.row()]
         update(widget.window())
+        # The timeline shows the selection: a seek repaints it, but a cue
+        # the playhead is already on (a mark with no end, at its start)
+        # takes none.
+        timeline_widget = getattr(widget.window(), 'timeline_widget', None)
+        if timeline_widget is not None:
+            timeline_widget.update()
 
 def load(self):
     tab_name = 'subtitles'
@@ -267,12 +363,27 @@ def load(self):
     self.left_panel_subtitleslist_locked_notice.setVisible(False)
     self.left_panel_subtitleslist_bottom_panel.layout().addWidget(self.left_panel_subtitleslist_locked_notice)
 
+    # A cue shorter than its theme's animation (intro and outro): cut short
+    # where it is drawn (modules.themes).
+    self.left_panel_subtitleslist_animation_notice = QLabel()
+    self.left_panel_subtitleslist_animation_notice.setObjectName('left_panel_subtitleslist_animation_notice')
+    self.left_panel_subtitleslist_animation_notice.setWordWrap(True)
+    self.left_panel_subtitleslist_animation_notice.setVisible(False)
+    self.left_panel_subtitleslist_bottom_panel.layout().addWidget(self.left_panel_subtitleslist_animation_notice)
+
     self.left_panel_subtitleslist_textedit = QTextEdit()
     self.left_panel_subtitleslist_textedit.setObjectName('left_panel_subtitleslist_textedit')
     self.left_panel_subtitleslist_textedit.setAcceptRichText(False)
     self.left_panel_subtitleslist_textedit.textChanged.connect(lambda: left_panel_subtitleslist_textedit_changed(self))
     self.left_panel_subtitleslist_textedit.installEventFilter(_TextEditHistoryFilter(self, self.left_panel_subtitleslist_textedit))
     self.left_panel_subtitleslist_bottom_panel.layout().addWidget(self.left_panel_subtitleslist_textedit)
+
+    # A title's other parts, under its text: one field for each slot of its
+    # theme (a role, a logo, a list of names).
+    self.left_panel_subtitleslist_title_slots = TitleSlotsPanel(lambda: session.SUBTITLE.selected)
+    self.left_panel_subtitleslist_title_slots.setVisible(False)
+    self.left_panel_subtitleslist_title_slots.changed.connect(lambda: title_changed(self, slots=False))
+    self.left_panel_subtitleslist_bottom_panel.layout().addWidget(self.left_panel_subtitleslist_title_slots)
 
     # Italic, bold, underline, strikeout, colour and position, under the text
     # they format (subtitle_text_editor).
@@ -281,7 +392,6 @@ def load(self):
         language=lambda: session.SUBTITLE.language,
         aligner=(word_alignment.available, lambda: align_selected(self)))
     self.left_panel_subtitleslist_formatting_bar.changed.connect(lambda: left_panel_subtitleslist_textedit_changed(self))
-    self.left_panel_subtitleslist_bottom_panel.layout().addWidget(self.left_panel_subtitleslist_formatting_bar)
 
     # A subtitle timed piece by piece: its pieces, in place of the text
     # above, to type in, cut, join and time.
@@ -296,10 +406,23 @@ def load(self):
     self.left_panel_subtitleslist_translation_textedit.installEventFilter(_TextEditHistoryFilter(self, self.left_panel_subtitleslist_translation_textedit))
     self.left_panel_subtitleslist_bottom_panel.layout().addWidget(self.left_panel_subtitleslist_translation_textedit)
 
+    # The quality check's badges, on a line of their own; under them the
+    # formatting, then what the cue is (its theme, a mark's category) and
+    # whose (the speaker).
+    self.left_panel_subtitleslist_badges_line = QHBoxLayout()
+    self.left_panel_subtitleslist_badges_line.setContentsMargins(0, 0, 0, 0)
+    self.left_panel_subtitleslist_badges_line.setSpacing(0)
+    self.left_panel_subtitleslist_bottom_panel.layout().addLayout(self.left_panel_subtitleslist_badges_line)
+
     self.left_panel_subtitleslist_textedit_bottom_line = QHBoxLayout()
     self.left_panel_subtitleslist_textedit_bottom_line.setContentsMargins(0, 0, 0, 0)
     self.left_panel_subtitleslist_textedit_bottom_line.setSpacing(0)
     self.left_panel_subtitleslist_bottom_panel.layout().addLayout(self.left_panel_subtitleslist_textedit_bottom_line)
+    # The formatting, as many of its buttons as the line has room for
+    # beside the theme's and the speaker's choices, the rest behind "…".
+    self.left_panel_subtitleslist_formatting_row = OverflowBar(self.left_panel_subtitleslist_formatting_bar)
+    self.left_panel_subtitleslist_textedit_bottom_line.addWidget(self.left_panel_subtitleslist_formatting_row, 1,
+                                                                 Qt.AlignBottom)
 
     self.properties_information = QWidget()
     self.properties_information.setObjectName('properties_information')
@@ -361,7 +484,7 @@ def load(self):
     # self.properties_information_reason.setObjectName('properties_information_reason')
     # self.properties_information.layout().addWidget(self.properties_information_reason)
 
-    self.left_panel_subtitleslist_textedit_bottom_line.addWidget(self.properties_information, 1, Qt.AlignLeft | Qt.AlignBottom)
+    self.left_panel_subtitleslist_badges_line.addWidget(self.properties_information, 1, Qt.AlignLeft | Qt.AlignBottom)
     # Same reasoning as the bottom panel above: no selection on launch, and
     # the stats are opt-in via quality_check.show_statistics anyway.
     self.properties_information.setVisible(False)
@@ -381,7 +504,6 @@ def load(self):
 
     # self.subtitles_panel_simplelist_qsplitter.addWidget(self.subtitles_panel_simplelist_properties)
 
-    self.left_panel_subtitleslist_textedit_bottom_line.addStretch()
     
     self.left_panel_subtitleslist_regenerate_dub_button = QPushButton()
     self.left_panel_subtitleslist_regenerate_dub_button.setObjectName('left_panel_subtitleslist_regenerate_dub_button')
@@ -392,8 +514,36 @@ def load(self):
     self.left_panel_subtitleslist_regenerate_dub_button.clicked.connect(lambda: regenerate_dub_for_selected(self))
     self.left_panel_subtitleslist_textedit_bottom_line.addWidget(self.left_panel_subtitleslist_regenerate_dub_button, 0, Qt.AlignRight | Qt.AlignBottom)
 
+    # A mark's category (modules.cue_kinds), where a subtitle has its speaker.
+    self.left_panel_subtitleslist_mark_category_selector = EditorSelector()
+    self.left_panel_subtitleslist_mark_category_selector.setObjectName('left_panel_subtitleslist_mark_category')
+    self.left_panel_subtitleslist_mark_category_selector.setVisible(False)
+    self.left_panel_subtitleslist_mark_category = self.left_panel_subtitleslist_mark_category_selector.combobox
+    self.left_panel_subtitleslist_mark_category.activated.connect(lambda _index: mark_category_chosen(self))
+    self.left_panel_subtitleslist_textedit_bottom_line.addWidget(self.left_panel_subtitleslist_mark_category_selector, 0, Qt.AlignRight | Qt.AlignBottom)
+
+    # A title's theme, and before it the button to its settings, a button
+    # as the formatting's are.
+    self.left_panel_subtitleslist_title_panel = TitlePanel(lambda: session.SUBTITLE.selected)
+    self.left_panel_subtitleslist_title_panel.setVisible(False)
+    self.left_panel_subtitleslist_title_panel.changed.connect(lambda: title_changed(self))
+    self.left_panel_subtitleslist_title_panel.settings_button.setVisible(False)
+    self.left_panel_subtitleslist_textedit_bottom_line.addWidget(self.left_panel_subtitleslist_title_panel.settings_button, 0,
+                                                                 Qt.AlignRight | Qt.AlignBottom)
+    self.left_panel_subtitleslist_textedit_bottom_line.addSpacing(4)
+    self.left_panel_subtitleslist_textedit_bottom_line.addWidget(self.left_panel_subtitleslist_title_panel, 0, Qt.AlignRight | Qt.AlignBottom)
+
+    # A subtitle's theme, right before its speaker: one strip with it. The
+    # project's, or one of its own (modules.subtitle_styles).
+    self.left_panel_subtitleslist_subtitle_theme = EditorSelector()
+    self.left_panel_subtitleslist_subtitle_theme.setObjectName('left_panel_subtitleslist_subtitle_theme')
+    self.left_panel_subtitleslist_subtitle_theme.combobox.activated.connect(lambda _index: subtitle_theme_chosen(self))
+    self.left_panel_subtitleslist_textedit_bottom_line.addWidget(self.left_panel_subtitleslist_subtitle_theme, 0, Qt.AlignRight | Qt.AlignBottom)
+
     self.left_panel_subtitleslist_speaker_selector = SpeakerSelector()
     self.left_panel_subtitleslist_speaker_selector.setObjectName('left_panel_subtitleslist_speaker_selector')
+    # It goes on from the subtitle's theme, one strip with it.
+    EditorSelector.join(self.left_panel_subtitleslist_speaker_selector, True)
     self.left_panel_subtitleslist_textedit_bottom_line.addWidget(self.left_panel_subtitleslist_speaker_selector, 0, Qt.AlignRight | Qt.AlignBottom)
 
     # self.left_panel_subtitleslist_textedit.layout().addLayout(self.left_panel_subtitleslist_textedit_bottom_line)
@@ -535,7 +685,11 @@ def show_text_or_pieces(self):
 
 def left_panel_subtitleslist_textedit_changed(self):
     if session.SUBTITLE.selected:
-        set_text(session.SUBTITLE.selected, subtitle_text_editor.text(self.left_panel_subtitleslist_textedit))
+        text = subtitle_text_editor.text(self.left_panel_subtitleslist_textedit)
+        if cue_kinds.kind_of(session.SUBTITLE.selected) == cue_kinds.MARK:
+            # A mark's text is plain: no formatting.
+            text = markup.plain(text)
+        set_text(session.SUBTITLE.selected, text)
         self.left_panel_subtitleslist_timed_text.refresh()
         show_text_or_pieces(self)
         # In a shared project, the others leave this text be while it is typed in.
@@ -543,6 +697,136 @@ def left_panel_subtitleslist_textedit_changed(self):
         session.set_unsaved(True)
     self.timeline_widget.update()
     self.preview_panel_player.update()
+
+
+def mark_category_chosen(self):
+    """The selected mark goes to the category picked."""
+    selected = session.SUBTITLE.selected
+    category_id = self.left_panel_subtitleslist_mark_category.currentData()
+    if not isinstance(selected, dict) or cue_kinds.kind_of(selected) != cue_kinds.MARK or not category_id \
+            or selected.get('category') == category_id:
+        return
+    history.history_append()
+    selected['category'] = category_id
+    session.CONFIG.setdefault('marks', {})['last_category'] = category_id
+    session.set_unsaved(True)
+    self.subtitles_panel_qlistwidget.update_content()
+    self.timeline_widget.update()
+
+
+def title_changed(self, slots=True):
+    """The selected title's theme, settings or slots changed: drawn again
+    (and its slots' fields, when what it shows of them may have)."""
+    session.set_unsaved(True)
+    if slots:
+        self.left_panel_subtitleslist_title_slots.refresh()
+    self.timeline_widget.update()
+    self.preview_panel_player.update()
+
+
+def show_kind_controls(self):
+    """What the editor offers for the kind of cue selected: a subtitle its
+    formatting, speaker and dub; a mark (plain text) its category; a
+    title what its theme lets it change (left_panel_title)."""
+    selected = session.SUBTITLE.selected
+    kind = cue_kinds.kind_of(selected) if isinstance(selected, dict) else cue_kinds.SUBTITLE
+    is_subtitle = kind == cue_kinds.SUBTITLE
+    # Marks and titles have no formatting; their choices take the line's right.
+    self.left_panel_subtitleslist_formatting_bar.setVisible(is_subtitle)
+    self.left_panel_subtitleslist_formatting_row.more.setToolTip(_('subtitles_panel_widget_qlistwidget.formatting'))
+    self.left_panel_subtitleslist_formatting_row.more.setAccessibleName(_('subtitles_panel_widget_qlistwidget.formatting'))
+    if is_subtitle:
+        self.left_panel_subtitleslist_formatting_row.relayout()
+    else:
+        self.left_panel_subtitleslist_formatting_row.more.hide()
+    self.left_panel_subtitleslist_speaker_selector.setVisible(is_subtitle)
+    self.left_panel_subtitleslist_subtitle_theme.setVisible(is_subtitle)
+    if is_subtitle:
+        refresh_subtitle_theme(self)
+    self.left_panel_subtitleslist_title_panel.setVisible(kind == cue_kinds.TITLE)
+    self.left_panel_subtitleslist_title_panel.settings_button.setVisible(kind == cue_kinds.TITLE)
+    if kind == cue_kinds.TITLE:
+        self.left_panel_subtitleslist_title_panel.refresh()
+        self.left_panel_subtitleslist_title_slots.refresh()
+    else:
+        self.left_panel_subtitleslist_title_slots.setVisible(False)
+    combo = self.left_panel_subtitleslist_mark_category
+    self.left_panel_subtitleslist_mark_category_selector.setVisible(kind == cue_kinds.MARK)
+    self.left_panel_subtitleslist_mark_category_selector.setLabel(_('timeline.mark_category'))
+    if kind == cue_kinds.MARK:
+        combo.blockSignals(True)
+        combo.clear()
+        known = cue_kinds.categories()
+        for category_id in known:
+            combo.addItem(_color_swatch(cue_kinds.category(category_id)['color']),
+                          cue_kinds.display_name(category_id, _), category_id)
+        current = selected.get('category') or cue_kinds.DEFAULT_CATEGORY
+        if current not in known:
+            # A category this computer does not know: shown as the project has it.
+            combo.addItem(_color_swatch(cue_kinds.category(current)['color']), cue_kinds.display_name(current, _), current)
+        combo.setCurrentIndex(combo.findData(current))
+        combo.blockSignals(False)
+        self.left_panel_subtitleslist_mark_category_selector.fit()
+    if not is_subtitle:
+        self.left_panel_subtitleslist_regenerate_dub_button.setVisible(False)
+        self.properties_information.setVisible(False)
+
+
+def refresh_subtitle_theme(self):
+    """The selected subtitle's theme: the project's (the first item), or
+    one of its own."""
+    from subtitld.interface.subtitle_style_panel import style_name
+    from subtitld.modules import subtitle_styles
+    selector = self.left_panel_subtitleslist_subtitle_theme
+    selector.setLabel(_('subtitles_panel_widget_qlistwidget.theme'))
+    combo = selector.combobox
+    combo.blockSignals(True)
+    combo.clear()
+    styles = subtitle_styles.available()
+    combo.addItem(_('subtitles_panel_widget_qlistwidget.project_theme').format(name=style_name(subtitle_styles.get())), '')
+    for style in styles.values():
+        combo.addItem(style_name(style), style.id)
+    selected = session.SUBTITLE.selected
+    own = selected.get('theme') if isinstance(selected, dict) else None
+    combo.setCurrentIndex(max(0, combo.findData(own if own in styles else '')))
+    combo.blockSignals(False)
+    selector.fit()
+
+
+def subtitle_theme_chosen(self):
+    """The selected subtitle drawn with the theme picked: its own, or the
+    project's again."""
+    selected = session.SUBTITLE.selected
+    if not isinstance(selected, dict) or not cue_kinds.is_subtitle(selected):
+        return
+    theme_id = self.left_panel_subtitleslist_subtitle_theme.combobox.currentData() or None
+    if (selected.get('theme') or None) == theme_id:
+        return
+    history.history_append()
+    if theme_id:
+        selected['theme'] = theme_id
+    else:
+        selected.pop('theme', None)
+    session.set_unsaved(True)
+    self.preview_panel_player.update()
+
+
+def _color_swatch(color):
+    from PySide6.QtGui import QIcon
+    pixmap = QPixmap(12, 12)
+    pixmap.fill(QColor(color))
+    return QIcon(pixmap)
+
+
+def refresh_animation_notice(self):
+    """Say so when the selected cue is shorter than its theme's animation."""
+    from subtitld.modules import themes
+    selected = session.SUBTITLE.selected
+    needed = themes.too_short(selected) if isinstance(selected, dict) else None
+    notice = self.left_panel_subtitleslist_animation_notice
+    notice.setVisible(needed is not None)
+    if needed is not None:
+        notice.setText(_('subtitles_panel_widget_qlistwidget.animation_too_short').format(seconds=f'{needed:g}'))
 
 
 def refresh_lock(self):
@@ -587,7 +871,8 @@ def reconcile_visibility(self):
     self.subtitles_panel_simplelist_qsplitter.setVisible(has_segments)
     self.left_panel_subtitleslist_bottom_panel.setVisible(has_selection)
     self.properties_information.setVisible(
-        has_selection and session.CONFIG.get('quality_check', {}).get('show_statistics', False))
+        has_selection and session.CONFIG.get('quality_check', {}).get('show_statistics', False)
+        and cue_kinds.is_subtitle(session.SUBTITLE.selected))
 
 
 def update(self):
@@ -640,12 +925,15 @@ def update(self):
         dubbing_enabled = bool(session.CONFIG.get('dubbing', {}).get('enabled', False))
         has_dub = bool(session.SUBTITLE.selected.get('dubbing'))
         self.left_panel_subtitleslist_regenerate_dub_button.setVisible(dubbing_enabled and has_dub)
+        show_kind_controls(self)
 
         self.subtitles_panel_simplelist_properties_start_timing_qlineedit.setText(modules_utils.get_timeline_time_str(session.SUBTITLE.selected['start'], ms=True))
         self.subtitles_panel_simplelist_properties_duration_timing_qlineedit.setText(modules_utils.get_timeline_time_str((session.SUBTITLE.selected['end'] - session.SUBTITLE.selected['start']), ms=True))
         self.subtitles_panel_simplelist_properties_ending_timing_qlineedit.setText(modules_utils.get_timeline_time_str(session.SUBTITLE.selected['end'], ms=True))
+        refresh_animation_notice(self)
                 
-        show_statistics = session.CONFIG.get('quality_check', {}).get('show_statistics', False)
+        show_statistics = session.CONFIG.get('quality_check', {}).get('show_statistics', False) \
+            and cue_kinds.is_subtitle(session.SUBTITLE.selected)
         quality_check_enabled = session.CONFIG.get('quality_check', {}).get('enabled', False)
 
         if show_statistics:
@@ -918,9 +1206,11 @@ class SpeakerSelector(QWidget):
     def __init__(self, parent=None):
         super(SpeakerSelector, self).__init__(parent)
         self.setAttribute(Qt.WA_StyledBackground, True)
-        self.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Maximum))
+        self.setSizePolicy(QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed))
+        # Slanted, as tall as the editor's other choices beside it (editor_selector).
+        self.setFixedHeight(editor_selector.HEIGHT)
         self.setLayout(QHBoxLayout())
-        self.layout().setContentsMargins(0, 0, 0, 0)
+        self.layout().setContentsMargins(editor_selector.INSET, 0, 0, 0)
         self.layout().setSpacing(0)
 
         self.left_container = QVBoxLayout()
@@ -934,8 +1224,9 @@ class SpeakerSelector(QWidget):
         self.label = QLabel()
         self.label.setObjectName('label')
         self.label.setProperty('class', 'properties_timing_labels')
-        self.label.setAlignment(Qt.AlignLeft)
-        self.label.setSizePolicy(QSizePolicy(QSizePolicy.Minimum, QSizePolicy.Maximum))
+        self.label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.label.setFixedHeight(editor_selector.LABEL_HEIGHT)
+        self.label.setSizePolicy(QSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed))
         self.top_line.addWidget(self.label, 1)
 
         self.add_button = QPushButton()
@@ -1101,6 +1392,9 @@ class SpeakerSelector(QWidget):
         self.selector_list.hide()
 
     ## start animation on mouse hover:
+    def paintEvent(self, event):
+        editor_selector.paint_slant(self, getattr(self, 'joined', False))
+
     def enterEvent(self, event):
         # self.add_button.opacity.setOpacity(1)  
         super().enterEvent(event)

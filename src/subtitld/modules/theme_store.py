@@ -155,3 +155,59 @@ def _save_config():
         session.CONFIG.save()
     except Exception:  # saved again when Subtitld closes
         pass
+
+
+# --- Subtitle and title themes (modules.themes) ----------------------------------------------------------
+# One from subtitld.cc names itself cc.<share ID in hex> too, so a project that names a theme it does not
+# carry can fetch it by that id alone. Which version is installed is kept in CONFIG['themes']['installed'].
+
+def share_id_from(theme_id):
+    """The subtitld.cc share ID of a theme from there, by its id; None for any other theme."""
+    if not isinstance(theme_id, str) or not theme_id.startswith(PREFIX):
+        return None
+    try:
+        raw = bytes.fromhex(theme_id[len(PREFIX):])
+    except ValueError:
+        return None
+    return base64.urlsafe_b64encode(raw).decode('ascii').rstrip('=') if len(raw) == 8 else None
+
+
+def _installed_files():
+    config = session.CONFIG.setdefault('themes', {}) if isinstance(session.CONFIG, dict) else {}
+    installed = config.get('installed')
+    if not isinstance(installed, dict):
+        installed = config['installed'] = {}
+    return installed
+
+
+def fetch_file(theme_id):
+    """Download a subtitle or title theme from subtitld.cc by its id. Blocking. Returns
+    (share_id, version, data, owner)."""
+    share_id = share_id_from(theme_id)
+    if share_id is None:
+        raise StoreError(f'{theme_id} is not a theme from subtitld.cc')
+    connection = service.client()
+    info = connection.theme(share_id)
+    return share_id, info['version'], connection.download_theme(share_id, info['version']), info.get('owner') or ''
+
+
+def save_file(share_id, version, data, owner=''):
+    """Install a subtitle or title theme subtitld.cc sent (bytes) among the user's own. Returns the
+    modules.themes.Theme."""
+    from subtitld.modules import themes
+
+    try:
+        theme = themes.parse(data)
+    except themes.ThemeError as error:
+        raise StoreError(str(error)) from error
+    if theme.id != theme_id(share_id):
+        raise StoreError(f'id {theme.id}: expected {theme_id(share_id)}')
+    if not themes.is_new_enough(theme):
+        raise StoreError(f'needs Subtitld {theme.min_subtitld}')
+    folder = themes.folders()[1][0]
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / f'{theme.id}{themes.EXTENSION}').write_bytes(data)
+    _installed_files()[theme.id] = {'share_id': share_id, 'version': version, 'owner': owner or ''}
+    _save_config()
+    themes.reload_looks()
+    return themes.available()[theme.id]

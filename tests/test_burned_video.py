@@ -149,11 +149,15 @@ else:
     panel.choose('MXF')
     check('MXF: captions alone, nothing to ask', (listed(ways), panel.way_combo.isHidden()), (['cc'], True))
     panel.choose('BURN MP4')
-    check('MP4 burned in: H.264 or HEVC, a style and a quality, no size',
+    check('MP4 burned in: H.264 or HEVC, a quality, no size; each subtitle in its own theme',
           (listed(codecs), panel.video_pages.currentWidget() is panel.burn_panel, panel.quality_row.isHidden(),
-           panel.alpha_options.isHidden(), panel.export_choices()),
+           panel.alpha_options.isHidden(), panel.export_choices(), panel.style_combo.isEnabled()),
           (['h264', 'hevc'], True, False, True,
-           ('BURN MP4', {'video_codec': 'h264', 'style': 'subtitld.classic', 'quality': 'balanced'})))
+           ('BURN MP4', {'video_codec': 'h264', 'style_override': False, 'quality': 'balanced'}), False))
+    panel.style_override.setChecked(True)
+    check('one style for all, when asked', (panel.style_combo.isEnabled(), panel.export_choices()[1].get('style')),
+          (True, 'subtitld.classic'))
+    panel.style_override.setChecked(False)
     panel.choose('BURN MOV')
     check('QuickTime burned in: ProRes first, no quality for it', (listed(codecs), panel.quality_row.isHidden()),
           (['prores', 'h264'], True))
@@ -175,7 +179,7 @@ else:
           ('BURN MOV', 'h264'))
     panel.choose('ALPHA WEBM')
     check('alone: the video\'s size and rate first', panel.export_choices(),
-          ('ALPHA WEBM', {'video_codec': 'vp9', 'style': 'subtitld.classic', 'quality': 'balanced', 'width': 640,
+          ('ALPHA WEBM', {'video_codec': 'vp9', 'style_override': False, 'quality': 'balanced', 'width': 640,
                           'height': 360, 'fps': 25.0}))
     panel.alpha_size_combo.combobox.setCurrentIndex(panel.alpha_size_combo.combobox.findData('1920x1080'))
     config = panel.get_config()

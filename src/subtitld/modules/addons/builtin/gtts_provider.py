@@ -40,6 +40,7 @@ import subprocess
 from gtts import gTTS
 from PySide6.QtCore import QObject, QThread, Signal
 
+from subtitld.modules import cue_kinds
 from subtitld.modules import session
 from subtitld.modules import markup
 from subtitld.modules.segment import text_of
@@ -343,7 +344,7 @@ class GTTSProvider(TTSProvider):
         if size <= 0:
             self._on_speech_error(uid, original_subtitle, 'gTTS produced an empty audio file')
             return
-        for subtitle in session.SUBTITLE.segments:
+        for subtitle in cue_kinds.subtitles(session.SUBTITLE.segments):
             if subtitle.get('start') == original_subtitle['start']:
                 dubs = subtitle.setdefault('dubbing', [])
                 inherited_start = dubs[0].get('start', subtitle['start']) if dubs else subtitle['start']
@@ -380,7 +381,7 @@ class GTTSProvider(TTSProvider):
         from PySide6.QtWidgets import QApplication
         log.error('gtts: uid=%s %s', uid, message)
         target_start = original_subtitle.get('start') if isinstance(original_subtitle, dict) else None
-        for subtitle in session.SUBTITLE.segments:
+        for subtitle in cue_kinds.subtitles(session.SUBTITLE.segments):
             if target_start is not None and subtitle.get('start') == target_start:
                 subtitle['locked'] = False
                 break

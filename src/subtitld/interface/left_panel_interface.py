@@ -5,6 +5,7 @@ from PySide6.QtGui import QColor
 from subtitld.interface import left_panel, theme
 from subtitld.interface.subtitle_style_panel import SubtitleStylePanel
 from subtitld.interface import timeline_theme_browser
+from subtitld.interface.mark_categories_panel import MarkCategoriesPanel
 from subtitld.interface.timeline_theme_panel import TimelineThemePanel
 from subtitld.interface.translation import _
 from subtitld.modules import session, timeline_themes
@@ -231,6 +232,16 @@ def load(self):
     self.global_panel_interface_tabwidget_timeline.layout().addStretch()
     self.global_panel_interface_tabwidget.addTab(self.global_panel_interface_tabwidget_timeline, '')
 
+    # The marks' categories (modules.cue_kinds).
+    self.global_panel_interface_tabwidget_marks = QWidget()
+    self.global_panel_interface_tabwidget_marks.setLayout(QVBoxLayout())
+    self.global_panel_interface_tabwidget_marks.layout().setContentsMargins(10, 10, 10, 10)
+    self.global_panel_interface_mark_categories = MarkCategoriesPanel()
+    self.global_panel_interface_mark_categories.changed.connect(lambda: refresh_marks(self))
+    self.global_panel_interface_tabwidget_marks.layout().addWidget(self.global_panel_interface_mark_categories)
+    self.global_panel_interface_tabwidget_marks.layout().addStretch()
+    self.global_panel_interface_tabwidget.addTab(self.global_panel_interface_tabwidget_marks, '')
+
     self.left_panel_interface_panel_widget.layout().addWidget(self.global_panel_interface_tabwidget)
     # Only the page shown sets the panel's width: a tab widget is as wide as its widest page, and the
     # Video subtitles page is wider than the panel, which made the Timeline tab scroll sideways too.
@@ -245,6 +256,8 @@ def show(self):
     update(self)
 
 def update(self):
+    # The project's style and its settings: another project may be open.
+    self.global_panel_interface_style_panel.build()
     self.global_panel_interface_videoplayer_safe_margin_action_group.setChecked(session.CONFIG['videoplayer'].get('safe_margin_action_enabled', False))
     self.global_panel_interface_videoplayer_safe_margin_action_x_margin.setValue(session.CONFIG['videoplayer'].get('safe_margin_action_x', 5))
     self.global_panel_interface_videoplayer_safe_margin_action_y_margin.setValue(session.CONFIG['videoplayer'].get('safe_margin_action_y', 5))
@@ -258,7 +271,10 @@ def update(self):
 
 
 def refresh_preview(self):
-    """Repaint the subtitle drawn over the video with the new settings."""
+    """Repaint the subtitle drawn over the video with the new settings,
+    which are the project's (modules.subtitle_styles)."""
+    if session.SUBTITLE.segments:
+        session.set_unsaved(True)
     if hasattr(self, 'preview_panel_player'):
         self.preview_panel_player._graphics_video_item.update()
 
@@ -268,6 +284,18 @@ def timeline_follow_look(self, name):
     if timeline_themes.follow_look(name):
         self.global_panel_interface_timeline_theme_panel.build()
         refresh_timeline(self)
+
+
+def refresh_marks(self):
+    """A category changed: the marks drawn again in it, the project unsaved
+    when it carries the category."""
+    from subtitld.modules import cue_kinds
+    if any(cue_kinds.kind_of(segment) == cue_kinds.MARK for segment in session.SUBTITLE.segments):
+        session.set_unsaved()
+    if hasattr(self, 'timeline_widget'):
+        self.timeline_widget.update()
+    if hasattr(self, 'subtitles_panel_qlistwidget'):
+        self.subtitles_panel_qlistwidget.update_content()
 
 
 def refresh_timeline(self):
@@ -359,6 +387,8 @@ def translate(self):
         f"{_('interface_panel.title_safe_margin')}: {_('units.color')}")
     self.global_panel_interface_tabwidget.setTabText(0, _('interface_panel.video_player'))
     self.global_panel_interface_tabwidget.setTabText(1, _('interface_panel.timeline'))
+    self.global_panel_interface_tabwidget.setTabText(2, _('interface_panel.marks'))
+    self.global_panel_interface_mark_categories.build()
     self.global_panel_interface_videoplayer_safe_margin_title_x_margin_pixels_label.setText(_('units.pixels'))
 
 

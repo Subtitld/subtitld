@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Classic</title>
+<script type="application/json" id="subtitld-theme">
+{
+  "format": 1,
+  "id": "subtitld.classic",
+  "kind": "subtitle",
+  "name": "Classic",
+  "version": "26.12.1",
+  "author": "Subtitld",
+  "licence": "GPL-3.0-or-later",
+  "description": "Subtitld's own look: the text at the bottom of the title-safe area, with a shadow and a box behind it.",
+  "fields": [
+    {
+      "key": "font_family",
+      "type": "font",
+      "label": "Font",
+      "default": "Montserrat"
+    },
+    {
+      "key": "font_size",
+      "type": "int",
+      "label": "Size",
+      "default": 40,
+      "min": 1,
+      "max": 999,
+      "unit": "px"
+    },
+    {
+      "key": "color",
+      "type": "color",
+      "label": "Colour",
+      "default": "#ffffffff"
+    },
+    {
+      "key": "shadow_enabled",
+      "type": "bool",
+      "label": "Shadow",
+      "default": true
+    },
+    {
+      "key": "shadow_x",
+      "type": "int",
+      "label": "X position",
+      "default": 2,
+      "min": -500,
+      "max": 500,
+      "unit": "px",
+      "visible_if": "shadow_enabled"
+    },
+    {
+      "key": "shadow_y",
+      "type": "int",
+      "label": "Y position",
+      "default": 2,
+      "min": -500,
+      "max": 500,
+      "unit": "px",
+      "visible_if": "shadow_enabled"
+    },
+    {
+      "key": "shadow_color",
+      "type": "color",
+      "label": "Shadow colour",
+      "default": "#ff000000",
+      "visible_if": "shadow_enabled"
+    },
+    {
+      "key": "backgroundbox_enabled",
+      "type": "bool",
+      "label": "Background box",
+      "default": true
+    },
+    {
+      "key": "backgroundbox_padding",
+      "type": "int",
+      "label": "Padding",
+      "default": 10,
+      "min": -500,
+      "max": 500,
+      "unit": "px",
+      "visible_if": "backgroundbox_enabled"
+    },
+    {
+      "key": "backgroundbox_border_radius",
+      "type": "int",
+      "label": "Border radius",
+      "default": 5,
+      "min": 0,
+      "max": 500,
+      "unit": "px",
+      "visible_if": "backgroundbox_enabled"
+    },
+    {
+      "key": "backgroundbox_color",
+      "type": "color",
+      "label": "Box colour",
+      "default": "#55000000",
+      "visible_if": "backgroundbox_enabled"
+    },
+    {
+      "key": "karaoke_color",
+      "type": "color",
+      "label": "Karaoke colour",
+      "default": "#ffffd700"
+    },
+    {
+      "key": "karaoke_effect",
+      "type": "select",
+      "label": "Karaoke lights up",
+      "default": "fill",
+      "options": [
+        {
+          "value": "fill",
+          "label": "All at once"
+        },
+        {
+          "value": "wipe",
+          "label": "Wiping across"
+        },
+        {
+          "value": "outline",
+          "label": "Its outline"
+        },
+        {
+          "value": "pop",
+          "label": "Popping in"
+        }
+      ]
+    }
+  ]
+}
+</script>
+<style>
+  /* The settings' defaults, for this file opened in a browser; Subtitld
+     sets the user's on the root element. */
+  :root {
+    --font-family: "Montserrat"; --font-size: 40px; --color: #ffffff;
+    --shadow-x: 2px; --shadow-y: 2px; --shadow-color: #000000;
+    --backgroundbox-padding: 10px; --backgroundbox-border-radius: 5px;
+    --backgroundbox-color: rgba(0, 0, 0, 0.333); --karaoke-color: #ffd700;
+  }
+  /* Only in a browser: Subtitld takes the sample out and puts the cue on
+     its own stage. */
+  html { background: #3a3a3a; }
+  .sample { position: fixed; left: 0; right: 0; bottom: 10%; display: flex; justify-content: center; }
+
+  /* Classic: Subtitld's preview before styles. At the bottom of the
+     title-safe area (where the text's {\anN} says, otherwise), in the
+     style's font and colour, with a shadow and a box behind the text.
+     The settings arrive as CSS custom properties
+     (subtitle_styles.css_variables), and bools as attributes of the root
+     element too. */
+  .cue {
+    font-family: var(--font-family);
+    font-size: var(--font-size);
+    color: var(--color);
+    max-width: 100%;
+    box-sizing: border-box;
+    white-space: pre-wrap;
+    padding: var(--backgroundbox-padding);
+    border-radius: var(--backgroundbox-border-radius);
+    background: var(--backgroundbox-color);
+    text-shadow: var(--shadow-x) var(--shadow-y) 0 var(--shadow-color);
+  }
+  :root[data-shadow-enabled="0"] .cue { text-shadow: none; }
+  :root[data-backgroundbox-enabled="0"] .cue { background: none; padding: 0; }
+</style>
+</head>
+<body>
+  <div class="sample"><div class="cue">A subtitle,
+in two lines</div></div>
+</body>
+</html>
